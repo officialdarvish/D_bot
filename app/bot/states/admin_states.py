@@ -5,9 +5,12 @@ class AddServer(StatesGroup):
     category = State()
     name = State()
     panel_url = State()
+    panel_path = State()
     subscription_url = State()
     username = State()
     password = State()
+    inbound_ids = State()
+    confirm = State()
 
 class AddCategory(StatesGroup):
     server_id = State()

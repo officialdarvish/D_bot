@@ -37,10 +37,10 @@ async def handle_test_account(target, telegram_id: int, username: str | None):
         await ui_page(target, '⛔️ دریافت اکانت تست فعلاً غیرفعال است.', reply_markup=back_main_inline())
         return
     server_id = await get_setting_value('test_account_server_id', '')
-    inbound_ids = parse_inbounds(await get_setting_value('test_account_inbound_ids', ''))
+    saved_inbound_ids = parse_inbounds(await get_setting_value('test_account_inbound_ids', ''))
     volume_gb = parse_volume_gb(await get_setting_value('test_account_volume_gb', '1'), '1')
     duration_days = int(await get_setting_value('test_account_duration_days', '1') or '1')
-    if not server_id or not inbound_ids:
+    if not server_id:
         await ui_page(target, '⚠️ تنظیمات اکانت تست هنوز توسط مدیر کامل نشده است.', reply_markup=back_main_inline())
         return
     async with SessionLocal() as session:
@@ -52,6 +52,10 @@ async def handle_test_account(target, telegram_id: int, username: str | None):
         server = await session.get(Server, int(server_id))
         if not server or not server.is_active:
             await ui_page(target, '⚠️ سرور اکانت تست در دسترس نیست.', reply_markup=back_main_inline())
+            return
+        inbound_ids = saved_inbound_ids or [int(x.get('id') if isinstance(x, dict) else x) for x in ((server.meta or {}).get('inbound_ids') or []) if str(x.get('id') if isinstance(x, dict) else x).isdigit()]
+        if not inbound_ids:
+            await ui_page(target, '⚠️ برای سرور اکانت تست هیچ Inbound فعالی ثبت نشده است.', reply_markup=back_main_inline())
             return
         # Use a unique email for every test account creation. When the admin resets
         # test-account receivers, the old test client may still exist on 3x-ui;

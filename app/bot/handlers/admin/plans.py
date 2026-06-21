@@ -4,9 +4,9 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select, delete
 from app.core.roles import is_owner
 from app.database.session import SessionLocal
-from app.database.models import Plan, ServerCategory, Order, ClientService
+from app.database.models import Plan, Server, ServerCategory, Order, ClientService
 from app.bot.states.admin_states import AddPlan, EditPlan
-from app.bot.keyboards.common import CB_PLANS, back_button
+from app.bot.keyboards.common import CB_PLANS, back_button, main_menu_inline
 from app.bot.utils import edit_or_answer, ui_message, ui_callback_message, state_prompt, delete_state_message
 
 router = Router()
@@ -45,20 +45,42 @@ def inbounds_text(p: Plan) -> str:
     return ", ".join(str(x) for x in ids) if ids else "ثبت نشده / OpenVPN"
 
 
+def _server_inbounds(server: Server | None) -> list[int]:
+    ids = []
+    raw = (server.meta or {}).get("inbound_ids") if server else []
+    for item in (raw or []):
+        if isinstance(item, dict):
+            item = item.get("id") or item.get("inbound_id") or item.get("inboundId")
+        try:
+            iid = int(item)
+        except Exception:
+            continue
+        if iid > 0 and iid not in ids:
+            ids.append(iid)
+    return ids
+
+
 async def plans_keyboard() -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text="📋 پلن عمومی", callback_data="plan:list")],
+        [InlineKeyboardButton(text="➕ پلن Pay As You Go", callback_data="plan:add_payg")],
+        [InlineKeyboardButton(text="➕ پلن Open VPN", callback_data="plan:add_openvpn")],
+        [back_button("back:admin")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def plans_list_keyboard() -> InlineKeyboardMarkup:
     async with SessionLocal() as session:
         plans = (await session.execute(select(Plan).order_by(Plan.id.desc()))).scalars().all()
-    rows = [
-        [InlineKeyboardButton(text="➕ افزودن پلن ثابت", callback_data="plan:add_fixed")],
-        [InlineKeyboardButton(text="➕ افزودن پلن Pay As You Go", callback_data="plan:add_payg")],
-    ]
+    rows = []
+    rows.append([InlineKeyboardButton(text="➕ اضافه کردن پلن", callback_data="plan:add_payg")])
     if plans:
-        rows.append([InlineKeyboardButton(text="📋 لیست پلن‌ها", callback_data="noop")])
         for p in plans:
             rows.append([InlineKeyboardButton(text=f"{visibility_text(p)} | 📦 {p.title[:28]}", callback_data=f"plan:detail:{p.id}")])
     else:
         rows.append([InlineKeyboardButton(text="هنوز پلنی ثبت نشده", callback_data="noop")])
-    rows.append([back_button("back:admin")])
+    rows.append([back_button("admin:plans")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -90,8 +112,6 @@ def plan_detail_keyboard(pid: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ تغییر عنوان", callback_data=f"plan:edit:title:{pid}"), InlineKeyboardButton(text="💰 تغییر قیمت", callback_data=f"plan:edit:price:{pid}")],
         [InlineKeyboardButton(text="💾 تغییر حجم", callback_data=f"plan:edit:volume:{pid}"), InlineKeyboardButton(text="📅 تغییر مدت", callback_data=f"plan:edit:duration:{pid}")],
-        [InlineKeyboardButton(text="🔢 تغییر Inbound / نوع سرویس", callback_data=f"plan:edit:inbounds:{pid}")],
-        [InlineKeyboardButton(text="🛡 ضد اشتراک‌گذاری نامحدود", callback_data=f"plan:toggle_anti:{pid}")],
         [InlineKeyboardButton(text="📁 تغییر دسته", callback_data=f"plan:edit:category:{pid}")],
         [InlineKeyboardButton(text="👁 نمایش / عدم نمایش", callback_data=f"plan:toggle:{pid}")],
         [InlineKeyboardButton(text="🗑 حذف پلن", callback_data=f"plan:delete:{pid}")],
@@ -108,7 +128,15 @@ async def noop(callback: CallbackQuery):
 async def plan_menu(callback: CallbackQuery):
     if not admin(callback.from_user.id):
         return
-    await edit_or_answer(callback, "✅ مدیریت پلن‌های فروش:\n\nاز این بخش می‌توانید پلن‌ها را ببینید، ویرایش کنید، مخفی/نمایش کنید یا حذف کنید.", reply_markup=await plans_keyboard())
+    await edit_or_answer(callback, "✅ مدیریت پلن‌های فروش:", reply_markup=await plans_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "plan:list")
+async def plan_list(callback: CallbackQuery):
+    if not admin(callback.from_user.id):
+        return
+    await edit_or_answer(callback, "📋 پلن عمومی:\n\nیکی از پلن‌ها را انتخاب کنید:", reply_markup=await plans_list_keyboard())
     await callback.answer()
 
 
@@ -178,25 +206,49 @@ async def delete_plan_confirm(callback: CallbackQuery):
     if not admin(callback.from_user.id):
         return
     pid = int(callback.data.split(":")[-1])
+    deleted_info = None
     async with SessionLocal() as session:
+        p = await session.get(Plan, pid)
+        if p:
+            cat = await session.get(ServerCategory, p.category_id) if p.category_id else None
+            deleted_info = {
+                "title": p.title,
+                "type": plan_type_text(p),
+                "category": cat.name if cat else "نامشخص",
+                "volume": int(p.volume_gb or 0),
+                "duration": int(p.duration_days or 0),
+                "price": int(p.price_irt or 0),
+            }
         await session.execute(delete(Order).where(Order.plan_id == pid))
         services = (await session.execute(select(ClientService).where(ClientService.plan_id == pid))).scalars().all()
         for s in services:
             s.plan_id = None
-        p = await session.get(Plan, pid)
         if p:
             await session.delete(p)
         await session.commit()
-    await edit_or_answer(callback, "✅ پلن حذف شد.", reply_markup=await plans_keyboard())
+    if deleted_info:
+        msg = (
+            "✅ پلن با موفقیت حذف شد.\n\n"
+            f"📦 عنوان: {deleted_info['title']}\n"
+            f"⚙️ نوع: {deleted_info['type']}\n"
+            f"📁 دسته: {deleted_info['category']}\n"
+            f"💾 حجم: {deleted_info['volume']} گیگ\n"
+            f"📅 مدت: {deleted_info['duration']} روز\n"
+            f"💰 قیمت: {money(deleted_info['price'])}"
+        )
+    else:
+        msg = "✅ پلن با موفقیت حذف شد."
+    await edit_or_answer(callback, msg, reply_markup=None)
+    await callback.message.answer("🏠 صفحه اصلی", reply_markup=main_menu_inline(True))
     await callback.answer()
 
 
-@router.callback_query(F.data.in_({"plan:add_fixed", "plan:add_payg"}))
+@router.callback_query(F.data.in_({"plan:add_fixed", "plan:add_payg", "plan:add_openvpn"}))
 async def add_plan(callback: CallbackQuery, state: FSMContext):
     if not admin(callback.from_user.id):
         return
     await state.clear()
-    await state.update_data(is_payg=callback.data == "plan:add_payg")
+    await state.update_data(is_payg=callback.data == "plan:add_payg", is_openvpn=callback.data == "plan:add_openvpn")
     await state.set_state(AddPlan.title)
     sent = await ui_callback_message(callback, "عنوان پلن را وارد کنید:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button("admin:plans")]]))
     await state.update_data(last_bot_message_id=sent.message_id)
@@ -246,7 +298,7 @@ async def plan_price(message: Message, state: FSMContext):
         cats = (await session.execute(select(ServerCategory))).scalars().all()
     if not cats:
         await delete_state_message(message.bot, message.chat.id, state)
-        await ui_message(message, "هیچ دسته‌ای ثبت نشده است. اول دسته بسازید.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button("back:admin")]]))
+        await ui_message(message, "هیچ دسته‌ای ثبت نشده است. اول دسته بسازید.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button("admin:plans")]]))
         await state.clear()
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=c.name, callback_data=f"plan:cat:{c.id}")] for c in cats] + [[back_button("admin:plans")]])
@@ -268,42 +320,87 @@ async def plan_category(callback: CallbackQuery, state: FSMContext):
         pid = int(data["plan_id"])
         async with SessionLocal() as session:
             p = await session.get(Plan, pid)
+            server = await session.get(Server, cat.server_id)
             if p:
                 p.category_id = cid
                 p.server_id = cat.server_id
+                p.inbound_ids = [] if (server and server.server_type == "openvpn") else _server_inbounds(server)
                 await session.commit()
         await state.clear()
         await edit_or_answer(callback, await plan_detail_text(pid), reply_markup=plan_detail_keyboard(pid))
         await callback.answer("دسته تغییر کرد.")
         return
-    await state.update_data(category_id=cid, server_id=cat.server_id)
-    await state.set_state(AddPlan.inbound_ids)
-    await edit_or_answer(callback, "Inbound ID ها را با کاما وارد کنید. برای OpenVPN می‌توانید 0 بزنید. مثال: 1,2,3,100", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button("admin:plans")]]))
-    await callback.answer()
+
+    async with SessionLocal() as session:
+        server = await session.get(Server, cat.server_id)
+    # Public sales plans should not ask for inbound IDs. The sales server already
+    # stores every inbound discovered when it was added/edited; use all of them.
+    inbound_ids = [] if data.get("is_openvpn") else _server_inbounds(server)
+    await state.update_data(category_id=cid, server_id=cat.server_id, available_inbounds=inbound_ids)
+    await _create_plan_from_state(callback, state, inbound_ids)
+    return
 
 
-@router.message(AddPlan.inbound_ids)
-async def plan_inbounds(message: Message, state: FSMContext):
+async def _create_plan_from_state(event, state: FSMContext, inbound_ids: list[int]):
     data = await state.get_data()
-    inbound_ids = [int(x.strip()) for x in message.text.split(",") if x.strip().isdigit() and int(x.strip()) != 0]
     async with SessionLocal() as session:
         plan = Plan(
             title=data["title"], volume_gb=data["volume"], duration_days=data["duration"],
             price_irt=data["price"], category_id=data["category_id"], server_id=data["server_id"],
             inbound_ids=inbound_ids, is_payg=data["is_payg"],
-            is_unlimited=(not data["is_payg"] and int(data["volume"] or 0) <= 0),
-            anti_sharing_enabled=(not data["is_payg"] and int(data["volume"] or 0) <= 0),
+            is_unlimited=(not data["is_payg"] and not data.get("is_openvpn") and int(data["volume"] or 0) <= 0),
+            anti_sharing_enabled=(not data["is_payg"] and not data.get("is_openvpn") and int(data["volume"] or 0) <= 0),
             is_active=True
         )
         session.add(plan)
         await session.commit()
-    await delete_state_message(message.bot, message.chat.id, state)
-    try:
-        await message.delete()
-    except Exception:
-        pass
     await state.clear()
-    await ui_message(message, "✅ پلن با موفقیت ذخیره شد.", reply_markup=await plans_keyboard())
+    msg = (
+        "✅ پلن با این مشخصات با موفقیت اضافه شد.\n\n"
+        f"📦 عنوان: {data['title']}\n"
+        f"💾 حجم: {data['volume']} گیگ\n"
+        f"📅 مدت: {data['duration']} روز\n"
+        f"💰 قیمت: {money(data['price'])}\n"
+        f"🔢 Inbound ID ها: {', '.join(map(str, inbound_ids)) if inbound_ids else 'OpenVPN / ثبت نشده'}"
+    )
+    if isinstance(event, CallbackQuery):
+        await edit_or_answer(event, msg, reply_markup=None)
+        await event.message.answer("✅ مدیریت پلن‌های فروش:", reply_markup=await plans_keyboard())
+        await event.answer()
+    else:
+        await delete_state_message(event.bot, event.chat.id, state)
+        try:
+            await event.delete()
+        except Exception:
+            pass
+        await ui_message(event, msg)
+        await event.answer("✅ مدیریت پلن‌های فروش:", reply_markup=await plans_keyboard())
+
+
+@router.message(AddPlan.inbound_ids)
+async def plan_inbounds(message: Message, state: FSMContext):
+    data = await state.get_data()
+    available = [int(x) for x in (data.get("available_inbounds") or [])]
+    raw = (message.text or "").strip().lower()
+    if raw in {"all", "همه"}:
+        selected = available
+    else:
+        selected = []
+        for part in raw.replace("،", ",").split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                iid = int(part)
+            except ValueError:
+                await state_prompt(message, state, "❌ فقط ID عددی اینباندها را با کاما وارد کنید یا all بفرستید.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button("admin:plans")]]))
+                return
+            if iid in available and iid not in selected:
+                selected.append(iid)
+    if not selected:
+        await state_prompt(message, state, "❌ حداقل یک Inbound معتبر انتخاب کنید. مثال: 1,2,3", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button("admin:plans")]]))
+        return
+    await _create_plan_from_state(message, state, selected)
 
 
 @router.callback_query(F.data.startswith("plan:edit:"))

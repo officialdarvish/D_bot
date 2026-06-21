@@ -40,3 +40,9 @@ class DiscountInput(StatesGroup):
 
 class ResellerDiscountInput(StatesGroup):
     code = State()
+
+
+class ResellerRenewUser(StatesGroup):
+    service_id = State()
+    volume = State()
+    duration = State()

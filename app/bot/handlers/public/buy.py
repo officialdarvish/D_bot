@@ -137,6 +137,14 @@ async def send_home(bot, chat_id:int, is_admin: bool=False):
     text=await get_setting_value('welcome_text', WELCOME_TEXT_DEFAULT)
     await bot.send_message(chat_id, text, reply_markup=main_menu_inline(is_admin))
 
+def is_admin_user(user_id: int) -> bool:
+    return user_id in settings.admin_ids
+
+def plan_price_text(plan, is_admin: bool = False) -> str:
+    if is_admin:
+        return f'{plan.title} - رایگان برای مدیر'
+    return f'{plan.title} - {plan.price_irt:,} تومان'
+
 @router.callback_query(F.data == CB_BUY)
 async def buy_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -183,7 +191,8 @@ async def buy_category(callback: CallbackQuery, state: FSMContext):
         plans=(await session.execute(select(Plan).where(Plan.server_id == data['server_id'], Plan.category_id == cid, Plan.is_active == True))).scalars().all()
     if not plans:
         await edit_or_answer(callback, 'برای این دسته هیچ پلنی ثبت نشده است.', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(f'buy:server:{data["server_id"]}')]])); await callback.answer(); return
-    kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=f'{p.title} - {p.price_irt:,} تومان', callback_data=f'buy:plan:{p.id}')] for p in plans] + [[back_button(f'buy:server:{data["server_id"]}')]])
+    is_admin = is_admin_user(callback.from_user.id)
+    kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=plan_price_text(p, is_admin), callback_data=f'buy:plan:{p.id}')] for p in plans] + [[back_button(f'buy:server:{data["server_id"]}')]])
     await edit_or_answer(callback, 'پلن موردنظر را انتخاب کنید:', reply_markup=kb); await callback.answer()
 
 @router.callback_query(F.data.startswith('buy:plan:'))
@@ -192,9 +201,6 @@ async def buy_plan(callback: CallbackQuery, state: FSMContext):
     async with SessionLocal() as session:
         plan=await session.get(Plan,pid); server=await session.get(Server, plan.server_id)
         user=(await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one()
-    balance=getattr(user, wallet_field(server.server_type), 0) or 0
-    if plan.is_payg and balance < settings.PAYG_MIN_BALANCE_IRT:
-        await edit_or_answer(callback, f'برای خرید Pay As You Go باید حداقل {settings.PAYG_MIN_BALANCE_IRT:,} تومان موجودی کیف پول همین نوع سرویس را داشته باشید.', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('back:main')]])); await callback.answer(); return
     await state.set_state(BuyFlow.username)
     await edit_or_answer(callback, 'یک یوزرنیم اختصاصی با حروف و عدد وارد کنید:', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('back:main')]])); await callback.answer()
 
@@ -204,7 +210,23 @@ async def buy_username(message: Message, state: FSMContext):
     data=await state.get_data()
     async with SessionLocal() as session:
         server=await session.get(Server, data['server_id'])
+        plan=await session.get(Plan, data['plan_id'])
+        user=(await session.execute(select(User).where(User.telegram_id == message.from_user.id))).scalar_one()
         final_username = await pick_available_username(session, server, username)
+        if message.from_user.id in settings.admin_ids:
+            try:
+                service, sub_link = await build_service(session, user, server, plan, final_username)
+                session.add(Order(user_id=user.id, plan_id=plan.id, service_id=service.id, amount_irt=0, payment_method='admin_free', status='paid'))
+                await session.commit()
+            except Exception as e:
+                await session.rollback()
+                await ui_message(message, f'❌ ساخت سرویس روی پنل با خطا مواجه شد:\n{e}', reply_markup=back_main_inline())
+                await state.clear()
+                return
+            await state.clear()
+            await send_service_info(message.bot, message.from_user.id, service.client_username, plan, sub_link)
+            await send_home(message.bot, message.from_user.id, True)
+            return
     if final_username != username:
         username = final_username
         await ui_message(message, f'این یوزرنیم قبلاً استفاده شده بود. یوزرنیم جدید شما: {username}')
@@ -212,7 +234,6 @@ async def buy_username(message: Message, state: FSMContext):
     kb=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text='🏷 اعمال کد تخفیف', callback_data='pay:discount')],
         [InlineKeyboardButton(text='کیف پول', callback_data='pay:wallet'), InlineKeyboardButton(text='کارت به کارت', callback_data='pay:card')],
-        [InlineKeyboardButton(text='🪙 پرداخت کریپتو', callback_data='pay:crypto')],
         [back_button(f'buy:plan:{data["plan_id"]}')]
     ])
     await ui_message(message, 'روش پرداخت را انتخاب کنید:\n\nاگر کد تخفیف دارید، ابتدا روی «اعمال کد تخفیف» بزنید.', reply_markup=kb)
@@ -230,10 +251,9 @@ async def buy_discount_back(callback: CallbackQuery, state: FSMContext):
     kb=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text='🏷 اعمال کد تخفیف', callback_data='pay:discount')],
         [InlineKeyboardButton(text='کیف پول', callback_data='pay:wallet'), InlineKeyboardButton(text='کارت به کارت', callback_data='pay:card')],
-        [InlineKeyboardButton(text='🪙 پرداخت کریپتو', callback_data='pay:crypto')],
         [back_button(f'buy:plan:{data["plan_id"]}')]
     ])
-    await edit_or_answer(callback, 'روش پرداخت را انتخاب کنید:', reply_markup=kb); await callback.answer()
+    await edit_or_answer(callback, 'گزینه پرداخت را انتخاب کنید:', reply_markup=kb); await callback.answer()
 
 @router.message(DiscountInput.code)
 async def buy_discount_apply(message: Message, state: FSMContext):
@@ -249,7 +269,6 @@ async def buy_discount_apply(message: Message, state: FSMContext):
     await state.set_state(BuyFlow.payment_method)
     kb=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text='کیف پول', callback_data='pay:wallet'), InlineKeyboardButton(text='کارت به کارت', callback_data='pay:card')],
-        [InlineKeyboardButton(text='🪙 پرداخت کریپتو', callback_data='pay:crypto')],
         [back_button(f'buy:plan:{data["plan_id"]}')]
     ])
     await ui_message(message, f'✅ کد تخفیف اعمال شد.\n\nمبلغ قبلی: {plan.price_irt:,} تومان\nمبلغ جدید: {final:,} تومان\n\nحالا روش پرداخت را انتخاب کنید:', reply_markup=kb)
@@ -354,6 +373,11 @@ async def buy_receipt(message: Message, state: FSMContext):
         plan=await session.get(Plan, order.plan_id); server=await session.get(Server, plan.server_id)
         await session.commit()
     kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='✅ تایید رسید', callback_data=f'order:approve:{data["order_id"]}')],[InlineKeyboardButton(text='❌ رد رسید', callback_data=f'order:reject:{data["order_id"]}')]])
+    discount_code = None
+    if order.payment_method and ':discount:' in order.payment_method:
+        discount_code = order.payment_method.split(':discount:', 1)[1]
+    original_amount = int(plan.price_irt or 0)
+    discount_info = f'🏷 کد تخفیف: {discount_code}\n💵 مبلغ نهایی: {order.amount_irt:,} تومان\n' if discount_code else ''
     caption = (
         f'🧾 رسید سفارش #{data["order_id"]}\n'
         f'━━━━━━━━━━━━━━\n'
@@ -362,7 +386,8 @@ async def buy_receipt(message: Message, state: FSMContext):
         f'🆔 یوزرنیم تلگرام: {message.from_user.username or "ندارد"}\n\n'
         f'👥 یوزرنیم سرویس: {data.get("username")}\n'
         f'📦 پلن: {plan.title}\n'
-        f'💰 مبلغ: {order.amount_irt:,} تومان\n'
+        f'💰 مبلغ: {original_amount:,} تومان\n'
+        f'{discount_info}'
         f'🖥 سرور: {server.name}\n'
         f'━━━━━━━━━━━━━━\n'
         f'لطفاً رسید را بررسی کنید.'

@@ -12,7 +12,7 @@ BTN_ADMIN = 'مدیریت ربات ⚙️'
 BTN_ACCEPT_RULES = '✅ قوانین را قبول دارم'
 BTN_WALLET_TOPUP = 'شارژ کردن کیف پول 💳'
 
-BTN_SERVERS = 'مدیریت سرورها 🖥'
+BTN_SERVERS = 'مدیریت سرور 🖥'
 BTN_CATEGORIES = 'مدیریت دسته‌ها 🗂'
 BTN_PLANS = 'مدیریت پلن‌های فروش 📋'
 BTN_DISCOUNTS = 'کد تخفیف 🏷'
@@ -101,7 +101,8 @@ def admin_panel_inline() -> InlineKeyboardMarkup:
 
 def sales_section_inline() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=BTN_CATEGORIES, callback_data=CB_CATEGORIES), InlineKeyboardButton(text=BTN_PLANS, callback_data=CB_PLANS)],
+        [InlineKeyboardButton(text=BTN_SERVERS, callback_data=CB_SERVERS), InlineKeyboardButton(text=BTN_CATEGORIES, callback_data=CB_CATEGORIES)],
+        [InlineKeyboardButton(text=BTN_PLANS, callback_data=CB_PLANS)],
         [InlineKeyboardButton(text=BTN_PAYG, callback_data=CB_PAYG), InlineKeyboardButton(text=BTN_PAYMENT_CHANNEL, callback_data=CB_PAYMENT_CHANNEL)],
         [InlineKeyboardButton(text=BTN_DISCOUNTS, callback_data=CB_DISCOUNTS)],
         [back_button(CB_BACK_ADMIN)],

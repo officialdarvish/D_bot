@@ -58,6 +58,16 @@ async def save_category(message: Message, state: FSMContext):
     await state.clear(); await ui_message(message, '✅ دسته ذخیره شد.', reply_markup=await categories_kb())
 
 @router.callback_query(F.data.startswith('cat:delete:'))
+async def delete_category_ask(callback: CallbackQuery):
+    if not admin(callback.from_user.id): return
+    cid=int(callback.data.split(':')[-1])
+    kb=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='✅ بله، حذف شود', callback_data=f'cat:delete_confirm:{cid}')],
+        [back_button('admin:categories')],
+    ])
+    await edit_or_answer(callback, '⚠️ مطمئنی می‌خواهی این دسته حذف شود؟\nپلن‌ها و سفارش‌های مرتبط با این دسته هم حذف می‌شوند.', reply_markup=kb); await callback.answer()
+
+@router.callback_query(F.data.startswith('cat:delete_confirm:'))
 async def delete_category(callback: CallbackQuery):
     if not admin(callback.from_user.id): return
     cid=int(callback.data.split(':')[-1])

@@ -14,6 +14,7 @@ from app.bot.states.admin_states import TestAccountConfig, PaymentCardConfig, Pa
 from app.bot.keyboards.common import BTN_USERS, BTN_PAYMENT_CHANNEL, BTN_RULES, BTN_PAYG, BTN_BUTTONS, BTN_BROADCAST, BTN_DISCOUNTS, CB_USERS, CB_PAYMENT_CHANNEL, CB_RULES, CB_PAYG, CB_BUTTONS, CB_BROADCAST, CB_DISCOUNTS, CB_BACKUP, CB_RESTORE, back_button, back_admin_inline, main_menu_inline
 from app.database.defaults import get_setting_value, set_setting_value, WELCOME_TEXT_DEFAULT, RULES_TEXT_DEFAULT
 from app.bot.utils import edit_or_answer, ui_message, ui_callback_message, ui_page
+from app.services.xui_service import XuiService
 
 router = Router()
 def admin(uid): return is_owner(uid)
@@ -170,6 +171,16 @@ async def paycard_toggle(callback: CallbackQuery):
     await paycard_detail(callback)
 
 @router.callback_query(F.data.startswith('paycard:delete:'))
+async def paycard_delete_ask(callback: CallbackQuery):
+    if not admin(callback.from_user.id): return
+    cid=int(callback.data.split(':')[-1])
+    kb=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='✅ بله، کارت حذف شود', callback_data=f'paycard:delete_confirm:{cid}')],
+        [back_button(f'paycard:detail:{cid}')],
+    ])
+    await edit_or_answer(callback, '⚠️ مطمئنی می‌خواهی این کارت حذف شود؟', reply_markup=kb); await callback.answer()
+
+@router.callback_query(F.data.startswith('paycard:delete_confirm:'))
 async def paycard_delete(callback: CallbackQuery):
     if not admin(callback.from_user.id): return
     cid=int(callback.data.split(':')[-1])
@@ -459,7 +470,6 @@ async def test_config_text() -> str:
 def test_config_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text='🖥 تغییر سرور', callback_data='testcfg:server')],
-        [InlineKeyboardButton(text='🔢 تغییر Inbound', callback_data='testcfg:inbounds')],
         [InlineKeyboardButton(text='💾 تغییر حجم', callback_data='testcfg:volume')],
         [InlineKeyboardButton(text='📅 تغییر مدت', callback_data='testcfg:duration')],
         [InlineKeyboardButton(text='♻️ ریست دریافت‌کنندگان تست', callback_data='testcfg:reset_all')],
@@ -525,9 +535,34 @@ async def test_config_server_start(callback: CallbackQuery, state: FSMContext):
 async def test_config_server_pick(callback: CallbackQuery):
     if not admin(callback.from_user.id): return
     sid = callback.data.split(':')[-1]
+    inbound_ids = []
+    async with SessionLocal() as session:
+        server = await session.get(Server, int(sid)) if str(sid).isdigit() else None
+        if server and server.server_type == 'xui':
+            try:
+                ok, rows = await XuiService().test_server(server)
+                if ok:
+                    for row in rows or []:
+                        try:
+                            iid = int(row.get('id')) if isinstance(row, dict) else int(row)
+                        except Exception:
+                            continue
+                        if iid > 0 and iid not in inbound_ids:
+                            inbound_ids.append(iid)
+            except Exception:
+                inbound_ids = []
+            if not inbound_ids:
+                for item in ((server.meta or {}).get('inbound_ids') or []):
+                    try:
+                        iid = int(item.get('id') if isinstance(item, dict) else item)
+                    except Exception:
+                        continue
+                    if iid > 0 and iid not in inbound_ids:
+                        inbound_ids.append(iid)
     await set_value('test_account_server_id', sid)
+    await set_value('test_account_inbound_ids', ','.join(str(i) for i in inbound_ids))
     await edit_or_answer(callback, await test_config_text(), reply_markup=test_config_kb())
-    await callback.answer('سرور اکانت تست ذخیره شد.')
+    await callback.answer('سرور اکانت تست ذخیره شد و همه Inboundها خودکار اضافه شدند.')
 
 @router.callback_query(F.data.in_({'testcfg:inbounds','testcfg:volume','testcfg:duration'}))
 async def test_config_field_start(callback: CallbackQuery, state: FSMContext):
@@ -1013,6 +1048,16 @@ async def discount_edit_user_save(message: Message, state: FSMContext):
     await state.clear(); await ui_message(message, '✅ محدودیت هر کاربر تغییر کرد.', reply_markup=discounts_kb())
 
 @router.callback_query(F.data.startswith('discount:delete:'))
+async def discount_delete_ask(callback: CallbackQuery):
+    if not admin(callback.from_user.id): return
+    did = int(callback.data.split(':')[-1])
+    kb=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='✅ بله، کد حذف شود', callback_data=f'discount:delete_confirm:{did}')],
+        [back_button(f'discount:detail:{did}')],
+    ])
+    await edit_or_answer(callback, '⚠️ مطمئنی می‌خواهی این کد تخفیف حذف شود؟', reply_markup=kb); await callback.answer()
+
+@router.callback_query(F.data.startswith('discount:delete_confirm:'))
 async def discount_delete(callback: CallbackQuery):
     if not admin(callback.from_user.id): return
     did = int(callback.data.split(':')[-1])

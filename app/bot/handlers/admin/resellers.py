@@ -50,7 +50,7 @@ async def send_reseller_home(bot, chat_id: int, is_admin_user: bool = False) -> 
 def admin_reseller_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text='لیست نماینده‌ها 👥', callback_data='resadmin:list'), InlineKeyboardButton(text='درخواست‌های دسترسی نمایندگی 🔐', callback_data='resadmin:access_requests')],
-        [InlineKeyboardButton(text='درخواست‌های شارژ حجم 🧾', callback_data='resadmin:requests'), InlineKeyboardButton(text='➕ / ➖ افزایش یا کاهش حجم نماینده', callback_data='resadmin:adjust_volume')],
+        [InlineKeyboardButton(text='درخواست‌های شارژ حجم 🧾', callback_data='resadmin:requests')],
         [InlineKeyboardButton(text='مدیریت سرورهای نماینده 🖥', callback_data='resadmin:servers'), InlineKeyboardButton(text='مدیریت بسته‌های نمایندگی 📦', callback_data='resadmin:packages')],
         [InlineKeyboardButton(text='اضافه کردن بسته نمایندگی ➕', callback_data='resadmin:add_package')],
         [back_button('back:admin')],
@@ -114,7 +114,7 @@ async def reseller_detail(callback: CallbackQuery):
     )
     kb=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text='تمدید روز نمایندگی ⏳', callback_data=f'resadmin:extend:{r.id}')],
-        [InlineKeyboardButton(text='➕ / ➖ افزایش یا کاهش حجم', callback_data=f'resadmin:adjust_volume_id:{u.telegram_id if u else 0}')],
+        [InlineKeyboardButton(text='افزایش /کاهش حجم', callback_data=f'resadmin:adjust_volume_id:{u.telegram_id if u else 0}')],
         [InlineKeyboardButton(text='حذف نماینده 🗑', callback_data=f'resadmin:delete:{r.id}')],
         [back_button('resadmin:list')],
     ])
@@ -143,6 +143,16 @@ async def reseller_extend_save(message: Message, state: FSMContext):
     await state.clear(); await ui_message(message,'✅ اعتبار نماینده تمدید شد.', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(f'resadmin:detail:{rid}')]]))
 
 @router.callback_query(F.data.startswith('resadmin:delete:'))
+async def reseller_delete_ask(callback: CallbackQuery):
+    if not admin(callback.from_user.id): return
+    rid=int(callback.data.split(':')[-1])
+    kb=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='✅ بله، دسترسی حذف/غیرفعال شود', callback_data=f'resadmin:delete_confirm:{rid}')],
+        [back_button(f'resadmin:detail:{rid}')],
+    ])
+    await edit_or_answer(callback, '⚠️ مطمئنی می‌خواهی دسترسی این نماینده حذف/غیرفعال شود؟\nسرویس‌های ساخته‌شده دست‌نخورده می‌مانند.', reply_markup=kb); await callback.answer()
+
+@router.callback_query(F.data.startswith('resadmin:delete_confirm:'))
 async def reseller_delete(callback: CallbackQuery):
     if not admin(callback.from_user.id): return
     rid=int(callback.data.split(':')[-1])
@@ -492,7 +502,7 @@ async def reseller_server_confirm(callback: CallbackQuery, state: FSMContext):
         items = await all_reseller_servers(session)
     await state.clear()
     await edit_or_answer(callback, f'{success_text}\n\n🖥 سرور: {data["name"]}\n🆔 ID: {server_id}\n🔢 اینباندها: {", ".join(map(str, inbound_ids))}', reply_markup=None)
-    await callback.message.answer('🖥 مدیریت سرورهای نماینده', reply_markup=reseller_servers_keyboard(items))
+    await callback.message.answer('🏠 صفحه اصلی', reply_markup=main_menu_inline(True))
     await callback.answer()
 
 @router.callback_query(F.data.startswith('resadmin:server_detail:'))
@@ -554,9 +564,19 @@ async def reseller_server_toggle(callback: CallbackQuery):
             await session.commit()
     async with SessionLocal() as session:
         items=await all_reseller_servers(session)
-    await edit_or_answer(callback, '✅ وضعیت سرور بروزرسانی شد.', reply_markup=reseller_servers_keyboard(items)); await callback.answer()
+    await edit_or_answer(callback, '✅ وضعیت سرور بروزرسانی شد.', reply_markup=reseller_servers_keyboard(items)); await callback.message.answer('🏠 صفحه اصلی', reply_markup=main_menu_inline(True)); await callback.answer()
 
 @router.callback_query(F.data.startswith('resadmin:server_delete:'))
+async def reseller_server_delete_ask(callback: CallbackQuery):
+    if not admin(callback.from_user.id): return
+    sid=int(callback.data.split(':')[-1])
+    kb=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='✅ بله، سرور نماینده حذف شود', callback_data=f'resadmin:server_delete_confirm:{sid}')],
+        [back_button(f'resadmin:server_detail:{sid}')],
+    ])
+    await edit_or_answer(callback, '⚠️ مطمئنی می‌خواهی این سرور نماینده حذف/غیرفعال شود؟', reply_markup=kb); await callback.answer()
+
+@router.callback_query(F.data.startswith('resadmin:server_delete_confirm:'))
 async def reseller_server_delete(callback: CallbackQuery):
     if not admin(callback.from_user.id): return
     sid=int(callback.data.split(':')[-1])
@@ -571,7 +591,7 @@ async def reseller_server_delete(callback: CallbackQuery):
             await session.delete(s)
         await session.commit()
         items=await all_reseller_servers(session)
-    await edit_or_answer(callback, '✅ سرور حذف/غیرفعال شد.', reply_markup=reseller_servers_keyboard(items)); await callback.answer()
+    await edit_or_answer(callback, '✅ سرور حذف/غیرفعال شد.', reply_markup=reseller_servers_keyboard(items)); await callback.message.answer('🏠 صفحه اصلی', reply_markup=main_menu_inline(True)); await callback.answer()
 
 @router.callback_query(F.data == 'resadmin:adjust_volume')
 async def reseller_adjust_volume_start(callback: CallbackQuery, state: FSMContext):
@@ -699,12 +719,17 @@ async def reseller_access_approve(callback: CallbackQuery):
     try:
         await callback.message.bot.send_message(
             u.telegram_id,
-            '✅ درخواست نمایندگی شما تایید شد.\n\nمنوی شما بروزرسانی شد؛ از این به بعد به‌جای «درخواست نمایندگی»، دکمه «منو نمایندگی» را می‌بینید.',
-            reply_markup=main_menu_inline(False, True, True)
+            '✅ درخواست نمایندگی شما تایید شد.\n\nمنوی شما بروزرسانی شد؛ از این به بعد به‌جای «درخواست نمایندگی»، دکمه «منو نمایندگی» را می‌بینید.'
+        )
+        await callback.message.bot.send_message(
+            u.telegram_id,
+            await get_setting_value('welcome_text', WELCOME_TEXT_DEFAULT),
+            reply_markup=main_menu_inline(False, True, True),
         )
     except Exception:
         pass
     await edit_or_answer(callback, '✅ دسترسی نمایندگی تایید شد و قفل صفحه برای کاربر باز شد.', reply_markup=admin_reseller_menu())
+    await callback.message.answer('🏠 صفحه اصلی', reply_markup=main_menu_inline(True))
     await callback.answer('تایید شد.', show_alert=True)
 
 @router.callback_query(F.data.startswith('resadmin:access_reject:'))
@@ -731,6 +756,7 @@ async def reseller_access_reject(callback: CallbackQuery):
     except Exception:
         pass
     await edit_or_answer(callback, '❌ درخواست نمایندگی رد شد.', reply_markup=admin_reseller_menu())
+    await callback.message.answer('🏠 صفحه اصلی', reply_markup=main_menu_inline(True))
     await callback.answer('رد شد.', show_alert=True)
 
 @router.callback_query(F.data == 'resadmin:requests')

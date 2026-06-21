@@ -2,26 +2,130 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select, update, delete
-from app.core.config import settings
 from app.core.roles import is_owner
-from app.core.security import encrypt_text
+from app.core.security import encrypt_text, decrypt_text
 from app.database.session import SessionLocal
 from app.database.models import Server, Plan, ServerCategory, ClientService, PaymentCard, Order, AntiSharingViolation, PaygUsageLog, TestAccountUsage
 from app.bot.states.admin_states import AddServer
 from app.services.xui_service import XuiService
-from app.bot.keyboards.common import CB_SERVERS, back_button
-from app.bot.utils import edit_or_answer, ui_message, ui_callback_message, state_prompt, delete_state_message
+from app.bot.keyboards.common import CB_SERVERS, back_button, main_menu_inline
+from app.bot.utils import edit_or_answer, ui_message, ui_callback_message
 
 router = Router()
 def admin(uid): return is_owner(uid)
 
 def status_text(s): return '🟢 فعال' if s.is_active else '🔴 غیر فعال'
 def type_text(t): return 'سنایی' if t == 'xui' else 'OpenVPN'
+def is_public_server(s: Server | None) -> bool:
+    return bool(s) and (s.meta or {}).get('scope') != 'reseller'
+
+def _clean_inbound_ids(value) -> list[int]:
+    ids: list[int] = []
+    items = list(value) if isinstance(value, (list, tuple, set)) else ([] if value is None else [value])
+    for item in items:
+        if isinstance(item, dict):
+            item = item.get('id') or item.get('inbound_id') or item.get('inboundId')
+        try:
+            iid = int(item)
+        except Exception:
+            continue
+        if iid > 0 and iid not in ids:
+            ids.append(iid)
+    return ids
+
+def server_inbounds(server: Server | None) -> list[int]:
+    return _clean_inbound_ids((server.meta or {}).get('inbound_ids') if server else [])
+
+def _chunked_ids_text(ids: list[int], per_line: int = 4) -> str:
+    ids = _clean_inbound_ids(ids or [])
+    if not ids:
+        return '└ -'
+    return '\n'.join('└ ' + ' • '.join(map(str, ids[i:i + per_line])) for i in range(0, len(ids), per_line))
+
+def _keep_or_new(value: str, old: str | None) -> str:
+    value = (value or '').strip()
+    return old if value == '-' and old is not None else value
+
+def _split_panel_url(server: Server | None) -> tuple[str, str]:
+    if not server:
+        return '', '/'
+    meta = server.meta or {}
+    base = (meta.get('panel_base_url') or '').strip()
+    path = (meta.get('panel_path') or '').strip()
+    if base:
+        return base.rstrip('/'), path or '/'
+    url = (server.panel_url or '').strip().rstrip('/')
+    if not url:
+        return '', '/'
+    try:
+        from urllib.parse import urlsplit
+        parsed = urlsplit(url)
+        base = f'{parsed.scheme}://{parsed.netloc}' if parsed.scheme and parsed.netloc else url
+        return base.rstrip('/'), parsed.path or '/'
+    except Exception:
+        return url, '/'
+
+def _compose_panel_url(base_url: str, panel_path: str) -> str:
+    base = (base_url or '').strip().rstrip('/')
+    path = (panel_path or '').strip() or '/'
+    if path == '-': path = '/'
+    if not path.startswith('/'): path = '/' + path
+    if path != '/' and not path.endswith('/'): path += '/'
+    return f'{base}{path}'
+
+def _server_summary(data: dict, action_text: str = 'اضافه کردن') -> str:
+    inbound_ids = _clean_inbound_ids(data.get('inbound_ids') or [])
+    panel_url = _compose_panel_url(data.get('panel_url', ''), data.get('panel_path', '/'))
+    password_preview = '••••••••' if data.get('password') else '-'
+    return (
+        '🖥 پیش‌نمایش سرور فروش\n\n'
+        f'🏷 نام سرور\n└ {data.get("name") or "-"}\n\n'
+        f'🌐 آدرس پنل\n└ {data.get("panel_url") or "-"}\n\n'
+        f'📂 Path پنل\n└ {data.get("panel_path") or "/"}\n\n'
+        f'🔗 آدرس نهایی\n└ {panel_url or "-"}\n\n'
+        f'👤 نام کاربری\n└ {data.get("username") or "-"}\n\n'
+        f'🔐 رمز عبور\n└ {password_preview}\n\n'
+        f'📡 لینک ساب\n└ {data.get("subscription_url") or "-"}\n\n'
+        f'📥 Inbounds\n{_chunked_ids_text(inbound_ids)}\n\n'
+        '━━━━━━━━━━━━━━━\n\n'
+        'لطفاً اطلاعات را بررسی کنید.\n'
+        f'اگر درست است روی «✅ {action_text}» بزنید.\n'
+        'اگر نیاز به اصلاح دارد روی «❌ اصلاح اطلاعات» بزنید.'
+    )
+
+def _server_confirm_kb(mode: str) -> InlineKeyboardMarkup:
+    label = 'تغییر' if mode == 'edit' else 'اضافه کردن'
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f'✅ {label}', callback_data='server:confirm')],
+        [InlineKeyboardButton(text='❌ اصلاح اطلاعات', callback_data='server:restart')],
+        [back_button('admin:servers')],
+    ])
+
+async def _fetch_panel_inbounds(data: dict) -> tuple[bool, list[int], str]:
+    if data.get('server_type') != 'xui':
+        return True, [], ''
+    server = Server(
+        name=data.get('name') or 'preview', server_type='xui',
+        panel_url=_compose_panel_url(data.get('panel_url', ''), data.get('panel_path', '/')),
+        subscription_url=data.get('subscription_url'), username=data.get('username') or '',
+        password_encrypted=encrypt_text(data.get('password') or ''), is_active=True,
+        meta={'scope': 'public', 'panel_base_url': data.get('panel_url'), 'panel_path': data.get('panel_path')},
+    )
+    try:
+        ok, rows = await XuiService().test_server(server)
+    except Exception as exc:
+        return False, [], str(exc)
+    if not ok:
+        return False, [], 'Login/List inbounds failed'
+    ids = _clean_inbound_ids([r.get('id') for r in (rows or []) if isinstance(r, dict)])
+    if not ids:
+        return False, [], 'هیچ Inbound فعالی از پنل دریافت نشد.'
+    return True, ids, ''
 
 async def servers_keyboard():
     async with SessionLocal() as session:
         all_servers = (await session.execute(select(Server).order_by(Server.id.desc()))).scalars().all()
-    servers = [srv for srv in all_servers if (srv.meta or {}).get('scope') != 'reseller']
+    servers = [srv for srv in all_servers if is_public_server(srv)]
     rows = [[InlineKeyboardButton(text='سرور', callback_data='noop'), InlineKeyboardButton(text='نوعیت', callback_data='noop'), InlineKeyboardButton(text='تنظیمات', callback_data='noop'), InlineKeyboardButton(text='وضعیت', callback_data='noop')]]
     for s in servers:
         rows.append([
@@ -30,87 +134,170 @@ async def servers_keyboard():
             InlineKeyboardButton(text='⚙️', callback_data=f'server:detail:{s.id}'),
             InlineKeyboardButton(text=status_text(s), callback_data=f'server:toggle:{s.id}'),
         ])
-    rows.append([InlineKeyboardButton(text='ثبت سرور XUI ➕', callback_data='server:add:xui'), InlineKeyboardButton(text='ثبت سرور OpenVPN ➕', callback_data='server:add:openvpn')])
-    rows.append([back_button('back:admin')])
+    rows.append([InlineKeyboardButton(text='ثبت سرور جدید ➕', callback_data='server:add:xui')])
+    rows.append([back_button('admin:sales_section')])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 @router.callback_query(F.data == 'noop')
 async def noop(callback: CallbackQuery): await callback.answer()
 
 @router.callback_query(F.data == CB_SERVERS)
-async def servers_menu(callback: CallbackQuery):
+async def servers_menu(callback: CallbackQuery, state: FSMContext):
     if not admin(callback.from_user.id): return
-    await edit_or_answer(callback, '✅ مدیریت سرورها:', reply_markup=await servers_keyboard()); await callback.answer()
+    await state.clear()
+    await edit_or_answer(callback, '🛒 بخش فروش > مدیریت سرور', reply_markup=await servers_keyboard()); await callback.answer()
+
+async def _start_server_questions(callback: CallbackQuery, state: FSMContext, mode: str = 'add', server: Server | None = None, server_type: str = 'xui'):
+    base, path = _split_panel_url(server)
+    old_password = None
+    if server:
+        try: old_password = decrypt_text(server.password_encrypted)
+        except Exception: old_password = None
+    await state.clear()
+    await state.update_data(
+        mode=mode, server_type=server.server_type if server else server_type,
+        edit_server_id=server.id if server else None,
+        old_name=server.name if server else None,
+        old_panel_url=base or None,
+        old_panel_path=path or '/',
+        old_subscription_url=server.subscription_url if server else None,
+        old_username=server.username if server else None,
+        old_password=old_password,
+        old_inbound_ids=server_inbounds(server) if server else [],
+    )
+    await state.set_state(AddServer.name)
+    await edit_or_answer(callback, 'نام سرور فروش را وارد کنید:', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]]))
+    await callback.answer()
 
 @router.callback_query(F.data.startswith('server:add:'))
 async def add_server_type(callback: CallbackQuery, state: FSMContext):
     if not admin(callback.from_user.id): return
-    await state.clear()
-    await state.update_data(server_type=callback.data.split(':')[-1], mode='add')
-    await state.set_state(AddServer.name)
-    sent = await ui_callback_message(callback, 'نام سرور را وارد کنید. این نام هنگام خرید به کاربر نمایش داده می‌شود:', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]])); await state.update_data(last_bot_message_id=sent.message_id); await callback.answer()
+    await _start_server_questions(callback, state, 'add', None, callback.data.split(':')[-1])
 
 @router.message(AddServer.name)
 async def server_name(message: Message, state: FSMContext):
-    await state.update_data(name=message.text.strip())
-    await state.set_state(AddServer.panel_url)
-    await state_prompt(message, state, 'آدرس پنل همراه با path را وارد کنید:', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]]))
+    if not admin(message.from_user.id): return
+    data = await state.get_data()
+    name = _keep_or_new(message.text or '', data.get('old_name'))
+    if not name:
+        await ui_message(message, 'نام سرور نمی‌تواند خالی باشد.'); return
+    await state.update_data(name=name); await state.set_state(AddServer.panel_url)
+    await ui_message(message, 'آدرس اصلی پنل را بدون path وارد کنید:\nمثال: https://domain.com یا https://domain.com:2053', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]]))
 
 @router.message(AddServer.panel_url)
 async def server_url(message: Message, state: FSMContext):
+    if not admin(message.from_user.id): return
     data = await state.get_data()
-    if data.get('mode') == 'edit_url':
-        async with SessionLocal() as session:
-            s = await session.get(Server, int(data['server_id']))
-            if s: s.panel_url = message.text.strip(); await session.commit()
-        await state.clear(); await ui_message(message, '✅ آدرس پنل تغییر کرد.', reply_markup=await servers_keyboard()); return
-    await state.update_data(panel_url=message.text.strip())
-    await state.set_state(AddServer.subscription_url)
-    await state_prompt(message, state, 'لینک ساب‌اسکریپشن را وارد کنید. اگر داخل لینک توکن ثابت نیست، انتهای لینک را بدون توکن بفرستید. مثال: https://sub.domain.com/subb/', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]]))
+    panel_url = _keep_or_new(message.text or '', data.get('old_panel_url'))
+    if not panel_url.startswith(('http://', 'https://')):
+        await ui_message(message, '❌ آدرس پنل باید با http:// یا https:// شروع شود. دوباره وارد کنید:'); return
+    await state.update_data(panel_url=panel_url.rstrip('/')); await state.set_state(AddServer.panel_path)
+    await ui_message(message, 'Path پنل را وارد کنید:\nمثال: /secretpath/ یا /\n\nاگر پنل path ندارد / بفرستید.', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]]))
+
+@router.message(AddServer.panel_path)
+async def server_path(message: Message, state: FSMContext):
+    if not admin(message.from_user.id): return
+    data = await state.get_data()
+    panel_path = _keep_or_new(message.text or '', data.get('old_panel_path') or '/') or '/'
+    if not panel_path.startswith('/'):
+        panel_path = '/' + panel_path
+    if panel_path != '/' and not panel_path.endswith('/'):
+        panel_path += '/'
+    await state.update_data(panel_path=panel_path); await state.set_state(AddServer.subscription_url)
+    await ui_message(message, 'لینک ساب‌اسکریپشن را وارد کنید. مثال:\nhttps://sub.domain.com/subb/', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]]))
+
+@router.message(AddServer.subscription_url)
+async def server_subscription_url(message: Message, state: FSMContext):
+    if not admin(message.from_user.id): return
+    data = await state.get_data()
+    sub = _keep_or_new(message.text or '', data.get('old_subscription_url'))
+    await state.update_data(subscription_url=sub); await state.set_state(AddServer.username)
+    await ui_message(message, 'نام کاربری پنل را وارد کنید:', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]]))
 
 @router.message(AddServer.username)
 async def server_username(message: Message, state: FSMContext):
+    if not admin(message.from_user.id): return
     data = await state.get_data()
-    if data.get('mode') == 'edit_login':
-        await state.update_data(username=message.text.strip())
-        await state.set_state(AddServer.password)
-        await ui_message(message, 'پسورد جدید را وارد کنید:')
-        return
-    await state.update_data(username=message.text.strip())
-    await state.set_state(AddServer.password)
-    await state_prompt(message, state, 'پسورد پنل را وارد کنید:', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]]))
+    username = _keep_or_new(message.text or '', data.get('old_username'))
+    if not username:
+        await ui_message(message, 'نام کاربری نمی‌تواند خالی باشد. دوباره وارد کنید:'); return
+    await state.update_data(username=username); await state.set_state(AddServer.password)
+    await ui_message(message, 'رمز عبور پنل را وارد کنید:', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]]))
 
 @router.message(AddServer.password)
 async def server_password(message: Message, state: FSMContext):
+    if not admin(message.from_user.id): return
     data = await state.get_data()
-    if data.get('mode') == 'edit_login':
-        async with SessionLocal() as session:
-            s = await session.get(Server, int(data['server_id']))
-            if s:
-                s.username = data['username']; s.password_encrypted = encrypt_text(message.text.strip())
-                await session.commit()
-        await state.clear(); await ui_message(message, '✅ اطلاعات ورود تغییر کرد.', reply_markup=await servers_keyboard()); return
-    server = Server(name=data['name'], server_type=data['server_type'], panel_url=data['panel_url'], subscription_url=data.get('subscription_url'), username=data['username'], password_encrypted=encrypt_text(message.text.strip()), is_active=True)
-    ok=True; err=''
-    if server.server_type == 'xui':
-        try:
-            ok, _ = await XuiService().test_server(server)
-        except Exception as e:
-            ok=False; err=str(e)
-    await delete_state_message(message.bot, message.chat.id, state)
-    try:
-        await message.delete()
-    except Exception:
-        pass
+    password = _keep_or_new(message.text or '', data.get('old_password'))
+    if not password:
+        await ui_message(message, 'رمز عبور نمی‌تواند خالی باشد. دوباره وارد کنید:'); return
+    await state.update_data(password=password)
+    data = await state.get_data()
+    ok, inbound_ids, err = await _fetch_panel_inbounds(data)
     if not ok:
-        await state.clear()
-        kb=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]])
-        await ui_message(message, f'❌ ارتباط با پنل موفقیت‌آمیز نبود.\n\nلطفاً آدرس پنل، مسیر مخفی، یوزرنیم و پسورد را بررسی کنید.\n\nجزئیات خطا:\n{err or "Login/List inbounds failed"}', reply_markup=kb)
+        await ui_message(message, f'❌ اتصال به پنل یا دریافت Inboundها ناموفق بود.\n\nدلیل خطا:\n{err}\n\nاطلاعات را بررسی کنید و دوباره اضافه/ویرایش سرور را شروع کنید.', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]]))
+        await state.clear(); return
+    await state.update_data(inbound_ids=inbound_ids)
+    data = await state.get_data()
+    await state.set_state(AddServer.confirm)
+    action_text = 'تغییر' if data.get('mode') == 'edit' else 'اضافه کردن'
+    await ui_message(message, _server_summary(data, action_text), reply_markup=_server_confirm_kb(data.get('mode') or 'add'))
+
+@router.callback_query(F.data == 'server:restart')
+async def server_restart(callback: CallbackQuery, state: FSMContext):
+    if not admin(callback.from_user.id): return
+    data = await state.get_data()
+    sid = data.get('edit_server_id')
+    if data.get('mode') == 'edit' and sid:
+        async with SessionLocal() as session: server = await session.get(Server, int(sid))
+        await _start_server_questions(callback, state, 'edit', server)
         return
+    await _start_server_questions(callback, state, 'add', None, data.get('server_type') or 'xui')
+
+@router.callback_query(F.data == 'server:confirm')
+async def server_confirm(callback: CallbackQuery, state: FSMContext):
+    if not admin(callback.from_user.id): return
+    data = await state.get_data()
+    panel_url_full = _compose_panel_url(data.get('panel_url', ''), data.get('panel_path', '/'))
+    inbound_ids = _clean_inbound_ids(data.get('inbound_ids') or [])
+    server_type = data.get('server_type') or 'xui'
+    server = Server(
+        name=data['name'], server_type=server_type, panel_url=panel_url_full,
+        subscription_url=data.get('subscription_url'), username=data['username'],
+        password_encrypted=encrypt_text(data['password']), is_active=True,
+        meta={'scope': 'public', 'inbound_ids': inbound_ids, 'panel_base_url': data.get('panel_url'), 'panel_path': data.get('panel_path')},
+    )
+    if server_type == 'xui':
+        ok=False; err=''; rows=[]
+        try: ok, rows = await XuiService().test_server(server)
+        except Exception as exc: err=str(exc)
+        if not ok:
+            await edit_or_answer(callback, f'❌ اتصال به پنل فروش ناموفق بود.\n\nدلیل خطا:\n{err or "Login/List inbounds failed"}\n\nاطلاعات را اصلاح کنید و دوباره تایید بزنید.', reply_markup=_server_confirm_kb(data.get('mode') or 'add'))
+            await callback.answer(); return
+        live_ids = _clean_inbound_ids([r.get('id') for r in (rows or []) if isinstance(r, dict)])
+        if not live_ids:
+            await edit_or_answer(callback, '❌ اتصال به پنل موفق بود، اما هیچ Inboundی از پنل دریافت نشد.', reply_markup=_server_confirm_kb(data.get('mode') or 'add'))
+            await callback.answer(); return
+        inbound_ids = live_ids
+        server.meta = {'scope': 'public', 'inbound_ids': inbound_ids, 'panel_base_url': data.get('panel_url'), 'panel_path': data.get('panel_path')}
+    mode = data.get('mode') or 'add'
     async with SessionLocal() as session:
-        session.add(server); await session.commit()
+        if mode == 'edit' and data.get('edit_server_id'):
+            target = await session.get(Server, int(data['edit_server_id']))
+            if not is_public_server(target):
+                await callback.answer('سرور پیدا نشد.', show_alert=True); return
+            target.name = data['name']; target.server_type = server_type; target.panel_url = panel_url_full
+            target.subscription_url = data.get('subscription_url'); target.username = data['username']
+            target.password_encrypted = encrypt_text(data['password'])
+            target.meta = {'scope': 'public', 'inbound_ids': inbound_ids, 'panel_base_url': data.get('panel_url'), 'panel_path': data.get('panel_path')}
+            server_id = target.id; success_text = '✅ اطلاعات سرور فروش با موفقیت تغییر کرد.'
+        else:
+            session.add(server); await session.flush(); server_id = server.id; success_text = '✅ سرور فروش با موفقیت اضافه شد.'
+        await session.commit()
     await state.clear()
-    await ui_message(message, '✅ سرور با موفقیت ثبت شد و اتصال با پنل هم تایید شد.', reply_markup=await servers_keyboard())
+    await edit_or_answer(callback, f'{success_text}\n\n🖥 سرور: {data["name"]}\n🆔 ID: {server_id}\n🔢 اینباندها: {", ".join(map(str, inbound_ids)) if inbound_ids else "-"}', reply_markup=None)
+    await callback.message.answer('🏠 صفحه اصلی', reply_markup=main_menu_inline(True))
+    await callback.answer()
 
 @router.callback_query(F.data.startswith('server:toggle:'))
 async def toggle_server(callback: CallbackQuery):
@@ -118,32 +305,62 @@ async def toggle_server(callback: CallbackQuery):
     sid=int(callback.data.split(':')[-1])
     async with SessionLocal() as session:
         s=await session.get(Server,sid)
-        if s: s.is_active=not s.is_active; await session.commit()
-    await edit_or_answer(callback, '✅ مدیریت سرورها:', reply_markup=await servers_keyboard()); await callback.answer()
+        if is_public_server(s): s.is_active=not s.is_active; await session.commit()
+    await edit_or_answer(callback, '✅ وضعیت سرور بروزرسانی شد.', reply_markup=await servers_keyboard()); await callback.message.answer('🏠 صفحه اصلی', reply_markup=main_menu_inline(True)); await callback.answer()
 
 @router.callback_query(F.data.startswith('server:detail:'))
 async def server_detail(callback: CallbackQuery):
     if not admin(callback.from_user.id): return
     sid=int(callback.data.split(':')[-1])
     async with SessionLocal() as session: s=await session.get(Server,sid)
-    if not s: await callback.answer('سرور پیدا نشد.', show_alert=True); return
+    if not is_public_server(s): await callback.answer('سرور پیدا نشد.', show_alert=True); return
+    ids=server_inbounds(s); base, path = _split_panel_url(s)
     kb=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text='♻️ تغییر آدرس پنل', callback_data=f'server:edit_url:{s.id}')],
-        [InlineKeyboardButton(text='🔗 تغییر لینک ساب', callback_data=f'server:edit_sub:{s.id}')],
-        [InlineKeyboardButton(text='☀️ تغییر اطلاعات ورود', callback_data=f'server:edit_login:{s.id}')],
-        [InlineKeyboardButton(text='✂️ حذف سرور', callback_data=f'server:delete:{s.id}')],
+        [InlineKeyboardButton(text='✏️ تغییر اطلاعات لاگین', callback_data=f'server:edit:{s.id}')],
+        [InlineKeyboardButton(text='🔄 تغییر وضعیت', callback_data=f'server:toggle:{s.id}')],
+        [InlineKeyboardButton(text='🗑 حذف سرور', callback_data=f'server:delete:{s.id}')],
         [back_button('admin:servers')],
     ])
-    text=f'✅ مدیریت سرورها:\n\n❕ نام سرور: {s.name}\n⚡️ آدرس پنل: {s.panel_url}\n🔗 لینک ساب: {s.subscription_url or "ثبت نشده"}\nوضعیت: {status_text(s)}'
+    st = '✅ فعال' if s.is_active else '❌ غیرفعال'
+    text=(
+        '🖥 اطلاعات سرور فروش\n\n'
+        f'🏷 نام سرور\n└ {s.name}\n\n'
+        f'🌐 آدرس پنل\n└ {base or s.panel_url}\n\n'
+        f'📂 Path پنل\n└ {path}\n\n'
+        f'🔗 آدرس نهایی\n└ {s.panel_url}\n\n'
+        f'👤 نام کاربری\n└ {s.username}\n\n'
+        f'📡 لینک ساب\n└ {s.subscription_url or "-"}\n\n'
+        f'⚙️ وضعیت\n└ {st}\n\n'
+        f'📥 Inbounds\n{_chunked_ids_text(ids)}'
+    )
     await edit_or_answer(callback, text, reply_markup=kb); await callback.answer()
 
+@router.callback_query(F.data.startswith('server:edit:'))
+async def server_edit(callback: CallbackQuery, state: FSMContext):
+    if not admin(callback.from_user.id): return
+    sid=int(callback.data.split(':')[-1])
+    async with SessionLocal() as session: s=await session.get(Server,sid)
+    if not is_public_server(s): await callback.answer('سرور پیدا نشد.', show_alert=True); return
+    await _start_server_questions(callback, state, 'edit', s)
+
 @router.callback_query(F.data.startswith('server:delete:'))
+async def delete_server_ask(callback: CallbackQuery):
+    if not admin(callback.from_user.id): return
+    if callback.data.startswith('server:delete_confirm:'): return
+    sid=int(callback.data.split(':')[-1])
+    kb=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='✅ بله، سرور حذف شود', callback_data=f'server:delete_confirm:{sid}')],
+        [back_button(f'server:detail:{sid}')],
+    ])
+    await edit_or_answer(callback, '⚠️ مطمئنی می‌خواهی این سرور حذف شود؟\nتمام پلن‌ها، کارت‌ها و رکورد سرویس‌های مربوط به این سرور از دیتابیس حذف می‌شوند.', reply_markup=kb); await callback.answer()
+
+@router.callback_query(F.data.startswith('server:delete_confirm:'))
 async def delete_server(callback: CallbackQuery):
     if not admin(callback.from_user.id): return
     sid=int(callback.data.split(':')[-1])
     async with SessionLocal() as session:
         s=await session.get(Server,sid)
-        if s:
+        if is_public_server(s):
             plan_ids=[p.id for p in (await session.execute(select(Plan).where(Plan.server_id == sid))).scalars().all()]
             service_ids=[cs.id for cs in (await session.execute(select(ClientService).where(ClientService.server_id == sid))).scalars().all()]
             if plan_ids:
@@ -157,41 +374,5 @@ async def delete_server(callback: CallbackQuery):
             await session.execute(delete(ClientService).where(ClientService.server_id == sid))
             await session.execute(delete(Plan).where(Plan.server_id == sid))
             await session.execute(delete(ServerCategory).where(ServerCategory.server_id == sid))
-            await session.delete(s)
-            await session.commit()
-    await edit_or_answer(callback, '✅ سرور به‌صورت کامل حذف شد.', reply_markup=await servers_keyboard()); await callback.answer()
-
-@router.callback_query(F.data.startswith('server:edit_url:'))
-async def edit_url(callback: CallbackQuery, state: FSMContext):
-    if not admin(callback.from_user.id): return
-    await state.clear(); await state.update_data(mode='edit_url', server_id=int(callback.data.split(':')[-1]))
-    await state.set_state(AddServer.panel_url)
-    await ui_callback_message(callback, 'آدرس جدید پنل را وارد کنید:', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]])); await callback.answer()
-
-@router.callback_query(F.data.startswith('server:edit_login:'))
-async def edit_login(callback: CallbackQuery, state: FSMContext):
-    if not admin(callback.from_user.id): return
-    await state.clear(); await state.update_data(mode='edit_login', server_id=int(callback.data.split(':')[-1]))
-    await state.set_state(AddServer.username)
-    await ui_callback_message(callback, 'یوزرنیم جدید را وارد کنید:', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]])); await callback.answer()
-
-
-@router.callback_query(F.data.startswith('server:edit_sub:'))
-async def edit_sub_url(callback: CallbackQuery, state: FSMContext):
-    if not admin(callback.from_user.id): return
-    await state.clear(); await state.update_data(mode='edit_sub', server_id=int(callback.data.split(':')[-1]))
-    await state.set_state(AddServer.subscription_url)
-    await ui_callback_message(callback, 'لینک جدید ساب‌اسکریپشن را وارد کنید:', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]])); await callback.answer()
-
-# override subscription handler for edit mode is handled here by highest matching state
-@router.message(AddServer.subscription_url)
-async def server_subscription_url_editable(message: Message, state: FSMContext):
-    data = await state.get_data()
-    if data.get('mode') == 'edit_sub':
-        async with SessionLocal() as session:
-            s = await session.get(Server, int(data['server_id']))
-            if s: s.subscription_url = message.text.strip(); await session.commit()
-        await state.clear(); await ui_message(message, '✅ لینک ساب تغییر کرد.', reply_markup=await servers_keyboard()); return
-    await state.update_data(subscription_url=message.text.strip())
-    await state.set_state(AddServer.username)
-    await state_prompt(message, state, 'یوزرنیم پنل را وارد کنید:', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]]))
+            await session.delete(s); await session.commit()
+    await edit_or_answer(callback, '✅ سرور به‌صورت کامل حذف شد.', reply_markup=await servers_keyboard()); await callback.message.answer('🏠 صفحه اصلی', reply_markup=main_menu_inline(True)); await callback.answer()

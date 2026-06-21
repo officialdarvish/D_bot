@@ -27,7 +27,19 @@ class XuiService:
 
     async def create_client_on_plan(self, server: Server, plan: Plan, email: str):
         payload = XuiClientPayload(email=email, total_gb=plan.volume_gb, expire_days=plan.duration_days)
-        return await self.create_client_on_inbounds(server, [int(x) for x in plan.inbound_ids], payload)
+        raw_ids = list(plan.inbound_ids or [])
+        if not raw_ids:
+            meta = getattr(server, 'meta', None) or {}
+            raw_ids = meta.get('inbound_ids') or []
+        inbound_ids = []
+        for item in raw_ids:
+            try:
+                iid = int(item.get('id') if isinstance(item, dict) else item)
+            except Exception:
+                continue
+            if iid and iid not in inbound_ids:
+                inbound_ids.append(iid)
+        return await self.create_client_on_inbounds(server, inbound_ids, payload)
 
     async def create_client_on_inbounds(self, server: Server, inbound_ids: list[int], payload: XuiClientPayload):
         xui = XUIClient(server.panel_url, server.username, decrypt_text(server.password_encrypted))
