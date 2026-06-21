@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-d_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-dbot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+  bot:
+    image: ${DOCKER_IMAGE:-officialdarvish/d_bot:latest}
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+    command: python -m app.main
+  api:
+    image: ${DOCKER_IMAGE:-officialdarvish/d_bot:latest}
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "${API_PORT:-8000}:8000"
+    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
+volumes:
+  postgres_data:

@@ -1,0 +1,464 @@
+#!/usr/bin/env bash
+set -e
+APP_DIR="/opt/d-bot"
+OLD_APP_DIR="/opt/d-bot"
+BACKUP_KEEP_DIR="/root/d-bot-backups"
+
+if [ "${1:-menu}" != "uninstall" ] && [ "${1:-menu}" != "remove" ]; then
+  cd "$APP_DIR"
+  if docker compose version >/dev/null 2>&1; then COMPOSE="docker compose"; else COMPOSE="docker-compose"; fi
+else
+  if docker compose version >/dev/null 2>&1; then COMPOSE="docker compose"; else COMPOSE="docker-compose"; fi
+fi
+
+backup_app(){
+  cd "$APP_DIR"
+  TS="$(date +%Y%m%d_%H%M%S)"
+  BACKUP_DIR="$APP_DIR/backups/$TS"
+  mkdir -p "$BACKUP_DIR"
+
+  if [ -f .env ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . ./.env
+    set +a
+  fi
+
+  DB_NAME="${POSTGRES_DB:-dbot_bot}"
+  DB_USER="${POSTGRES_USER:-dbot}"
+
+  echo "Creating database backup..."
+  if $COMPOSE ps db >/dev/null 2>&1; then
+    $COMPOSE exec -T db pg_dump -U "$DB_USER" "$DB_NAME" > "$BACKUP_DIR/database.sql" || true
+  fi
+
+  echo "Creating project files backup..."
+  tar \
+    --exclude='./backups' \
+    --exclude='./postgres_data' \
+    --exclude='./.git' \
+    -czf "$BACKUP_DIR/project-files.tar.gz" .
+
+  if [ -f .env ]; then
+    cp .env "$BACKUP_DIR/.env.backup"
+    chmod 600 "$BACKUP_DIR/.env.backup"
+  fi
+
+  cd "$APP_DIR/backups"
+  tar -czf "dbot-backup-$TS.tar.gz" "$TS"
+  rm -rf "$TS"
+
+  echo "Backup created: $APP_DIR/backups/dbot-backup-$TS.tar.gz"
+}
+
+
+install_analytics(){
+  cd "$APP_DIR"
+  case "${1:-show}" in
+    record) python3 scripts/install_analytics.py record --source "dbot" ;;
+    generate) python3 scripts/install_analytics.py generate && echo "Chart updated: $APP_DIR/docs/install_chart.svg" ;;
+    show|*) python3 scripts/install_analytics.py show ;;
+  esac
+}
+
+restore_mysql_users(){
+  cd "$APP_DIR"
+
+  if [ ! -f .env ]; then
+    echo "Missing .env in $APP_DIR. Install Darvish D Bot first."
+    exit 1
+  fi
+
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
+
+  DB_NAME="${POSTGRES_DB:-dbot_bot}"
+  DB_USER="${POSTGRES_USER:-dbot}"
+
+  SRC="${1:-}"
+  if [ -z "$SRC" ]; then
+    echo "Enter WizWiz MySQL users backup path. Examples:"
+    echo "  /root/wizwiz_users_854.sql"
+    echo "  /root/wizwiz_users_854.zip"
+    read -r -p "Backup path: " SRC
+  fi
+
+  [ -n "$SRC" ] || { echo "Backup path is empty."; exit 1; }
+  [ -f "$SRC" ] || { echo "Backup file not found: $SRC"; exit 1; }
+
+  TS="$(date +%Y%m%d_%H%M%S)"
+  WORK_DIR="/tmp/dbot_restore_mysql_$TS"
+  mkdir -p "$WORK_DIR"
+  OUT_SQL="$WORK_DIR/dbot_import_users.sql"
+  REPORT="$WORK_DIR/restore_report.txt"
+
+  echo "Converting WizWiz MySQL users backup to Darvish D Bot PostgreSQL import..."
+  python3 - "$SRC" "$OUT_SQL" "$REPORT" <<'PYRESTORE'
+import ast
+import io
+import re
+import sys
+import zipfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+src = Path(sys.argv[1])
+out_sql = Path(sys.argv[2])
+report = Path(sys.argv[3])
+
+def read_source(path: Path) -> str:
+    data = path.read_bytes()
+    if path.suffix.lower() == '.zip':
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            sql_names = [n for n in z.namelist() if n.lower().endswith('.sql')]
+            if not sql_names:
+                raise SystemExit('No .sql file found inside zip backup.')
+            # Prefer files with users in name, otherwise the first SQL.
+            sql_names.sort(key=lambda n: (0 if 'user' in n.lower() else 1, n))
+            data = z.read(sql_names[0])
+    for enc in ('utf-8', 'utf-8-sig', 'latin1'):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            pass
+    return data.decode('utf-8', errors='replace')
+
+def iter_user_insert_blocks(text: str):
+    # Capture INSERT INTO `users` (...) VALUES ...; blocks, including multiline values.
+    pat = re.compile(r"INSERT\s+INTO\s+`?users`?\s*\((.*?)\)\s*VALUES\s*(.*?);", re.I | re.S)
+    for m in pat.finditer(text):
+        cols_raw, values_raw = m.group(1), m.group(2)
+        cols = [c.strip().strip('`').strip('"') for c in cols_raw.split(',')]
+        yield cols, values_raw
+
+def split_tuples(values: str):
+    tuples = []
+    start = None
+    depth = 0
+    in_str = False
+    quote = ''
+    esc = False
+    for i, ch in enumerate(values):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == '\\':
+                esc = True
+            elif ch == quote:
+                in_str = False
+            continue
+        if ch in ("'", '"'):
+            in_str = True
+            quote = ch
+            continue
+        if ch == '(':
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == ')':
+            depth -= 1
+            if depth == 0 and start is not None:
+                tuples.append(values[start:i+1])
+                start = None
+    return tuples
+
+def mysql_tuple_to_python_tuple(t: str):
+    # Convert a MySQL value tuple to a Python literal tuple.
+    # MySQL NULL -> None. Keep escaped quotes/backslashes compatible enough for ast.
+    body = t.strip()
+    body = re.sub(r'\bNULL\b', 'None', body, flags=re.I)
+    # MySQL single quoted strings with backslash escapes are close to Python strings.
+    try:
+        return ast.literal_eval(body)
+    except Exception:
+        # Fallback parser for edge cases.
+        vals = []
+        cur = []
+        in_str = False
+        quote = ''
+        esc = False
+        token_was_string = False
+        for ch in body[1:-1]:
+            if in_str:
+                if esc:
+                    mapping = {'n':'\n','r':'\r','t':'\t','0':'\0'}
+                    cur.append(mapping.get(ch, ch))
+                    esc = False
+                elif ch == '\\':
+                    esc = True
+                elif ch == quote:
+                    in_str = False
+                else:
+                    cur.append(ch)
+            else:
+                if ch in ("'", '"'):
+                    in_str = True
+                    quote = ch
+                    token_was_string = True
+                elif ch == ',':
+                    raw = ''.join(cur).strip()
+                    if token_was_string:
+                        vals.append(raw)
+                    elif raw.lower() == 'none' or raw == '':
+                        vals.append(None)
+                    else:
+                        try: vals.append(int(raw))
+                        except Exception: vals.append(raw)
+                    cur=[]; token_was_string=False
+                else:
+                    cur.append(ch)
+        raw=''.join(cur).strip()
+        if token_was_string:
+            vals.append(raw)
+        elif raw.lower() == 'none' or raw == '':
+            vals.append(None)
+        else:
+            try: vals.append(int(raw))
+            except Exception: vals.append(raw)
+        return tuple(vals)
+
+def sql_literal(value):
+    if value is None:
+        return 'NULL'
+    if isinstance(value, bool):
+        return 'TRUE' if value else 'FALSE'
+    if isinstance(value, int):
+        return str(value)
+    s = str(value).replace("'", "''")
+    return "'" + s + "'"
+
+def clean_username(v):
+    if v is None:
+        return None
+    s = str(v).strip()
+    bad = {'', 'ندارد', ' ندارد ', 'ندارد ', ' ندارد', 'null', 'none', '-'}
+    if s.lower() in bad or s in bad:
+        return None
+    if s.startswith('@'):
+        s = s[1:]
+    return s[:128] or None
+
+def clean_name(v):
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s or s.lower() in {'null', 'none'}:
+        return None
+    return s[:255]
+
+def clean_wallet(v):
+    try:
+        return max(0, int(float(v or 0)))
+    except Exception:
+        return 0
+
+def epoch_to_ts(v):
+    try:
+        n = int(float(v))
+        if n <= 0:
+            raise ValueError
+        return datetime.fromtimestamp(n, tz=timezone.utc).replace(tzinfo=None).isoformat(sep=' ', timespec='seconds')
+    except Exception:
+        return datetime.utcnow().replace(microsecond=0).isoformat(sep=' ')
+
+text = read_source(src)
+users = {}
+raw_count = 0
+for cols, values_raw in iter_user_insert_blocks(text):
+    for tup in split_tuples(values_raw):
+        row = mysql_tuple_to_python_tuple(tup)
+        if len(row) != len(cols):
+            continue
+        d = dict(zip(cols, row))
+        tg = d.get('userid')
+        try:
+            telegram_id = int(str(tg).strip())
+        except Exception:
+            continue
+        if telegram_id <= 0:
+            continue
+        raw_count += 1
+        users[telegram_id] = {
+            'telegram_id': telegram_id,
+            'username': clean_username(d.get('username')),
+            'full_name': clean_name(d.get('name')),
+            'wallet_balance': clean_wallet(d.get('wallet')),
+            'joined_at': epoch_to_ts(d.get('date')),
+        }
+
+if not users:
+    raise SystemExit('No users found in this backup. Make sure it is a WizWiz users SQL export or zip.')
+
+rows = sorted(users.values(), key=lambda x: x['telegram_id'])
+with out_sql.open('w', encoding='utf-8') as f:
+    f.write('-- Darvish D Bot import generated from WizWiz MySQL users backup\n')
+    f.write('-- This imports users only. Orders, configs and payments are untouched.\n')
+    f.write('BEGIN;\n')
+    f.write('CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, telegram_id BIGINT UNIQUE);\n')
+    f.write('INSERT INTO users (telegram_id, username, full_name, wallet_balance, wallet_v2ray_balance, wallet_openvpn_balance, accepted_rules, is_blocked, joined_at) VALUES\n')
+    vals=[]
+    for r in rows:
+        vals.append('  (' + ', '.join([
+            str(r['telegram_id']),
+            sql_literal(r['username']),
+            sql_literal(r['full_name']),
+            str(r['wallet_balance']),
+            str(r['wallet_balance']),
+            '0',
+            'TRUE',
+            'FALSE',
+            sql_literal(r['joined_at']),
+        ]) + ')')
+    f.write(',\n'.join(vals))
+    f.write('\nON CONFLICT (telegram_id) DO UPDATE SET\n')
+    f.write('  username = COALESCE(EXCLUDED.username, users.username),\n')
+    f.write('  full_name = COALESCE(EXCLUDED.full_name, users.full_name),\n')
+    f.write('  wallet_balance = GREATEST(users.wallet_balance, EXCLUDED.wallet_balance),\n')
+    f.write('  wallet_v2ray_balance = GREATEST(users.wallet_v2ray_balance, EXCLUDED.wallet_v2ray_balance),\n')
+    f.write('  joined_at = LEAST(users.joined_at, EXCLUDED.joined_at);\n')
+    f.write('COMMIT;\n')
+
+report.write_text(
+    f'Raw WizWiz user rows: {raw_count}\nUnique Telegram IDs: {len(rows)}\nOutput SQL: {out_sql}\n',
+    encoding='utf-8'
+)
+print(report.read_text(encoding='utf-8').strip())
+PYRESTORE
+
+  echo "Importing users into Darvish D Bot PostgreSQL database..."
+  if ! $COMPOSE ps db >/dev/null 2>&1; then
+    echo "PostgreSQL container is not available. Start Darvish D Bot first: dbot start"
+    exit 1
+  fi
+
+  $COMPOSE exec -T db psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" < "$OUT_SQL"
+
+  echo "Checking imported users count..."
+  $COMPOSE exec -T db psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT COUNT(*) AS total_users FROM users;"
+
+  mkdir -p "$APP_DIR/backups/mysql-restore"
+  cp "$OUT_SQL" "$APP_DIR/backups/mysql-restore/dbot_import_users_$TS.sql"
+  cp "$REPORT" "$APP_DIR/backups/mysql-restore/restore_report_$TS.txt"
+
+  echo "Restore completed."
+  echo "Generated import SQL saved at: $APP_DIR/backups/mysql-restore/dbot_import_users_$TS.sql"
+  echo "Report saved at: $APP_DIR/backups/mysql-restore/restore_report_$TS.txt"
+}
+
+update_app(){
+  cd "$APP_DIR"
+
+  ENV_BACKUP=""
+  if [ -f .env ]; then
+    ENV_BACKUP="$(mktemp)"
+    cp .env "$ENV_BACKUP"
+  fi
+
+  if [ -d .git ]; then
+    echo "Fetching latest source from GitHub..."
+    git fetch origin main || {
+      echo "Git fetch failed. Rebuilding current local source..."
+    }
+
+    if git rev-parse --verify origin/main >/dev/null 2>&1; then
+      echo "Resetting local source to origin/main to avoid divergent branch errors..."
+      git reset --hard origin/main
+    fi
+  else
+    echo "Git repository not found. Rebuilding current local source..."
+  fi
+
+  if [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
+    cp "$ENV_BACKUP" .env
+    chmod 600 .env
+    rm -f "$ENV_BACKUP"
+  fi
+
+  $COMPOSE up -d --build
+}
+
+uninstall_app(){
+  PURGE="${1:-}"
+  echo ""
+  echo "WARNING!"
+  echo "This will completely remove Darvish D Bot from this VPS."
+  echo ""
+  echo "Project directory: $APP_DIR"
+  echo "Docker containers, volumes, networks, database files, Redis data, .env and CLI commands will be removed."
+  if [ "$PURGE" = "--purge" ]; then
+    echo "Backups will also be deleted."
+  else
+    echo "Existing backups will be moved to: $BACKUP_KEEP_DIR"
+  fi
+  echo ""
+  read -r -p "Type yes to continue: " CONFIRM
+  if [ "$CONFIRM" != "yes" ]; then
+    echo "Uninstall cancelled."
+    exit 0
+  fi
+
+  if [ -d "$APP_DIR" ]; then
+    cd "$APP_DIR"
+    echo "Stopping and removing Docker containers, networks and volumes..."
+    $COMPOSE down -v --remove-orphans || true
+
+    if [ "$PURGE" != "--purge" ] && [ -d "$APP_DIR/backups" ]; then
+      mkdir -p "$BACKUP_KEEP_DIR"
+      TS="$(date +%Y%m%d_%H%M%S)"
+      mv "$APP_DIR/backups" "$BACKUP_KEEP_DIR/backups-$TS" || true
+      echo "Backups saved in: $BACKUP_KEEP_DIR/backups-$TS"
+    fi
+
+    echo "Removing project files..."
+    rm -rf "$APP_DIR"
+  fi
+
+  echo "Removing CLI commands..."
+  rm -f /usr/local/bin/dbot /usr/local/bin/dbot-bot
+
+  echo "Darvish D Bot has been completely removed."
+}
+
+case "${1:-menu}" in
+  start) cd "$APP_DIR" && $COMPOSE up -d ;;
+  stop) cd "$APP_DIR" && $COMPOSE down ;;
+  restart) cd "$APP_DIR" && $COMPOSE restart ;;
+  logs) cd "$APP_DIR" && $COMPOSE logs -f --tail=200 ;;
+  update) update_app ;;
+  backup) backup_app ;;
+  analytics) install_analytics "${2:-show}" ;;
+  mysql) restore_mysql_users "${2:-}" ;;
+  restore)
+    case "${2:-}" in
+      mysql|wizwiz-users) restore_mysql_users "${3:-}" ;;
+      *)
+        echo "Usage: dbot mysql"
+        echo "       dbot mysql /path/to/wizwiz_users.sql"
+        echo "       dbot mysql /path/to/wizwiz_users.zip"
+        echo "Also supported: dbot restore mysql /path/to/file"
+        ;;
+    esac
+    ;;
+  status) cd "$APP_DIR" && $COMPOSE ps ;;
+  env) cd "$APP_DIR" && nano .env ;;
+  remove|uninstall) uninstall_app "${2:-}" ;;
+  menu|*)
+    echo "Darvish D Bot VPS commands:"
+    echo "dbot start                 Start bot"
+    echo "dbot stop                  Stop bot"
+    echo "dbot restart               Restart bot"
+    echo "dbot logs                  Show logs"
+    echo "dbot status                Show containers"
+    echo "dbot env                   Edit .env"
+    echo "dbot update                Pull/rebuild app"
+    echo "dbot backup                Create database and project backup"
+    echo "dbot analytics             Show installation stats"
+    echo "dbot analytics generate    Regenerate install chart SVG"
+    echo "dbot mysql                 Restore WizWiz/MySQL users; asks for backup path"
+    echo "dbot mysql <file>          Restore WizWiz/MySQL users from SQL or ZIP"
+    echo "dbot uninstall             Remove app, keep backups under /root/d-bot-backups"
+    echo "dbot uninstall --purge     Remove app and delete backups"
+    ;;
+esac

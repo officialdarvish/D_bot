@@ -1,0 +1,27 @@
+name: Update install chart
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  update-install-chart:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Regenerate install chart
+        run: python scripts/install_analytics.py generate
+      - name: Commit chart changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: update analytics charts"
+          file_pattern: docs/install_chart.svg docs/download_chart.svg docs/install_stats.json docs/download_stats.json
