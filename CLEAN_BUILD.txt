@@ -1,0 +1,1 @@
+Clean structure rebuild applied. Duplicate folders removed. Ready for production refactor.
