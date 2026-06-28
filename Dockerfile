@@ -1,0 +1,30 @@
+FROM node:20-alpine AS frontend-build
+WORKDIR /frontend
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY frontend/package*.json ./
+RUN npm ci --include=dev --registry=https://registry.npmjs.org \
+    && test -x node_modules/.bin/next
+COPY frontend ./
+RUN npm run build
+
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./
+RUN pip install --upgrade pip \
+    && pip install -r requirements.txt
+
+COPY app ./app
+COPY scripts ./scripts
+COPY --from=frontend-build /frontend/out ./frontend_out
+
+CMD ["python", "-m", "app.main"]
