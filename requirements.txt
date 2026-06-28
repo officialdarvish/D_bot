@@ -1,5 +1,5 @@
 aiogram==3.13.1
-fastapi==0.115.6
+fastapi==0.138.1
 uvicorn[standard]==0.34.0
 SQLAlchemy==2.0.36
 asyncpg==0.30.0
