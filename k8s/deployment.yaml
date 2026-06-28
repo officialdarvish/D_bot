@@ -1,0 +1,20 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: darvish-enterprise
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: darvish
+  template:
+    metadata:
+      labels:
+        app: darvish
+    spec:
+      containers:
+      - name: backend
+        image: darvish/enterprise:latest
+        ports:
+        - containerPort: 8000
