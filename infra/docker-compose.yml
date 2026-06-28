@@ -1,0 +1,18 @@
+
+version: "3.9"
+
+services:
+  frontend:
+    build: ../../frontend
+    ports:
+      - "3000:3000"
+
+  backend:
+    build: ../../backend
+    ports:
+      - "8000:8000"
+
+  gateway:
+    image: nginx:alpine
+    ports:
+      - "80:80"

@@ -1,0 +1,19 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/admin/backup/page": "app/admin/backup/page.js",
+  "/admin/categories/page": "app/admin/categories/page.js",
+  "/admin/openvpn-profiles/page": "app/admin/openvpn-profiles/page.js",
+  "/admin/orders-report/page": "app/admin/orders-report/page.js",
+  "/admin/discounts/page": "app/admin/discounts/page.js",
+  "/admin/payments/page": "app/admin/payments/page.js",
+  "/admin/resellers/page": "app/admin/resellers/page.js",
+  "/admin/plans/page": "app/admin/plans/page.js",
+  "/admin/page": "app/admin/page.js",
+  "/admin/servers/page": "app/admin/servers/page.js",
+  "/admin/settings/page": "app/admin/settings/page.js",
+  "/admin/test-account/page": "app/admin/test-account/page.js",
+  "/login/page": "app/login/page.js",
+  "/admin/service-types/page": "app/admin/service-types/page.js",
+  "/admin/users/page": "app/admin/users/page.js",
+  "/page": "app/page.js"
+}
