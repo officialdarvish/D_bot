@@ -1,0 +1,13 @@
+D-Bot v1.1.0 - 3x-ui v3.4.2 delete compatibility patch
+
+This package keeps the previous bot fixes and targets MHSanaei/3x-ui v3.4.2.
+
+Important delete behavior:
+- Primary delete endpoint: POST /panel/api/clients/del/{email}
+- Bulk fallback: POST /panel/api/clients/bulkDel
+- Stale inbound settings cleanup is retained to prevent deleted users from reappearing after later client add/update operations.
+- Old inbound-scoped delClient endpoints are only best-effort fallback cleanup.
+
+Included earlier fixes:
+- restart:start CallbackQuery handling fix
+- expired Telegram callback.answer() safe handling
