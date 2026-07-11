@@ -1,0 +1,57 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Node.js / Next.js
+node_modules/
+.next/
+out/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+*.tsbuildinfo
+
+# Generated frontend bundled into the Python image
+frontend_out/
+
+# Runtime data
+backups/
+logs/
+*.log
+postgres_data/
+redis_data/
+tmp/
+temp/
+uploads/
+
+# Databases, exports and archives
+*.sql
+*.sqlite
+*.sqlite3
+*.zip
+*.tar
+*.tar.gz
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
