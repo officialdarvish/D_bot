@@ -1,0 +1,340 @@
+from datetime import datetime, timedelta
+import logging
+import uuid
+
+from aiogram import Bot
+from fastapi import FastAPI, Request, Header, HTTPException, Depends
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, Response
+from app.database.base import Base
+from app.database.session import engine, SessionLocal
+from app.database import models
+from app.database.defaults import get_setting_value, WELCOME_TEXT_DEFAULT
+from app.database.models import Order, User, Plan, Server, ClientService, Setting
+from app.core.config import settings
+from app.services.nowpayments_service import NowPaymentsService
+from app.services.xui_service import XuiService
+from app.services.mikrotik_service import MikroTikService
+from app.bot.keyboards.common import main_menu_inline
+from app.bot.service_presenter import send_service_info as send_service_card
+from app.services.referral_service import apply_purchase_commission
+from app.api.admin_web import (
+    router as admin_web_router,
+    _auth_user,
+    _is_service_type_row,
+    _ordered_service_types,
+    _service_type_is_active,
+)
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+from sqlalchemy import select
+
+app = FastAPI(title='D Bot API')
+
+
+class _DropIpRecordAccessLog(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return '/api/ip-record/push' not in record.getMessage()
+
+
+logging.getLogger('uvicorn.access').addFilter(_DropIpRecordAccessLog())
+
+
+@app.api_route('/api/ip-record/push', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], include_in_schema=False)
+async def disabled_ip_record_push():
+    return Response(status_code=204)
+
+
+@app.middleware('http')
+async def admin_json_error_middleware(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        wants_json = (request.url.path.startswith('/admin') or request.url.path.startswith('/api/admin')) and (request.headers.get('x-requested-with') == 'fetch' or 'application/json' in request.headers.get('accept', '') or request.query_params.get('ajax') == '1')
+        if wants_json:
+            request_id = uuid.uuid4().hex[:12]
+            logging.getLogger(__name__).exception('Admin JSON error request_id=%s path=%s', request_id, request.url.path)
+            return JSONResponse({'ok': False, 'message': 'Internal server error', 'request_id': request_id}, status_code=500)
+        raise
+
+async def _service_types_api_response() -> JSONResponse:
+    async with SessionLocal() as session:
+        rows = (
+            await session.execute(
+                select(Setting).where(Setting.key.like('service_type:custom:%'))
+            )
+        ).scalars().all()
+        order_row = await session.get(Setting, 'service_type_order')
+        service_rows = _ordered_service_types(
+            [row for row in rows if _is_service_type_row(row)],
+            order_row.value if order_row else '',
+        )
+        settings_map = {str(row.key): str(row.value or '') for row in rows}
+
+    items = [
+        {
+            'key': str(row.key),
+            'value': str(row.value or ''),
+            'is_active': _service_type_is_active(settings_map, str(row.key)),
+        }
+        for row in service_rows
+    ]
+    return JSONResponse(
+        {'ok': True, 'items': items, 'total': len(items)},
+        headers={'X-D-Bot-API': 'service-types-v3', 'Cache-Control': 'no-store'},
+    )
+
+
+@app.get('/api/admin/service-types', include_in_schema=False)
+@app.get('/admin/api/v2/service-types', include_in_schema=False)
+async def api_service_types(_: str = Depends(_auth_user)):
+    """Return JSON through a non-static API path plus the legacy alias.
+
+    The primary /api/admin path cannot collide with the exported /admin UI.
+    The older /admin/api/v2 path remains available for cached frontends.
+    """
+    return await _service_types_api_response()
+
+
+app.include_router(admin_web_router)
+
+
+@app.api_route(
+    '/api/admin/{path:path}',
+    methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    include_in_schema=False,
+)
+@app.api_route(
+    '/admin/api/{path:path}',
+    methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    include_in_schema=False,
+)
+async def missing_admin_api(path: str):
+    # Never let a missing API route fall through to the exported admin HTML.
+    return JSONResponse(
+        {'ok': False, 'message': f'Admin API endpoint not found: {path}'},
+        status_code=404,
+        headers={'Cache-Control': 'no-store'},
+    )
+
+FRONTEND_OUT = Path(__file__).resolve().parents[2] / 'frontend_out'
+
+def _frontend_file(path: str = '') -> Path:
+    candidates = []
+    clean = (path or '').strip('/')
+    if clean:
+        candidates.extend([
+            FRONTEND_OUT / clean / 'index.html',
+            FRONTEND_OUT / f'{clean}.html',
+        ])
+    candidates.append(FRONTEND_OUT / 'index.html')
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    raise HTTPException(status_code=404, detail='Frontend build was not found. Run npm install && npm run build inside frontend, or rebuild the Docker image.')
+
+if (FRONTEND_OUT / '_next').exists():
+    app.mount('/_next', StaticFiles(directory=str(FRONTEND_OUT / '_next')), name='next_static')
+if (FRONTEND_OUT / 'd-bot-logo.png').exists():
+    app.mount('/static', StaticFiles(directory=str(FRONTEND_OUT)), name='frontend_static')
+
+@app.get('/', include_in_schema=False)
+async def frontend_root():
+    return FileResponse(_frontend_file(''))
+
+@app.get('/admin', include_in_schema=False)
+async def frontend_admin_root():
+    return FileResponse(_frontend_file('admin'))
+
+@app.get('/admin/{path:path}', include_in_schema=False)
+async def frontend_admin_path(path: str):
+    return FileResponse(_frontend_file('admin/' + path))
+
+@app.on_event('startup')
+async def startup():
+    logger = logging.getLogger(__name__)
+
+    async def safe_upgrade(conn, sql: str) -> None:
+        try:
+            await conn.exec_driver_sql(sql)
+        except Exception as exc:
+            logger.warning("Database upgrade skipped: %s | %s", sql, exc)
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        for sql in [
+            'ALTER TABLE discount_codes ADD COLUMN IF NOT EXISTS per_user_limit INTEGER DEFAULT 1',
+            'ALTER TABLE orders ADD COLUMN IF NOT EXISTS external_payment_id VARCHAR(120)',
+            'ALTER TABLE orders ADD COLUMN IF NOT EXISTS external_invoice_url TEXT',
+            'ALTER TABLE orders ADD COLUMN IF NOT EXISTS rejection_reason TEXT',
+            'ALTER TABLE orders ADD COLUMN IF NOT EXISTS rejected_by BIGINT',
+            'ALTER TABLE orders ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP',
+            'ALTER TABLE orders ALTER COLUMN payment_method TYPE VARCHAR(160)',
+            'ALTER TABLE reseller_topup_requests ADD COLUMN IF NOT EXISTS rejection_reason TEXT',
+            'ALTER TABLE reseller_topup_requests ADD COLUMN IF NOT EXISTS rejected_by BIGINT',
+            'ALTER TABLE reseller_topup_requests ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP',
+            "ALTER TABLE servers ADD COLUMN IF NOT EXISTS display_name VARCHAR(150)",
+            "ALTER TABLE servers ADD COLUMN IF NOT EXISTS profile VARCHAR(32) DEFAULT '3x-ui'",
+            "ALTER TABLE payment_cards ADD COLUMN IF NOT EXISTS scopes JSON DEFAULT '[]'",
+            'ALTER TABLE client_services ALTER COLUMN server_id DROP NOT NULL',
+            'ALTER TABLE client_services ADD COLUMN IF NOT EXISTS disabled_at TIMESTAMP NULL',
+            'ALTER TABLE client_services ADD COLUMN IF NOT EXISTS disabled_reason VARCHAR(32)',
+            'ALTER TABLE client_services ADD COLUMN IF NOT EXISTS disabled_notify_count INTEGER DEFAULT 0',
+            'ALTER TABLE client_services ADD COLUMN IF NOT EXISTS disabled_last_notified_at TIMESTAMP NULL',
+            'ALTER TABLE client_services ADD COLUMN IF NOT EXISTS reseller_id INTEGER NULL',
+            'ALTER TABLE client_services ADD COLUMN IF NOT EXISTS reseller_reserved_bytes BIGINT DEFAULT 0',
+            'ALTER TABLE client_services ADD COLUMN IF NOT EXISTS reseller_lifetime_used_bytes BIGINT DEFAULT 0',
+            'UPDATE client_services SET reseller_lifetime_used_bytes = COALESCE(NULLIF(reseller_lifetime_used_bytes, 0), used_bytes, 0) WHERE reseller_id IS NOT NULL',
+            'ALTER TABLE client_services ADD COLUMN IF NOT EXISTS traffic_baseline_bytes BIGINT DEFAULT 0',
+            'ALTER TABLE client_services ADD COLUMN IF NOT EXISTS purchase_category_id INTEGER NULL',
+            'UPDATE client_services cs SET purchase_category_id = p.category_id FROM plans p WHERE cs.plan_id = p.id AND cs.purchase_category_id IS NULL AND p.category_id IS NOT NULL',
+            'ALTER TABLE client_services DROP CONSTRAINT IF EXISTS client_services_purchase_category_id_fkey',
+            'ALTER TABLE client_services ADD CONSTRAINT client_services_purchase_category_id_fkey FOREIGN KEY (purchase_category_id) REFERENCES server_categories(id) ON DELETE SET NULL',
+            'ALTER TABLE plans ALTER COLUMN server_id DROP NOT NULL',
+            'ALTER TABLE plans ALTER COLUMN category_id DROP NOT NULL',
+            "ALTER TABLE server_categories ADD COLUMN IF NOT EXISTS server_ids JSON DEFAULT '[]'",
+            "ALTER TABLE discount_codes ADD COLUMN IF NOT EXISTS allowed_server_ids JSON DEFAULT '[]'",
+            'ALTER TABLE plans DROP CONSTRAINT IF EXISTS plans_category_id_fkey',
+            'ALTER TABLE plans ADD CONSTRAINT plans_category_id_fkey FOREIGN KEY (category_id) REFERENCES server_categories(id) ON DELETE SET NULL',
+            'ALTER TABLE plans DROP CONSTRAINT IF EXISTS plans_server_id_fkey',
+            'ALTER TABLE plans ADD CONSTRAINT plans_server_id_fkey FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE SET NULL',
+            "ALTER TABLE plans ADD COLUMN IF NOT EXISTS meta JSON DEFAULT '{}'",
+            "ALTER TABLE reseller_packages ADD COLUMN IF NOT EXISTS meta JSON DEFAULT '{}'",
+            "WITH marker AS (INSERT INTO settings(key, value) VALUES ('reseller_inventory_model_v114_applied', '1') ON CONFLICT (key) DO NOTHING RETURNING key) UPDATE reseller_accounts SET total_bytes = GREATEST(COALESCE(total_bytes, 0) - COALESCE(reserved_bytes, 0), 0) WHERE EXISTS (SELECT 1 FROM marker)",
+            'ALTER TABLE client_services DROP CONSTRAINT IF EXISTS client_services_server_id_fkey',
+            'ALTER TABLE client_services ADD CONSTRAINT client_services_server_id_fkey FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE SET NULL',
+            'ALTER TABLE server_categories DROP CONSTRAINT IF EXISTS server_categories_server_id_fkey',
+            'ALTER TABLE server_categories ADD CONSTRAINT server_categories_server_id_fkey FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE SET NULL',
+            'ALTER TABLE payment_cards DROP CONSTRAINT IF EXISTS payment_cards_server_id_fkey',
+            'ALTER TABLE payment_cards ADD CONSTRAINT payment_cards_server_id_fkey FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE SET NULL',
+            'ALTER TABLE reseller_accounts ALTER COLUMN server_id DROP NOT NULL',
+            'ALTER TABLE reseller_build_configs ALTER COLUMN server_id DROP NOT NULL',
+            'ALTER TABLE reseller_packages ALTER COLUMN server_id DROP NOT NULL',
+            'ALTER TABLE reseller_topup_requests ALTER COLUMN package_id DROP NOT NULL',
+            'ALTER TABLE reseller_topup_requests DROP CONSTRAINT IF EXISTS reseller_topup_requests_package_id_fkey',
+            'ALTER TABLE reseller_topup_requests ADD CONSTRAINT reseller_topup_requests_package_id_fkey FOREIGN KEY (package_id) REFERENCES reseller_packages(id) ON DELETE SET NULL',
+            'ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(64)',
+            'CREATE UNIQUE INDEX IF NOT EXISTS ix_users_referral_code ON users(referral_code)',
+            'ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by_user_id INTEGER',
+            'ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_joined_at TIMESTAMP',
+            'ALTER TABLE users DROP CONSTRAINT IF EXISTS users_referred_by_user_id_fkey',
+            'ALTER TABLE users ADD CONSTRAINT users_referred_by_user_id_fkey FOREIGN KEY (referred_by_user_id) REFERENCES users(id) ON DELETE SET NULL',
+            'ALTER TABLE reseller_packages DROP CONSTRAINT IF EXISTS reseller_packages_server_id_fkey',
+            'ALTER TABLE reseller_packages ADD CONSTRAINT reseller_packages_server_id_fkey FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE SET NULL',
+            'ALTER TABLE reseller_build_configs DROP CONSTRAINT IF EXISTS reseller_build_configs_server_id_fkey',
+            'ALTER TABLE reseller_build_configs ADD CONSTRAINT reseller_build_configs_server_id_fkey FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE SET NULL',
+            'ALTER TABLE reseller_accounts DROP CONSTRAINT IF EXISTS reseller_accounts_server_id_fkey',
+            'ALTER TABLE reseller_accounts ADD CONSTRAINT reseller_accounts_server_id_fkey FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE SET NULL',
+        ]:
+            await safe_upgrade(conn, sql)
+        for sql in [
+            "DELETE FROM settings WHERE key LIKE 'ip_record_%'",
+            "DELETE FROM settings WHERE key LIKE 'anti_sharing_%'",
+            'DROP TABLE IF EXISTS anti_sharing_violations',
+            'ALTER TABLE client_services DROP COLUMN IF EXISTS ip_limit',
+            'ALTER TABLE client_services DROP COLUMN IF EXISTS anti_share_violation_count',
+            'ALTER TABLE client_services DROP COLUMN IF EXISTS anti_share_banned_until',
+            'ALTER TABLE client_services DROP COLUMN IF EXISTS anti_share_banned_permanent',
+            'ALTER TABLE client_services DROP COLUMN IF EXISTS anti_share_last_alert_at',
+            'ALTER TABLE client_services DROP COLUMN IF EXISTS anti_share_last_ips',
+            'ALTER TABLE plans DROP COLUMN IF EXISTS anti_sharing_enabled',
+            """DO $$ BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'client_services' AND column_name = 'last_payg_used_bytes'
+                ) THEN
+                    UPDATE client_services SET traffic_baseline_bytes = COALESCE(traffic_baseline_bytes, last_payg_used_bytes, 0);
+                END IF;
+            END $$""",
+            'ALTER TABLE client_services DROP COLUMN IF EXISTS last_payg_used_bytes',
+            'ALTER TABLE client_services DROP COLUMN IF EXISTS is_payg',
+            'ALTER TABLE plans DROP COLUMN IF EXISTS is_payg',
+            'DROP TABLE IF EXISTS payg_usage_logs',
+        ]:
+            await safe_upgrade(conn, sql)
+    # Database must stay fully raw. No default settings, servers, plans, cards, or users are seeded.
+
+@app.get('/health')
+async def health():
+    return {'status': 'ok'}
+
+async def _send_home(bot: Bot, chat_id: int) -> None:
+    text = await get_setting_value('welcome_text', WELCOME_TEXT_DEFAULT)
+    await bot.send_message(chat_id, text, reply_markup=await main_menu_inline(chat_id in settings.admin_ids))
+
+async def _build_service(session, user: User, server: Server, plan: Plan, username: str):
+    service = ClientService(
+        user_id=user.id,
+        server_id=server.id,
+        plan_id=plan.id,
+        purchase_category_id=plan.category_id,
+        client_username=username,
+        xui_email=username,
+        inbound_ids=plan.inbound_ids,
+        total_bytes=plan.volume_gb * 1024 ** 3,
+        expires_at=(datetime.utcnow() + timedelta(days=plan.duration_days) if plan.duration_days else None),
+    )
+    session.add(service)
+    await session.flush()
+    sub_link = None
+    if server.server_type == 'xui':
+        created = await XuiService().create_client_on_plan(server, plan, username)
+        sub_link = created.get('sub_link') if isinstance(created, dict) else None
+        service.sub_link = sub_link
+        service.xui_uuid = (str(created.get('uuid')) if isinstance(created, dict) and created.get('uuid') is not None else None)
+        if isinstance(created, dict) and created.get('inbound_ids'):
+            service.inbound_ids = list(created.get('inbound_ids') or [])
+    elif server.server_type == 'mikrotik':
+        created = await MikroTikService().create_user_on_plan(server, plan, username)
+        service.sub_link = None
+        service.xui_uuid = str(created.get('password') or '')
+    return service, sub_link
+
+@app.post('/webhooks/nowpayments')
+async def nowpayments_ipn(request: Request, x_nowpayments_sig: str | None = Header(default=None)):
+    raw = await request.body()
+    if not settings.NOWPAYMENTS_IPN_SECRET:
+        raise HTTPException(status_code=503, detail='NOWPayments IPN secret is not configured')
+    if not x_nowpayments_sig or not NowPaymentsService.verify_ipn(raw, x_nowpayments_sig):
+        raise HTTPException(status_code=401, detail='invalid signature')
+    data = await request.json()
+    order_id = str(data.get('order_id') or '')
+    payment_id = str(data.get('payment_id') or '')
+    status = str(data.get('payment_status') or '').lower()
+    if not order_id.isdigit():
+        return {'ok': True, 'ignored': 'missing order_id'}
+    if status not in {'finished', 'confirmed', 'sending'}:
+        return {'ok': True, 'status': status}
+    if not payment_id:
+        raise HTTPException(status_code=400, detail='missing payment_id')
+
+    bot = Bot(token=settings.BOT_TOKEN)
+    try:
+        async with SessionLocal() as session:
+            order = await session.get(Order, int(order_id))
+            if not order or order.status == 'paid':
+                return {'ok': True, 'status': 'already_processed'}
+            if payment_id and order.external_payment_id and str(order.external_payment_id) != payment_id:
+                raise HTTPException(status_code=400, detail='payment_id mismatch')
+            verifier = NowPaymentsService()
+            details = await verifier.get_payment(payment_id)
+            NowPaymentsService.validate_payment_details(details, order_id=order.id, payment_id=payment_id, amount_irt=order.amount_irt)
+            user = await session.get(User, order.user_id)
+            plan = await session.get(Plan, order.plan_id)
+            if not user or not plan:
+                raise HTTPException(status_code=400, detail='order data is incomplete')
+            server = await session.get(Server, plan.server_id)
+            if not server:
+                raise HTTPException(status_code=400, detail='order server is missing')
+            username = order.payment_method.split(':', 1)[1].split(':discount:', 1)[0] if order.payment_method and order.payment_method.startswith('crypto:') else f'user{user.telegram_id}_{order.id}'
+            service, sub_link = await _build_service(session, user, server, plan, username)
+            order.status = 'paid'
+            order.external_payment_id = payment_id
+            order.service_id = service.id
+            await apply_purchase_commission(session, user, int(order.amount_irt or 0), bot, server.server_type)
+            await session.commit()
+        await send_service_card(bot, int(user.telegram_id), service.client_username, plan.title, plan.volume_gb, plan.duration_days, sub_link, is_test=False, service_id=service.id, server_type=server.server_type, password=(service.xui_uuid if server.server_type == 'mikrotik' else None))
+        await _send_home(bot, int(user.telegram_id))
+    finally:
+        await bot.session.close()
+    return {'ok': True, 'status': 'processed'}
+
