@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-checks:
+    name: Python and shell checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compile Python sources
+        run: python -m compileall -q app
+
+      - name: Import backend modules
+        env:
+          BOT_TOKEN: 123456789:AAExample_Token-Value-Placeholder
+          OWNER_IDS: '123456789'
+          DATABASE_URL: postgresql+asyncpg://dbot:placeholder@localhost:5432/d_bot
+          REDIS_URL: redis://localhost:6379/0
+          WEB_ADMIN_PASSWORD: placeholder_admin_password
+          JWT_SECRET: placeholder_jwt_secret
+          FERNET_KEY: ''
+        run: |
+          python -c "import app.core.config"
+          python -c "import app.api.main"
+
+      - name: Validate shell scripts
+        run: bash -n install.sh scripts/dbot-control.sh scripts/setup_web_ssl.sh
+
+  frontend-checks:
+    name: Frontend type-check and build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --include=dev --no-audit --no-fund
+
+      - name: Type-check frontend
+        run: npm run lint
+
+      - name: Build frontend
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+        run: npm run build
