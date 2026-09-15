@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import time
+
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy import select
 
@@ -95,14 +98,44 @@ def button_enabled_key(name: str) -> str:
     return f'button_{name}_enabled'
 
 
+# A single callback can ask for the same button flags in middleware and again
+# while rendering the next menu. Cache the small settings set briefly so hot
+# navigation does not spend two database round-trips per click.
+_BUTTON_SETTINGS_CACHE: dict[str, str] = {}
+_BUTTON_SETTINGS_CACHE_UNTIL: float = 0.0
+_BUTTON_SETTINGS_CACHE_LOCK = asyncio.Lock()
+_BUTTON_SETTINGS_CACHE_TTL_SECONDS = 2.0
+
+
+def invalidate_button_settings_cache() -> None:
+    global _BUTTON_SETTINGS_CACHE_UNTIL
+    _BUTTON_SETTINGS_CACHE.clear()
+    _BUTTON_SETTINGS_CACHE_UNTIL = 0.0
+
+
 async def _load_button_settings(names: list[str] | None = None) -> dict[str, str]:
-    names = names or list(BUTTON_DEFAULTS)
-    keys: list[str] = []
-    for name in names:
-        keys.extend([button_text_key(name), button_enabled_key(name)])
-    async with SessionLocal() as session:
-        rows = (await session.execute(select(Setting).where(Setting.key.in_(keys)))).scalars().all()
-    return {row.key: str(row.value or '') for row in rows}
+    global _BUTTON_SETTINGS_CACHE, _BUTTON_SETTINGS_CACHE_UNTIL
+    requested = names or list(BUTTON_DEFAULTS)
+    now = time.monotonic()
+    if _BUTTON_SETTINGS_CACHE_UNTIL > now:
+        keys = {key for name in requested for key in (button_text_key(name), button_enabled_key(name))}
+        return {key: value for key, value in _BUTTON_SETTINGS_CACHE.items() if key in keys}
+
+    async with _BUTTON_SETTINGS_CACHE_LOCK:
+        now = time.monotonic()
+        if _BUTTON_SETTINGS_CACHE_UNTIL <= now:
+            all_keys = [
+                key
+                for name in BUTTON_DEFAULTS
+                for key in (button_text_key(name), button_enabled_key(name))
+            ]
+            async with SessionLocal() as session:
+                rows = (await session.execute(select(Setting).where(Setting.key.in_(all_keys)))).scalars().all()
+            _BUTTON_SETTINGS_CACHE = {row.key: str(row.value or '') for row in rows}
+            _BUTTON_SETTINGS_CACHE_UNTIL = time.monotonic() + _BUTTON_SETTINGS_CACHE_TTL_SECONDS
+
+    keys = {key for name in requested for key in (button_text_key(name), button_enabled_key(name))}
+    return {key: value for key, value in _BUTTON_SETTINGS_CACHE.items() if key in keys}
 
 
 def _button_value(values: dict[str, str], name: str) -> tuple[str, bool]:

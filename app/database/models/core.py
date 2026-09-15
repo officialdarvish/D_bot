@@ -52,6 +52,8 @@ class Plan(Base):
     server_id: Mapped[int | None] = mapped_column(ForeignKey('servers.id'), nullable=True)
     inbound_ids: Mapped[list] = mapped_column(JSON, default=list)
     is_unlimited: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Sanaei / 3x-ui v3.8.0 HWID device limit. 0 means unlimited / no HWID cap.
+    hwid_limit: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
 

@@ -9,6 +9,7 @@ from app.bot.states.admin_states import AddPlan, EditPlan
 from app.bot.keyboards.common import CB_PLANS, back_button, main_menu_inline
 from app.bot.utils import edit_or_answer, ui_message, ui_callback_message, state_prompt, delete_state_message
 from app.services.plan_order import saved_plan_order, sort_by_saved_order
+from app.services.xui_service import schedule_plan_hwid_limit_sync
 
 router = Router()
 
@@ -39,6 +40,14 @@ def plan_inbound_mode(p: Plan) -> str:
 def inbounds_text(p: Plan) -> str:
     ids = p.inbound_ids or []
     return ", ".join(str(x) for x in ids) if ids else "ثبت نشده / OpenVPN"
+
+
+def hwid_limit_text(p: Plan) -> str:
+    try:
+        limit = max(int(getattr(p, 'hwid_limit', 0) or 0), 0)
+    except Exception:
+        limit = 0
+    return 'نامحدود' if limit <= 0 else f'{limit} دستگاه'
 
 
 def _server_inbounds(server: Server | None) -> list[int]:
@@ -97,7 +106,8 @@ async def plan_detail_text(plan_id: int) -> str:
         f"📁 دسته: {cat.name if cat else 'نامشخص'}\n"
         f"🖥 سرور ID: {p.server_id}\n"
         f"⚙️ حالت Inbound: {'دستی' if plan_inbound_mode(p) == 'manual' else 'خودکار'}\n"
-        f"🔢 Inbound ID ها: {inbounds_text(p)}\n\n"
+        f"🔢 Inbound ID ها: {inbounds_text(p)}\n"
+        f"🖥 محدودیت HWID: {hwid_limit_text(p)}\n\n"
         "━━━━━━━━━━━━━━━━\n"
         f"💾 حجم: {p.volume_gb} گیگ\n"
         f"📅 مدت: {p.duration_days} روز\n"
@@ -109,7 +119,7 @@ def plan_detail_keyboard(pid: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ تغییر عنوان", callback_data=f"plan:edit:title:{pid}"), InlineKeyboardButton(text="💰 تغییر قیمت", callback_data=f"plan:edit:price:{pid}")],
         [InlineKeyboardButton(text="💾 تغییر حجم", callback_data=f"plan:edit:volume:{pid}"), InlineKeyboardButton(text="📅 تغییر مدت", callback_data=f"plan:edit:duration:{pid}")],
-        [InlineKeyboardButton(text="📁 تغییر دسته", callback_data=f"plan:edit:category:{pid}")],
+        [InlineKeyboardButton(text="📁 تغییر دسته", callback_data=f"plan:edit:category:{pid}"), InlineKeyboardButton(text="🖥 محدودیت HWID", callback_data=f"plan:edit:hwid:{pid}")],
         [InlineKeyboardButton(text="👁 نمایش / عدم نمایش", callback_data=f"plan:toggle:{pid}")],
         [InlineKeyboardButton(text="🗑 حذف پلن", callback_data=f"plan:delete:{pid}")],
         [back_button("admin:plans")],
@@ -265,6 +275,22 @@ async def plan_price(message: Message, state: FSMContext):
         await state_prompt(message, state, "❌ فقط عدد وارد کنید. قیمت پلن را به تومان وارد کنید:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button("admin:plans")]]))
         return
     await state.update_data(price=price)
+    data = await state.get_data()
+    if data.get("is_openvpn"):
+        await state.update_data(hwid_limit=0)
+        await _prompt_plan_category(message, state)
+        return
+    await state.set_state(AddPlan.hwid_limit)
+    await state_prompt(
+        message, state,
+        "🖥 محدودیت دستگاه بر اساس HWID را وارد کنید.\n\n"
+        "مثال: 1 یعنی فقط یک دستگاه ثبت‌شده می‌تواند از اشتراک استفاده کند.\n"
+        "برای نامحدود عدد 0 را وارد کنید:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button("admin:plans")]])
+    )
+
+
+async def _prompt_plan_category(message: Message, state: FSMContext):
     async with SessionLocal() as session:
         cats = (await session.execute(select(ServerCategory))).scalars().all()
     if not cats:
@@ -275,6 +301,19 @@ async def plan_price(message: Message, state: FSMContext):
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=c.name, callback_data=f"plan:cat:{c.id}")] for c in cats] + [[back_button("admin:plans")]])
     await state.set_state(AddPlan.category_id)
     await state_prompt(message, state, "دسته پلن را انتخاب کنید:", reply_markup=kb)
+
+
+@router.message(AddPlan.hwid_limit)
+async def plan_hwid_limit(message: Message, state: FSMContext):
+    try:
+        limit = int((message.text or '').strip())
+        if limit < 0:
+            raise ValueError
+    except ValueError:
+        await state_prompt(message, state, "❌ محدودیت HWID باید عدد صفر یا بزرگ‌تر باشد. مثال: 1", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button("admin:plans")]]))
+        return
+    await state.update_data(hwid_limit=limit)
+    await _prompt_plan_category(message, state)
 
 
 @router.callback_query(F.data.startswith("plan:cat:"))
@@ -322,6 +361,7 @@ async def _create_plan_from_state(event, state: FSMContext, inbound_ids: list[in
             title=data["title"], volume_gb=data["volume"], duration_days=data["duration"],
             price_irt=data["price"], category_id=data["category_id"], server_id=data["server_id"],
             inbound_ids=inbound_ids,
+            hwid_limit=(0 if data.get("is_openvpn") else max(int(data.get("hwid_limit") or 0), 0)),
             is_unlimited=(not data.get("is_openvpn") and int(data["volume"] or 0) <= 0),
             is_active=True,
             meta={'inbound_mode': 'automatic'}
@@ -335,6 +375,7 @@ async def _create_plan_from_state(event, state: FSMContext, inbound_ids: list[in
         f"💾 حجم: {data['volume']} گیگ\n"
         f"📅 مدت: {data['duration']} روز\n"
         f"💰 قیمت: {money(data['price'])}\n"
+        f"🖥 محدودیت HWID: {'نامحدود' if int(data.get('hwid_limit') or 0) <= 0 else str(int(data.get('hwid_limit') or 0)) + ' دستگاه'}\n"
         f"🔢 Inbound ID ها: {', '.join(map(str, inbound_ids)) if inbound_ids else 'OpenVPN / ثبت نشده'}"
     )
     if isinstance(event, CallbackQuery):
@@ -383,6 +424,14 @@ async def edit_plan_field(callback: CallbackQuery, state: FSMContext):
     pid = int(pid)
     await state.clear()
     await state.update_data(plan_id=pid, edit_field=field)
+    if field == "hwid":
+        async with SessionLocal() as session:
+            plan = await session.get(Plan, pid)
+            server = await session.get(Server, plan.server_id) if plan and plan.server_id else None
+        if not plan or not server or str(server.server_type or '').lower() != 'xui':
+            await state.clear()
+            await callback.answer("HWID فقط برای پلن‌های 3x-ui قابل تنظیم است.", show_alert=True)
+            return
     if field == "category":
         async with SessionLocal() as session:
             cats = (await session.execute(select(ServerCategory))).scalars().all()
@@ -396,6 +445,7 @@ async def edit_plan_field(callback: CallbackQuery, state: FSMContext):
         "price": "💰 قیمت جدید را به تومان وارد کنید:",
         "volume": "💾 حجم جدید را به گیگ وارد کنید:",
         "duration": "📅 مدت جدید را به روز وارد کنید:",
+        "hwid": "🖥 محدودیت جدید HWID را وارد کنید. 0 = نامحدود، 1 = یک دستگاه و ...:",
         "inbounds": "🔢 Inbound ID های جدید را با کاما وارد کنید. برای OpenVPN عدد 0 بزنید:\nمثال: 1,2,3,100",
     }
     await state.set_state(EditPlan.value)
@@ -426,12 +476,25 @@ async def save_plan_edit(message: Message, state: FSMContext):
                 p.is_unlimited = (p.volume_gb <= 0)
             elif field == "duration":
                 p.duration_days = int(raw)
+            elif field == "hwid":
+                value = int(raw)
+                if value < 0:
+                    raise ValueError
+                server = await session.get(Server, p.server_id) if p.server_id else None
+                if not server or str(server.server_type or '').lower() != 'xui':
+                    await state.clear()
+                    await ui_message(message, "❌ HWID فقط برای پلن‌های 3x-ui قابل تنظیم است.", reply_markup=plan_detail_keyboard(pid))
+                    return
+                old_hwid_limit = max(int(getattr(p, 'hwid_limit', 0) or 0), 0)
+                p.hwid_limit = value
             elif field == "inbounds":
                 p.inbound_ids = [int(x.strip()) for x in raw.split(",") if x.strip().isdigit() and int(x.strip()) != 0]
                 meta = dict(p.meta or {})
                 meta['inbound_mode'] = 'manual'
                 p.meta = meta
             await session.commit()
+        if field == "hwid" and value != old_hwid_limit:
+            schedule_plan_hwid_limit_sync(pid)
     except ValueError:
         await state_prompt(message, state, "❌ مقدار وارد شده معتبر نیست. دوباره فقط عدد/فرمت درست را وارد کنید:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(f"plan:detail:{pid}")]]))
         return

@@ -59,6 +59,7 @@ class XuiRenewEnableTests(unittest.IsolatedAsyncioTestCase):
         result = await xui.reset_client_plan(
             'sample@example.com', total_gb=20, expire_days=30,
             current_inbound_ids_hint=[11, 12],
+            limit_hwid=0,
         )
 
         self.assertEqual(result['inbound_ids'], [11, 12])
@@ -467,6 +468,7 @@ class XuiRenewPathTests(unittest.IsolatedAsyncioTestCase):
             'sample@example.com', 25, 45,
             inbound_ids=[12, 99],
             current_inbound_ids_hint=[11, 12],
+            limit_hwid=0,
         )
         fake.close.assert_awaited_once()
 
@@ -503,6 +505,7 @@ class XuiRenewPathTests(unittest.IsolatedAsyncioTestCase):
             'sample@example.com', 50, 30,
             inbound_ids=[21, 23],
             current_inbound_ids_hint=[],
+            limit_hwid=0,
         )
 
     @patch('app.services.xui_service.decrypt_text', return_value='secret')

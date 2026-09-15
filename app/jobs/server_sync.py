@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from sqlalchemy import or_, select
 from app.database.session import SessionLocal
+from app.core.config import settings
 from app.database.models import Server, Plan, ResellerBuildConfig, ClientService
 from app.services.xui_service import XuiService
 from app.services.mikrotik_service import MikroTikService
@@ -233,30 +235,56 @@ async def refresh_server_inbounds(session, server: Server, *, force_plan_update:
     return True, old_ids, new_ids, ""
 
 async def sync_all_servers() -> None:
-    """Auto-refresh all active servers every scheduler run.
+    """Refresh active server metadata without serially blocking on slow panels.
 
-    X-UI/Sanaei: refresh inbound IDs and push changes into plans.
-    MikroTik / Custom: refresh router status/counts/version and mirror client usage.
+    3x-ui v3.8.0 performs node/client fan-out concurrently. Mirror that model on
+    the D Bot side: each server gets its own short-lived database session and a
+    bounded number of panels are refreshed in parallel. One unreachable panel
+    therefore does not delay every other server or hold the main sync session.
     """
     async with SessionLocal() as session:
-        servers = (await session.execute(select(Server).where(Server.is_active == True))).scalars().all()
-        changed = 0
-        for server in servers:
-            if server.server_type == "xui":
-                ok, old_ids, new_ids, err = await refresh_server_inbounds(session, server)
-                if not ok:
-                    logger.warning("Server inbound sync failed server_id=%s name=%s: %s", server.id, server.name, err)
-                    continue
-                if old_ids != new_ids:
-                    changed += 1
-                    logger.info("Server inbound IDs refreshed server_id=%s old=%s new=%s", server.id, old_ids, new_ids)
-            elif server.server_type == "mikrotik":
-                ok, err = await refresh_mikrotik_server(session, server)
-                if not ok:
-                    logger.warning("MikroTik router sync failed server_id=%s name=%s: %s", server.id, server.name, err)
-                    changed += 1  # persist runtime health metadata; do not disable server
-                    continue
-                changed += 1
-        if changed:
-            await session.commit()
-    await sync_mikrotik_usage()
+        server_ids = list((await session.execute(
+            select(Server.id).where(Server.is_active == True)
+        )).scalars().all())
+
+    if not server_ids:
+        return
+
+    semaphore = asyncio.Semaphore(max(int(getattr(settings, 'SERVER_SYNC_CONCURRENCY', 4) or 4), 1))
+
+    async def _sync_one(server_id: int) -> tuple[int, str, bool, str]:
+        async with semaphore:
+            async with SessionLocal() as session:
+                server = await session.get(Server, server_id)
+                if not server or not server.is_active:
+                    return server_id, 'missing', False, ''
+                try:
+                    if server.server_type == 'xui':
+                        ok, old_ids, new_ids, err = await refresh_server_inbounds(session, server)
+                        if ok:
+                            meta = dict(server.meta or {})
+                            meta['sanaei_target_version'] = '3.8.0'
+                            meta['sanaei_api_profile'] = 'panel-api-v3'
+                            server.meta = meta
+                            await session.commit()
+                            if old_ids != new_ids:
+                                logger.info(
+                                    'Server inbound IDs refreshed server_id=%s old=%s new=%s',
+                                    server.id, old_ids, new_ids,
+                                )
+                            return server_id, 'xui', True, ''
+                        await session.rollback()
+                        return server_id, 'xui', False, err
+                    if server.server_type == 'mikrotik':
+                        ok, err = await refresh_mikrotik_server(session, server)
+                        await session.commit()
+                        return server_id, 'mikrotik', ok, err
+                    return server_id, str(server.server_type or ''), True, ''
+                except Exception as exc:
+                    await session.rollback()
+                    return server_id, str(getattr(server, 'server_type', '') or ''), False, str(exc)
+
+    results = await asyncio.gather(*(_sync_one(server_id) for server_id in server_ids))
+    for server_id, server_type, ok, err in results:
+        if not ok:
+            logger.warning('Server sync failed server_id=%s type=%s: %s', server_id, server_type, err)

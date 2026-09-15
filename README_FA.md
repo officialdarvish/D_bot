@@ -26,7 +26,7 @@
   <img src="https://img.shields.io/badge/PostgreSQL-Database-4169E1?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/Redis-Cache-DC382D?style=flat-square&logo=redis&logoColor=white" alt="Redis">
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker Ready">
-  <img src="https://img.shields.io/badge/Release-v1.1.7-7C3AED?style=flat-square" alt="Release v1.1.7">
+  <img src="https://img.shields.io/badge/Release-v1.1.8-7C3AED?style=flat-square" alt="Release v1.1.8">
 </p>
 
 <p align="center">

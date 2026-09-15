@@ -4,7 +4,7 @@ import uuid
 
 from aiogram import Bot
 from fastapi import FastAPI, Request, Header, HTTPException, Depends
-from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, Response
+from fastapi.responses import JSONResponse, ORJSONResponse, RedirectResponse, FileResponse, Response
 from app.database.base import Base
 from app.database.session import engine, SessionLocal
 from app.database import models
@@ -13,10 +13,12 @@ from app.database.models import Order, User, Plan, Server, ClientService, Settin
 from app.core.config import settings
 from app.services.nowpayments_service import NowPaymentsService
 from app.services.xui_service import XuiService
+from app.xui.client import XUIClient
 from app.services.mikrotik_service import MikroTikService
 from app.bot.keyboards.common import main_menu_inline
 from app.bot.service_presenter import send_service_info as send_service_card
 from app.services.referral_service import apply_purchase_commission
+from app.services.web_access import read_web_path
 from app.api.admin_web import (
     router as admin_web_router,
     _auth_user,
@@ -28,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from sqlalchemy import select
 
-app = FastAPI(title='D Bot API')
+app = FastAPI(title='D Bot API', default_response_class=ORJSONResponse)
 
 
 class _DropIpRecordAccessLog(logging.Filter):
@@ -42,6 +44,43 @@ logging.getLogger('uvicorn.access').addFilter(_DropIpRecordAccessLog())
 @app.api_route('/api/ip-record/push', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], include_in_schema=False)
 async def disabled_ip_record_push():
     return Response(status_code=204)
+
+
+@app.middleware('http')
+async def web_path_middleware(request: Request, call_next):
+    """Expose website/admin routes only under the configured WEB_PATH prefix.
+
+    Internal route handlers stay unchanged (/login, /admin, /setup), while the
+    public URL becomes /<web_path>/login and /<web_path>/admin. Bare legacy URLs
+    are redirected so bookmarks/API calls automatically follow the active path.
+    """
+    path = request.url.path or '/'
+    try:
+        web_path = await read_web_path()
+    except Exception:
+        web_path = (getattr(settings, 'WEB_PATH', '') or 'dbot').strip().strip('/') or 'dbot'
+    prefix = '/' + web_path
+    managed = ('/login', '/logout', '/setup', '/admin')
+
+    if path == prefix or path == prefix + '/':
+        query = ('?' + request.url.query) if request.url.query else ''
+        return RedirectResponse(prefix + '/login' + query, status_code=307)
+
+    for base in managed:
+        public_base = prefix + base
+        if path == public_base or path.startswith(public_base + '/'):
+            stripped = path[len(prefix):] or '/'
+            request.scope.setdefault('state', {})['dbot_web_prefix'] = prefix
+            request.scope['path'] = stripped
+            request.scope['raw_path'] = stripped.encode('utf-8')
+            return await call_next(request)
+
+    if path == '/' or any(path == base or path.startswith(base + '/') for base in managed):
+        target_path = '/login' if path == '/' else path
+        query = ('?' + request.url.query) if request.url.query else ''
+        return RedirectResponse(prefix + target_path + query, status_code=307)
+
+    return await call_next(request)
 
 
 @app.middleware('http')
@@ -141,12 +180,22 @@ if (FRONTEND_OUT / 'd-bot-logo.png').exists():
 async def frontend_root():
     return FileResponse(_frontend_file(''))
 
+def _public_prefixed(request: Request, path: str) -> str:
+    prefix = str((request.scope.get('state') or {}).get('dbot_web_prefix') or '')
+    clean = '/' + path.lstrip('/')
+    return prefix + clean if prefix else clean
+
+
 @app.get('/admin', include_in_schema=False)
-async def frontend_admin_root():
+async def frontend_admin_root(request: Request, _: str = Depends(_auth_user)):
+    if (await get_setting_value('initial_setup_done', '0')) != '1':
+        return RedirectResponse(_public_prefixed(request, '/setup'), status_code=303)
     return FileResponse(_frontend_file('admin'))
 
 @app.get('/admin/{path:path}', include_in_schema=False)
-async def frontend_admin_path(path: str):
+async def frontend_admin_path(request: Request, path: str, _: str = Depends(_auth_user)):
+    if (await get_setting_value('initial_setup_done', '0')) != '1':
+        return RedirectResponse(_public_prefixed(request, '/setup'), status_code=303)
     return FileResponse(_frontend_file('admin/' + path))
 
 @app.on_event('startup')
@@ -197,6 +246,7 @@ async def startup():
             'ALTER TABLE plans ADD CONSTRAINT plans_category_id_fkey FOREIGN KEY (category_id) REFERENCES server_categories(id) ON DELETE SET NULL',
             'ALTER TABLE plans DROP CONSTRAINT IF EXISTS plans_server_id_fkey',
             'ALTER TABLE plans ADD CONSTRAINT plans_server_id_fkey FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE SET NULL',
+            'ALTER TABLE plans ADD COLUMN IF NOT EXISTS hwid_limit INTEGER DEFAULT 0',
             "ALTER TABLE plans ADD COLUMN IF NOT EXISTS meta JSON DEFAULT '{}'",
             "ALTER TABLE reseller_packages ADD COLUMN IF NOT EXISTS meta JSON DEFAULT '{}'",
             "WITH marker AS (INSERT INTO settings(key, value) VALUES ('reseller_inventory_model_v114_applied', '1') ON CONFLICT (key) DO NOTHING RETURNING key) UPDATE reseller_accounts SET total_bytes = GREATEST(COALESCE(total_bytes, 0) - COALESCE(reserved_bytes, 0), 0) WHERE EXISTS (SELECT 1 FROM marker)",
@@ -256,6 +306,14 @@ async def startup():
         ]:
             await safe_upgrade(conn, sql)
     # Database must stay fully raw. No default settings, servers, plans, cards, or users are seeded.
+
+@app.on_event('shutdown')
+async def shutdown():
+    # Close the process-scoped 3x-ui keep-alive pool only when the API worker
+    # exits. Individual service actions intentionally reuse these connections.
+    await XUIClient.close_shared_clients()
+    await engine.dispose()
+
 
 @app.get('/health')
 async def health():

@@ -2,6 +2,7 @@ import asyncio
 import logging
 from datetime import datetime
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram import BaseMiddleware
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
@@ -16,12 +17,15 @@ from app.jobs.service_alerts import scan_service_alerts
 from app.jobs.service_cleanup import cleanup_expired_services
 from app.jobs.server_sync import sync_all_servers, sync_mikrotik_usage
 from app.jobs.backup_delivery import deliver_scheduled_backup
+from app.jobs.monthly_sales_report import deliver_monthly_sales_report
 from app.bot.handlers import start
 from app.bot.handlers.admin import admin_panel, servers, categories, plans, wallet, settings as admin_settings, resellers as admin_resellers
 from app.bot.handlers.public import account, my_services, tickets, buy, test_account, reseller, private_messages
+from app.bot.backup_bot import backup_bot_supervisor
 from app.bot.utils import get_ui_message_id
 from app.bot.error_reporting import report_bot_error, show_generic_error
 from app.bot.keyboards.common import get_user_button
+from app.xui.client import XUIClient
 
 
 class UserSafeErrorMiddleware(BaseMiddleware):
@@ -165,6 +169,7 @@ async def create_tables():
             'ALTER TABLE client_services ADD CONSTRAINT client_services_purchase_category_id_fkey FOREIGN KEY (purchase_category_id) REFERENCES server_categories(id) ON DELETE SET NULL',
             'ALTER TABLE client_services ADD COLUMN IF NOT EXISTS xui_uuid VARCHAR(80)',
             'ALTER TABLE plans ADD COLUMN IF NOT EXISTS is_unlimited BOOLEAN DEFAULT FALSE',
+            'ALTER TABLE plans ADD COLUMN IF NOT EXISTS hwid_limit INTEGER DEFAULT 0',
             'UPDATE plans SET is_unlimited = TRUE WHERE COALESCE(volume_gb, 0) <= 0',
             'ALTER TABLE servers ADD COLUMN IF NOT EXISTS subscription_url TEXT',
             "ALTER TABLE servers ADD COLUMN IF NOT EXISTS display_name VARCHAR(150)",
@@ -268,8 +273,19 @@ async def main():
     setup_logging()
     await create_tables()
     # Database must stay raw: nothing is inserted by default.
-    redis = Redis.from_url(settings.REDIS_URL)
-    bot = Bot(token=settings.BOT_TOKEN)
+    redis = Redis.from_url(
+        settings.REDIS_URL,
+        max_connections=max(int(settings.REDIS_MAX_CONNECTIONS or 50), 10),
+        health_check_interval=30,
+        socket_connect_timeout=3,
+        socket_timeout=5,
+        retry_on_timeout=True,
+    )
+    telegram_session = AiohttpSession(
+        timeout=max(float(settings.TELEGRAM_HTTP_TIMEOUT_SECONDS or 20.0), 5.0),
+        limit=max(int(settings.TELEGRAM_HTTP_CONNECTION_LIMIT or 100), 20),
+    )
+    bot = Bot(token=settings.BOT_TOKEN, session=telegram_session)
     dp = Dispatcher(storage=RedisStorage(redis=redis))
     dp.message.middleware(UserSafeErrorMiddleware())
     dp.callback_query.middleware(UserSafeErrorMiddleware())
@@ -306,15 +322,39 @@ async def main():
         replace_existing=True,
         next_run_time=datetime.now(scheduler.timezone),
     )
+    scheduler.add_job(
+        deliver_monthly_sales_report,
+        'interval',
+        hours=1,
+        id='monthly_sales_report_delivery',
+        replace_existing=True,
+        next_run_time=datetime.now(scheduler.timezone),
+    )
     scheduler.start()
+    secondary_stop = asyncio.Event()
+    secondary_task = asyncio.create_task(backup_bot_supervisor(secondary_stop))
     try:
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot)
     finally:
+        secondary_stop.set()
+        try:
+            await asyncio.wait_for(secondary_task, timeout=10)
+        except Exception:
+            secondary_task.cancel()
         scheduler.shutdown(wait=False)
         await bot.session.close()
-        await redis.close()
+        try:
+            await redis.aclose()
+        except AttributeError:
+            await redis.close()
+        await XUIClient.close_shared_clients()
         await engine.dispose()
 
 if __name__ == '__main__':
+    try:
+        import uvloop
+        uvloop.install()
+    except Exception:
+        pass
     asyncio.run(main())

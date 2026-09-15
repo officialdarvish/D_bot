@@ -136,7 +136,6 @@ async def edit_or_answer(callback: CallbackQuery, text: str, reply_markup=None, 
     try:
         msg = await callback.message.edit_text(text, reply_markup=reply_markup, **kwargs)
         remember_ui_message(callback.message.chat.id, msg.message_id)
-        await _force_reply_markup(callback.message.bot, callback.message.chat.id, msg.message_id, reply_markup)
         return msg
     except TelegramBadRequest as e:
         low = str(e).lower()
@@ -151,7 +150,6 @@ async def edit_or_answer(callback: CallbackQuery, text: str, reply_markup=None, 
             try:
                 msg = await callback.message.edit_caption(caption=text, reply_markup=reply_markup, **kwargs)
                 remember_ui_message(callback.message.chat.id, callback.message.message_id)
-                await _force_reply_markup(callback.message.bot, callback.message.chat.id, callback.message.message_id, reply_markup)
                 return msg or callback.message
             except Exception:
                 pass
@@ -198,7 +196,6 @@ async def ui_message(message: Message, text: str, reply_markup=None, **kwargs):
             except Exception:
                 pass
             remember_ui_message(chat_id, mid)
-            await _force_reply_markup(message.bot, chat_id, mid, reply_markup)
             return sent
         except TelegramBadRequest as e:
             if 'message is not modified' in str(e).lower():
@@ -235,7 +232,6 @@ async def ui_page(message: Message, text: str, reply_markup=None, **kwargs):
         try:
             sent = await message.bot.edit_message_text(chat_id=chat_id, message_id=mid, text=text, reply_markup=reply_markup, **kwargs)
             remember_ui_message(chat_id, mid)
-            await _force_reply_markup(message.bot, chat_id, mid, reply_markup)
             return sent
         except TelegramBadRequest as e:
             if 'message is not modified' in str(e).lower():
@@ -291,7 +287,6 @@ async def state_prompt(message: Message, state, text: str, reply_markup=None, **
                 **kwargs,
             )
             remember_ui_message(message.chat.id, int(last_mid))
-            await _force_reply_markup(message.bot, message.chat.id, int(last_mid), reply_markup)
         except TelegramBadRequest as e:
             if 'message is not modified' in str(e).lower():
                 remember_ui_message(message.chat.id, int(last_mid))

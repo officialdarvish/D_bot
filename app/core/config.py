@@ -24,9 +24,16 @@ class Settings(BaseSettings):
     NOWPAYMENTS_PRICE_CURRENCY: str = 'usd'
     NOWPAYMENTS_API_URL: str = 'https://api.nowpayments.io/v1'
     NOWPAYMENTS_IPN_CALLBACK_URL: str = ''
-    SERVER_SYNC_SECONDS: int = 5
+    SERVER_SYNC_SECONDS: int = 300
+    SERVER_SYNC_CONCURRENCY: int = 4
     WEB_ADMIN_USERNAME: str = 'admin'
     WEB_ADMIN_PASSWORD: str = ''
+    WEB_PATH: str = 'dbot'
+    DOMAIN_NAME: str = ''
+    PUBLIC_BASE_URL: str = ''
+    ENABLE_HTTPS: bool = True
+    NGINX_HTTP_PORT: int = 80
+    NGINX_HTTPS_PORT: int = 443
     ADMIN_MAX_LOGIN_ATTEMPTS: int = 8
     ADMIN_LOGIN_LOCK_SECONDS: int = 900
     XUI_VERIFY_TLS: bool = True
@@ -38,6 +45,18 @@ class Settings(BaseSettings):
     XUI_WRITE_TIMEOUT_SECONDS: float = 25.0
     XUI_POOL_TIMEOUT_SECONDS: float = 8.0
     XUI_READ_RETRY_ATTEMPTS: int = 3
+    # 3x-ui v3.8.0 / bot latency tuning. These defaults keep enough parallel
+    # capacity for multi-server panels while still bounding resource usage.
+    XUI_AUTH_CACHE_SECONDS: float = 180.0
+    XUI_MAX_CONNECTIONS: int = 40
+    XUI_MAX_KEEPALIVE_CONNECTIONS: int = 20
+    XUI_KEEPALIVE_EXPIRY_SECONDS: float = 30.0
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_RECYCLE_SECONDS: int = 1800
+    REDIS_MAX_CONNECTIONS: int = 50
+    TELEGRAM_HTTP_TIMEOUT_SECONDS: float = 20.0
+    TELEGRAM_HTTP_CONNECTION_LIMIT: int = 100
     BACKUP_MAX_UPLOAD_BYTES: int = 104_857_600
     # Used only for same-installation verification of legacy backup formats 1-3.
     # Portable format 4 uses a cross-install checksum and self-contained secret envelope.

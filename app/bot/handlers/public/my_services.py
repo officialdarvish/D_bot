@@ -305,7 +305,9 @@ def detail_kb(svc, plan, server_type: str = 'xui'):
     total = int(svc.total_bytes or 0)
     remain = max(total - used, 0) if total else 0
     pct = int((used / total) * 100) if total else 0
-    is_mikrotik = (server_type or '').lower() == 'mikrotik'
+    normalized_server_type = (server_type or '').lower()
+    is_mikrotik = normalized_server_type == 'mikrotik'
+    is_xui = normalized_server_type == 'xui'
     rows = [
         [InlineKeyboardButton(text=f'{plan.title if plan else "نامشخص"}', callback_data='noop'), InlineKeyboardButton(text='🚀 نام پلن', callback_data='noop')],
         [InlineKeyboardButton(text=f'{fa_date(svc.created_at)}', callback_data='noop'), InlineKeyboardButton(text='⏰ تاریخ خرید', callback_data='noop')],
@@ -325,6 +327,11 @@ def detail_kb(svc, plan, server_type: str = 'xui'):
             InlineKeyboardButton(text='♻️ بروزرسانی کانفیگ', callback_data=f'svc:refresh:{svc.id}'),
             InlineKeyboardButton(text='🔄 باطل کردن و ارسال جدید', callback_data=f'svc:revoke:{svc.id}')
         ])
+        if is_xui:
+            rows.append([
+                InlineKeyboardButton(text='🖥 مشخصات HWID', callback_data=f'svc:hwids:{svc.id}'),
+                InlineKeyboardButton(text='♻️ ریست آیدی سخت افزار', callback_data=f'svc:hwid_clear:{svc.id}'),
+            ])
     if is_mikrotik:
         rows.append([InlineKeyboardButton(text='📥 دریافت پروفایل سرور', callback_data=f'svc:profile:{svc.id}')])
     rows += [
@@ -333,7 +340,7 @@ def detail_kb(svc, plan, server_type: str = 'xui'):
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-def service_detail_text(svc, plan, server_type: str = 'xui', server=None) -> str:
+def service_detail_text(svc, plan, server_type: str = 'xui', server=None, hwid_status: dict | None = None) -> str:
     used = svc.used_bytes or 0
     total = svc.total_bytes or 0
     remain = max(total - used, 0)
@@ -365,6 +372,45 @@ def service_detail_text(svc, plan, server_type: str = 'xui', server=None) -> str
         f'╰ {percent_bar(used, total, 12)} {pct}%',
         '',
     ]
+
+    if (server_type or '').lower() == 'xui':
+        plan_limit = max(int(getattr(plan, 'hwid_limit', 0) or 0), 0) if plan else 0
+        status = hwid_status if isinstance(hwid_status, dict) else None
+        limit = int(status.get('limit') or 0) if status else plan_limit
+        # If the panel temporarily omits limitHwid, keep the configured plan cap
+        # visible rather than incorrectly showing unlimited.
+        if limit <= 0 and plan_limit > 0:
+            limit = plan_limit
+        devices = list(status.get('devices') or []) if status else []
+        used_hwid = int(status.get('used') or len(devices)) if status else None
+        remaining_hwid = status.get('remaining') if status else None
+        if status is not None and limit > 0 and remaining_hwid is None:
+            remaining_hwid = max(limit - int(used_hwid or 0), 0)
+        lines.extend([
+            '🖥 اطلاعات HWID',
+            f'├ سقف دستگاه: {"نامحدود" if limit <= 0 else str(limit) + " دستگاه"}',
+            f'├ دستگاه ثبت‌شده: {used_hwid if used_hwid is not None else "در دسترس نیست"}',
+            f'╰ ظرفیت باقی‌مانده: {"نامحدود" if limit <= 0 else (max(int(remaining_hwid or 0), 0) if status else "در دسترس نیست")}',
+        ])
+        if devices:
+            lines.append('')
+            lines.append('📱 مشخصات دستگاه‌های ثبت‌شده')
+            for idx, row in enumerate(devices[:4], 1):
+                fp = str(row.get('fingerprint') or row.get('hwidFingerprint') or '').strip()
+                first_seen = _hwid_time(row.get('firstSeen'))
+                last_seen = _hwid_time(row.get('lastSeen'))
+                user_agent = str(row.get('userAgent') or '').strip()
+                lines.append(f'{idx}) {_hwid_device_label(row)}')
+                if fp:
+                    lines.append(f'   HWID fingerprint: {fp}')
+                lines.append(f'   اولین ثبت: {first_seen} | آخرین اتصال: {last_seen}')
+                if user_agent:
+                    lines.append(f'   Client: {user_agent[:72]}')
+            if len(devices) > 4:
+                lines.append(f'… و {len(devices) - 4} دستگاه دیگر')
+        elif status is not None:
+            lines.extend(['', '📱 هنوز هیچ HWID برای این کانفیگ ثبت نشده است.'])
+        lines.append('')
 
     if not svc.is_active:
         deadline = grace_deadline(svc)
@@ -399,6 +445,112 @@ def service_detail_text(svc, plan, server_type: str = 'xui', server=None) -> str
     return '\n'.join(lines).strip()
 
 
+def _hwid_time(value) -> str:
+    try:
+        raw = int(value or 0)
+        if raw <= 0:
+            return '-'
+        # Sanaei stores seconds; tolerate millisecond values from future builds.
+        if raw > 10_000_000_000:
+            raw //= 1000
+        return datetime.fromtimestamp(raw).strftime('%Y-%m-%d %H:%M')
+    except Exception:
+        return '-'
+
+
+def _hwid_device_label(row: dict) -> str:
+    model = str(row.get('deviceModel') or '').strip()
+    os_name = str(row.get('deviceOs') or '').strip()
+    os_version = str(row.get('osVersion') or '').strip()
+    ua = str(row.get('userAgent') or '').strip()
+    label = model or 'Unknown device'
+    os_text = ' '.join(x for x in (os_name, os_version) if x)
+    if os_text:
+        label += f' · {os_text}'
+    elif ua:
+        label += f' · {ua[:28]}'
+    return label[:58]
+
+
+async def _render_hwid_devices(callback: CallbackQuery, sid: int) -> bool:
+    async with SessionLocal() as session:
+        svc = await session.get(ClientService, sid)
+        ok_owner, _user = await _owned_public_service(session, svc, callback.from_user.id)
+        server = await session.get(Server, svc.server_id) if svc else None
+        if not ok_owner or not svc or not server:
+            await _deny_not_owned(callback)
+            return False
+        if (server.server_type or '').lower() != 'xui':
+            await callback.answer('مدیریت HWID فقط برای سرویس‌های 3x-ui فعال است.', show_alert=True)
+            return False
+        email = svc.xui_email or svc.client_username
+    try:
+        status = await XuiService().get_client_hwids(server, email)
+    except Exception as exc:
+        await handle_user_facing_error(
+            callback, exc, context='User HWID device list failed',
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(f'svc:{sid}')]]),
+        )
+        return False
+
+    devices = list(status.get('devices') or [])
+    limit = int(status.get('limit') or 0)
+    used = int(status.get('used') or len(devices))
+    remaining = status.get('remaining')
+    lines = [
+        '🖥 وضعیت دستگاه‌های HWID',
+        '━━━━━━━━━━━━━━',
+        f'👤 سرویس: {email}',
+        f'🔒 سقف دستگاه: {"نامحدود" if limit <= 0 else limit}',
+        f'📱 دستگاه ثبت‌شده: {used}',
+        f'🟢 ظرفیت باقی‌مانده: {"نامحدود" if limit <= 0 else max(int(remaining or 0), 0)}',
+        '',
+    ]
+    if devices:
+        lines.append('دستگاه‌های ثبت‌شده:')
+        for idx, row in enumerate(devices[:8], 1):
+            fp = str(row.get('fingerprint') or row.get('hwidFingerprint') or '').strip()
+            user_agent = str(row.get('userAgent') or '').strip()
+            lines.append(f'{idx}) {_hwid_device_label(row)}')
+            if fp:
+                lines.append(f'   HWID fingerprint: {fp}')
+            lines.append(
+                f'   اولین ثبت: {_hwid_time(row.get("firstSeen"))} | آخرین اتصال: {_hwid_time(row.get("lastSeen"))}'
+            )
+            if user_agent:
+                lines.append(f'   Client: {user_agent[:72]}')
+        if len(devices) > 8:
+            lines.append(f'… و {len(devices) - 8} دستگاه دیگر')
+    else:
+        lines.append('هنوز هیچ دستگاه HWID برای این سرویس ثبت نشده است.')
+
+    rows = [
+        [InlineKeyboardButton(text='♻️ ریست آیدی سخت افزار', callback_data=f'svc:hwid_clear:{sid}')],
+        [back_button(f'svc:{sid}')],
+    ]
+    if devices:
+        lines.extend(['', '♻️ در صورت تعویض دستگاه می‌توانید HWIDهای ثبت‌شده این کانفیگ را پاک کنید.'])
+    await edit_or_answer(callback, '\n'.join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    return True
+
+
+async def _get_service_hwid_status(server, svc) -> dict | None:
+    """Best-effort HWID status for the owner's service detail view.
+
+    HWID metadata should enrich the page, but a temporary panel/network failure
+    must never make the whole My Configs screen unavailable.
+    """
+    if not server or (getattr(server, 'server_type', '') or '').lower() != 'xui' or not svc:
+        return None
+    email = svc.xui_email or svc.client_username
+    if not email:
+        return None
+    try:
+        return await XuiService().get_client_hwids(server, email)
+    except Exception:
+        return None
+
+
 def is_plain_service_callback(data: str | None) -> bool:
     if not data or not data.startswith('svc:'):
         return False
@@ -428,7 +580,12 @@ async def render_detail(callback: CallbackQuery, sid: int) -> bool:
         plan = await session.get(Plan, svc.plan_id) if svc.plan_id else None
         server = await session.get(Server, svc.server_id)
         server_type = server.server_type if server else 'xui'
-    await edit_or_answer(callback, service_detail_text(svc, plan, server_type, server), reply_markup=detail_kb(svc, plan, server_type))
+    hwid_status = await _get_service_hwid_status(server, svc) if (server_type or '').lower() == 'xui' else None
+    await edit_or_answer(
+        callback,
+        service_detail_text(svc, plan, server_type, server, hwid_status=hwid_status),
+        reply_markup=detail_kb(svc, plan, server_type),
+    )
     return True
 
 async def auto_refresh_service_page(bot, chat_id: int, message_id: int, sid: int):
@@ -563,6 +720,85 @@ async def toggle_openvpn_service(callback: CallbackQuery):
         await callback.answer('✅ سرویس فعال شد' if actual_enabled else '⛔ سرویس غیرفعال شد')
     else:
         await callback.answer('وضعیت پنل تغییر نکرد؛ احتمالاً سرویس منقضی یا محدود شده است.', show_alert=True)
+
+
+@router.callback_query(F.data.startswith('svc:hwids:'))
+async def service_hwids(callback: CallbackQuery):
+    try:
+        sid = int((callback.data or '').split(':')[-1])
+    except Exception:
+        await callback.answer('درخواست نامعتبر است.', show_alert=True)
+        return
+    ok = await _render_hwid_devices(callback, sid)
+    if ok:
+        await callback.answer()
+
+
+@router.callback_query(F.data.startswith('svc:hwid_del:'))
+async def service_hwid_delete(callback: CallbackQuery):
+    # Per-device deletion stays an admin/support operation. The owner receives a
+    # single safe action that clears all registered HWIDs for their own config.
+    await callback.answer('حذف تکی دستگاه از این بخش فعال نیست؛ از «ریست آیدی سخت افزار» استفاده کنید.', show_alert=True)
+
+
+@router.callback_query(F.data.startswith('svc:hwid_clear:'))
+async def service_hwid_clear_confirm(callback: CallbackQuery):
+    try:
+        sid = int((callback.data or '').split(':')[-1])
+    except Exception:
+        await callback.answer('درخواست نامعتبر است.', show_alert=True)
+        return
+    async with SessionLocal() as session:
+        svc = await session.get(ClientService, sid)
+        ok_owner, _user = await _owned_public_service(session, svc, callback.from_user.id)
+        server = await session.get(Server, svc.server_id) if svc else None
+        if not ok_owner or not svc or not server:
+            await _deny_not_owned(callback)
+            return
+        if (server.server_type or '').lower() != 'xui':
+            await callback.answer('ریست HWID فقط برای سرویس‌های 3x-ui فعال است.', show_alert=True)
+            return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='✅ تایید ریست HWID', callback_data=f'svc:hwid_clear_confirm:{sid}')],
+        [InlineKeyboardButton(text='❌ انصراف', callback_data=f'svc:{sid}')],
+    ])
+    await edit_or_answer(
+        callback,
+        '⚠️ ریست آیدی سخت افزار\n\nهمه HWIDهای ثبت‌شده این کانفیگ پاک می‌شوند و دستگاه بعدی هنگام اتصال دوباره ثبت خواهد شد.\n\nآیا مطمئن هستید؟',
+        reply_markup=kb,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith('svc:hwid_clear_confirm:'))
+async def service_hwid_clear(callback: CallbackQuery):
+    try:
+        sid = int((callback.data or '').split(':')[-1])
+    except Exception:
+        await callback.answer('درخواست نامعتبر است.', show_alert=True)
+        return
+    async with SessionLocal() as session:
+        svc = await session.get(ClientService, sid)
+        ok_owner, _user = await _owned_public_service(session, svc, callback.from_user.id)
+        server = await session.get(Server, svc.server_id) if svc else None
+        if not ok_owner or not svc or not server:
+            await _deny_not_owned(callback)
+            return
+        if (server.server_type or '').lower() != 'xui':
+            await callback.answer('ریست HWID فقط برای سرویس‌های 3x-ui فعال است.', show_alert=True)
+            return
+        email = svc.xui_email or svc.client_username
+    try:
+        await XuiService().clear_client_hwids(server, email)
+    except Exception as exc:
+        await handle_user_facing_error(
+            callback, exc, context='User HWID clear failed',
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(f'svc:{sid}')]]),
+        )
+        return
+    ok = await _render_hwid_devices(callback, sid)
+    if ok:
+        await callback.answer('✅ آیدی سخت افزار با موفقیت ریست شد')
 
 
 @router.callback_query(F.data.startswith('svc:revoke:'))
@@ -738,6 +974,9 @@ def renewal_checkout_text(
         f'💾 حجم: {plan.volume_gb} گیگ\n'
         f'⏳ مدت: {plan.duration_days} روز\n'
     )
+    hwid_limit = max(int(getattr(plan, 'hwid_limit', 0) or 0), 0)
+    if hwid_limit > 0:
+        text += f'🖥 سقف دستگاه HWID: {hwid_limit} دستگاه\n'
     if is_admin:
         text += '💰 مبلغ: رایگان برای مدیر\n'
     elif discount_code:

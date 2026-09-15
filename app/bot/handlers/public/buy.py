@@ -462,6 +462,8 @@ def is_admin_user(user_id: int) -> bool:
     return user_id in settings.admin_ids
 
 def plan_price_text(plan, is_admin: bool = False) -> str:
+    # Keep the plan button/title clean. HWID policy is shown in the plan/service
+    # details instead of being appended to the visible plan title.
     if is_admin:
         return f'{plan.title} - رایگان برای مدیر'
     return f'{plan.title} - {plan.price_irt:,} تومان'

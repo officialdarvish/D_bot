@@ -539,6 +539,18 @@ async def _send_user_info_by_numeric_id(message: Message, telegram_id: int, stat
         orders_count = (await session.execute(select(func.count(Order.id)).where(Order.user_id == user.id))).scalar() or 0
         paid_amount = (await session.execute(select(func.coalesce(func.sum(Order.amount_irt), 0)).where(Order.user_id == user.id, Order.status == 'paid'))).scalar() or 0
         reseller = (await session.execute(select(ResellerAccount).where(ResellerAccount.user_id == user.id))).scalar_one_or_none()
+        services = (await session.execute(select(ClientService).where(ClientService.user_id == user.id).order_by(ClientService.id.desc()))).scalars().all()
+        server_ids = {int(svc.server_id) for svc in services if getattr(svc, 'server_id', None)}
+        server_map = {}
+        if server_ids:
+            server_rows = (await session.execute(select(Server).where(Server.id.in_(server_ids)))).scalars().all()
+            server_map = {int(row.id): row for row in server_rows}
+        xui_services = [
+            svc for svc in services
+            if getattr(svc, 'server_id', None)
+            and str(getattr(server_map.get(int(svc.server_id)), 'server_type', '') or '').lower() == 'xui'
+            and (getattr(svc, 'xui_email', None) or getattr(svc, 'client_username', None))
+        ]
     if state:
         await state.clear()
     joined = fa_date(user.joined_at, empty='-') if user.joined_at else '-'
@@ -568,7 +580,11 @@ async def _send_user_info_by_numeric_id(message: Message, telegram_id: int, stat
         f'▫️ مجموع پرداخت موفق: {int(paid_amount or 0):,} تومان\n\n'
         f'🤝 نمایندگی: {reseller_text}'
     )
-    await ui_message(message, text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:user_interaction')]]))
+    user_rows = []
+    if xui_services:
+        user_rows.append([InlineKeyboardButton(text=f'🖥 مدیریت HWID سرویس‌ها ({len(xui_services)})', callback_data=f'admin:hwid_user:{user.id}')])
+    user_rows.append([back_button('admin:user_interaction')])
+    await ui_message(message, text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(inline_keyboard=user_rows))
 
 
 @router.message(UserInfoLookup.telegram_id)
@@ -590,6 +606,211 @@ async def user_info(message: Message):
         return
     await _send_user_info_by_numeric_id(message, int(key), None)
 
+
+
+def _admin_hwid_time(value) -> str:
+    try:
+        raw = int(value or 0)
+        if raw <= 0:
+            return '-'
+        if raw > 10_000_000_000:
+            raw //= 1000
+        return datetime.fromtimestamp(raw).strftime('%Y-%m-%d %H:%M')
+    except Exception:
+        return '-'
+
+
+def _admin_hwid_device_label(row: dict) -> str:
+    model = str(row.get('deviceModel') or '').strip()
+    os_name = str(row.get('deviceOs') or '').strip()
+    os_version = str(row.get('osVersion') or '').strip()
+    ua = str(row.get('userAgent') or '').strip()
+    label = model or 'Unknown device'
+    os_text = ' '.join(x for x in (os_name, os_version) if x)
+    if os_text:
+        label += f' · {os_text}'
+    elif ua:
+        label += f' · {ua[:28]}'
+    return label[:56]
+
+
+@router.callback_query(F.data.startswith('admin:hwid_user:'))
+async def admin_hwid_user_services(callback: CallbackQuery):
+    if not admin(callback.from_user.id):
+        return
+    try:
+        user_id = int((callback.data or '').split(':')[-1])
+    except Exception:
+        await callback.answer('درخواست نامعتبر است.', show_alert=True)
+        return
+    async with SessionLocal() as session:
+        user = await session.get(User, user_id)
+        services = (await session.execute(
+            select(ClientService).where(ClientService.user_id == user_id).order_by(ClientService.id.desc())
+        )).scalars().all()
+        server_ids = {int(s.server_id) for s in services if getattr(s, 'server_id', None)}
+        server_map = {}
+        if server_ids:
+            rows = (await session.execute(select(Server).where(Server.id.in_(server_ids)))).scalars().all()
+            server_map = {int(row.id): row for row in rows}
+    if not user:
+        await callback.answer('کاربر پیدا نشد.', show_alert=True)
+        return
+    xui_services = [
+        svc for svc in services
+        if getattr(svc, 'server_id', None)
+        and str(getattr(server_map.get(int(svc.server_id)), 'server_type', '') or '').lower() == 'xui'
+        and (getattr(svc, 'xui_email', None) or getattr(svc, 'client_username', None))
+    ]
+    rows = []
+    for svc in xui_services[:30]:
+        name = str(svc.client_username or svc.xui_email or f'Service #{svc.id}')
+        state_icon = '🟢' if svc.is_active else '⚪️'
+        rows.append([InlineKeyboardButton(text=f'{state_icon} {name[:42]}', callback_data=f'admin:hwid_svc:{svc.id}')])
+    if not rows:
+        rows.append([InlineKeyboardButton(text='هیچ سرویس 3x-ui دارای HWID پیدا نشد', callback_data='noop')])
+    rows.append([back_button('admin:user_interaction')])
+    label = f'@{user.username}' if user.username else str(user.telegram_id)
+    await edit_or_answer(
+        callback,
+        f'🖥 مدیریت HWID کاربر\n\n👤 {label}\nیک سرویس را انتخاب کنید:',
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+    await callback.answer()
+
+
+async def _render_admin_hwid_service(callback: CallbackQuery, service_id: int) -> bool:
+    async with SessionLocal() as session:
+        svc = await session.get(ClientService, service_id)
+        server = await session.get(Server, svc.server_id) if svc and svc.server_id else None
+        plan = await session.get(Plan, svc.plan_id) if svc and svc.plan_id else None
+    if not svc or not server or str(server.server_type or '').lower() != 'xui':
+        await callback.answer('سرویس 3x-ui پیدا نشد.', show_alert=True)
+        return False
+    email = str(svc.xui_email or svc.client_username or '').strip()
+    if not email:
+        await callback.answer('شناسه کلاینت در پنل ثبت نشده است.', show_alert=True)
+        return False
+    try:
+        status = await XuiService().get_client_hwids(server, email)
+    except Exception as exc:
+        await handle_user_facing_error(callback, exc, context='Admin HWID device list failed')
+        return False
+    devices = list(status.get('devices') or [])
+    limit = max(int(status.get('limit') or 0), 0)
+    used = int(status.get('used') or len(devices))
+    remaining = status.get('remaining')
+    plan_limit = max(int(getattr(plan, 'hwid_limit', 0) or 0), 0) if plan else 0
+    lines = [
+        '🖥 مدیریت HWID سرویس',
+        '━━━━━━━━━━━━━━',
+        f'👤 Client: {email}',
+        f'📦 Plan: {getattr(plan, "title", None) or "-"}',
+        f'🔒 Plan limit: {"نامحدود" if plan_limit <= 0 else plan_limit}',
+        f'🔒 Panel limit: {"نامحدود" if limit <= 0 else limit}',
+        f'📱 Registered: {used}',
+        f'🟢 Remaining: {"نامحدود" if limit <= 0 else max(int(remaining or 0), 0)}',
+        '',
+    ]
+    if devices:
+        lines.append('دستگاه‌ها:')
+        for idx, row in enumerate(devices[:12], 1):
+            lines.append(f'{idx}) {_admin_hwid_device_label(row)} | آخرین اتصال: {_admin_hwid_time(row.get("lastSeen"))}')
+    else:
+        lines.append('هیچ دستگاهی ثبت نشده است.')
+    buttons = []
+    for row in devices[:8]:
+        try:
+            device_id = int(row.get('id') or 0)
+        except Exception:
+            device_id = 0
+        if device_id > 0:
+            buttons.append([InlineKeyboardButton(text=f'🗑 {_admin_hwid_device_label(row)}', callback_data=f'admin:hwid_del:{service_id}:{device_id}')])
+    if devices:
+        buttons.append([InlineKeyboardButton(text='🧹 پاک کردن همه دستگاه‌ها', callback_data=f'admin:hwid_clear:{service_id}')])
+    buttons.append([InlineKeyboardButton(text='🔄 بروزرسانی', callback_data=f'admin:hwid_svc:{service_id}')])
+    buttons.append([InlineKeyboardButton(text='🔙 سرویس‌های HWID کاربر', callback_data=f'admin:hwid_user:{svc.user_id}')])
+    await edit_or_answer(callback, '\n'.join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    return True
+
+
+@router.callback_query(F.data.startswith('admin:hwid_svc:'))
+async def admin_hwid_service(callback: CallbackQuery):
+    if not admin(callback.from_user.id):
+        return
+    try:
+        service_id = int((callback.data or '').split(':')[-1])
+    except Exception:
+        await callback.answer('درخواست نامعتبر است.', show_alert=True)
+        return
+    if await _render_admin_hwid_service(callback, service_id):
+        await callback.answer()
+
+
+@router.callback_query(F.data.startswith('admin:hwid_del:'))
+async def admin_hwid_delete_device(callback: CallbackQuery):
+    if not admin(callback.from_user.id):
+        return
+    try:
+        parts = (callback.data or '').split(':')
+        service_id, device_id = int(parts[-2]), int(parts[-1])
+    except Exception:
+        await callback.answer('درخواست نامعتبر است.', show_alert=True)
+        return
+    async with SessionLocal() as session:
+        svc = await session.get(ClientService, service_id)
+        server = await session.get(Server, svc.server_id) if svc and svc.server_id else None
+    if not svc or not server or str(server.server_type or '').lower() != 'xui':
+        await callback.answer('سرویس 3x-ui پیدا نشد.', show_alert=True)
+        return
+    try:
+        await XuiService().delete_client_hwid(server, svc.xui_email or svc.client_username, device_id)
+    except Exception as exc:
+        await handle_user_facing_error(callback, exc, context='Admin HWID device delete failed')
+        return
+    await _render_admin_hwid_service(callback, service_id)
+    await callback.answer('✅ دستگاه HWID حذف شد')
+
+
+@router.callback_query(F.data.startswith('admin:hwid_clear:'))
+async def admin_hwid_clear_prompt(callback: CallbackQuery):
+    if not admin(callback.from_user.id):
+        return
+    try:
+        service_id = int((callback.data or '').split(':')[-1])
+    except Exception:
+        await callback.answer('درخواست نامعتبر است.', show_alert=True)
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='✅ تایید پاک‌سازی HWID', callback_data=f'admin:hwid_clear_confirm:{service_id}')],
+        [InlineKeyboardButton(text='❌ انصراف', callback_data=f'admin:hwid_svc:{service_id}')],
+    ])
+    await edit_or_answer(callback, '⚠️ همه دستگاه‌های HWID این سرویس پاک شوند؟\n\nپس از پاک‌سازی، دستگاه بعدی هنگام دریافت Subscription دوباره ثبت می‌شود.', reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith('admin:hwid_clear_confirm:'))
+async def admin_hwid_clear_confirm(callback: CallbackQuery):
+    if not admin(callback.from_user.id):
+        return
+    try:
+        service_id = int((callback.data or '').split(':')[-1])
+    except Exception:
+        await callback.answer('درخواست نامعتبر است.', show_alert=True)
+        return
+    async with SessionLocal() as session:
+        svc = await session.get(ClientService, service_id)
+        server = await session.get(Server, svc.server_id) if svc and svc.server_id else None
+    if not svc or not server or str(server.server_type or '').lower() != 'xui':
+        await callback.answer('سرویس 3x-ui پیدا نشد.', show_alert=True)
+        return
+    try:
+        await XuiService().clear_client_hwids(server, svc.xui_email or svc.client_username)
+    except Exception as exc:
+        await handle_user_facing_error(callback, exc, context='Admin HWID clear failed')
+        return
+    await _render_admin_hwid_service(callback, service_id)
+    await callback.answer('✅ همه HWIDها پاک شدند')
 
 def buttons_kb(bot_enabled='1', test_enabled='1', test_visible='1'):
     return InlineKeyboardMarkup(inline_keyboard=[

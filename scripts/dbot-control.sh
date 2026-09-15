@@ -194,6 +194,7 @@ load_live_web_credentials(){
   LIVE_WEB_UPDATED_AT=""
   LIVE_WEB_UPDATED_BY=""
   LIVE_WEB_SOURCE="environment-fallback"
+  LIVE_WEB_PATH="${WEB_PATH:-dbot}"
 
   if payload="$(credentials_cli_read show --json)" && [ -n "$payload" ]; then
     local assignments=""
@@ -207,6 +208,7 @@ values = {
     'LIVE_WEB_UPDATED_AT': str(obj.get('updated_at') or ''),
     'LIVE_WEB_UPDATED_BY': str(obj.get('updated_by') or ''),
     'LIVE_WEB_SOURCE': str(obj.get('source') or 'database'),
+    'LIVE_WEB_PATH': str(obj.get('web_path') or 'dbot'),
 }
 for key, value in values.items():
     print(f'{key}={shlex.quote(value)}')
@@ -264,13 +266,15 @@ refresh_credentials_services(){
 
 panel_url(){
   load_env
-  local domain="${DOMAIN_NAME:-not-set}" api_port="${API_PORT:-8000}" http_port="${NGINX_HTTP_PORT:-80}" https_port="${NGINX_HTTPS_PORT:-443}"
+  load_live_web_credentials >/dev/null 2>&1 || true
+  local domain="${DOMAIN_NAME:-not-set}" api_port="${API_PORT:-8000}" http_port="${NGINX_HTTP_PORT:-80}" https_port="${NGINX_HTTPS_PORT:-443}" web_path="${LIVE_WEB_PATH:-${WEB_PATH:-dbot}}"
+  web_path="${web_path#/}"; web_path="${web_path%/}"
   if [ "${ENABLE_HTTPS:-false}" = "true" ] && [ "$domain" != "not-set" ]; then
-    echo "https://${domain}$(port_suffix https "$https_port")/login"
+    echo "https://${domain}$(port_suffix https "$https_port")/${web_path}/login"
   elif [ "$domain" != "not-set" ]; then
-    echo "http://${domain}$(port_suffix http "$http_port")/login"
+    echo "http://${domain}$(port_suffix http "$http_port")/${web_path}/login"
   else
-    echo "http://SERVER_IP:${api_port}/login"
+    echo "http://SERVER_IP:${api_port}/${web_path}/login"
   fi
 }
 
@@ -312,6 +316,7 @@ show_setup_info(){
   printf '  Domain           : %s\n' "${DOMAIN_NAME:-not set}"
   printf '  HTTPS            : %s\n' "${ENABLE_HTTPS:-false}"
   printf '  SSL Email        : %s\n' "${LETSENCRYPT_EMAIL:-not set}"
+  printf '  Web Path         : /%s\n' "${LIVE_WEB_PATH:-${WEB_PATH:-dbot}}"
   printf '  Web Login        : %s\n' "$(panel_url)"
   printf '  API Port         : %s\n' "${API_PORT:-8000}"
   printf '  Nginx HTTP Port  : %s\n' "${NGINX_HTTP_PORT:-80}"
@@ -569,7 +574,8 @@ edit_website(){
   echo "4) Change internal API port"
   echo "5) Change Nginx HTTP port"
   echo "6) Change Nginx HTTPS port"
-  echo "7) Apply Nginx/SSL config"
+  echo "7) Change Web Path"
+  echo "8) Apply Nginx/SSL config"
   echo "0) Back"
   read -r -p "Select: " c || true
   case "$c" in
@@ -603,7 +609,20 @@ edit_website(){
         echo "Port must be between 1 and 65535."
       done
       set_env_value NGINX_HTTPS_PORT "$v" ;;
-    7) configure_nginx_ssl; pause; return ;;
+    7)
+      load_live_web_credentials
+      read -r -p "New Web Path [${LIVE_WEB_PATH:-${WEB_PATH:-dbot}}]: " v || true
+      v="${v:-${LIVE_WEB_PATH:-${WEB_PATH:-dbot}}}"
+      v="${v#/}"; v="${v%/}"
+      if [[ ! "$v" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{3,63}$ ]]; then
+        echo -e "${C_RED}Invalid Web Path. Use 4-64 letters, numbers, dash or underscore.${C_NC}"; pause; return
+      fi
+      set_env_value WEB_PATH "$v"
+      if ! credentials_cli_write set-path "$v" >/dev/null; then
+        echo -e "${C_RED}Could not update live Web Path in database.${C_NC}"; pause; return
+      fi
+      ;;
+    8) configure_nginx_ssl; pause; return ;;
     0) return ;;
   esac
   configure_nginx_ssl || true

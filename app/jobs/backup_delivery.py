@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
+from app.services.backup_config import BACKUP_INTERVAL_LABELS, normalize_backup_interval
 
 logger = logging.getLogger(__name__)
 
@@ -14,17 +15,28 @@ def _now_local() -> datetime:
     try:
         return datetime.now(ZoneInfo(settings.TZ))
     except Exception:
-        return datetime.now()
+        return datetime.now().astimezone()
+
+
+def _parse_dt(value: str, tzinfo) -> datetime | None:
+    raw = str(value or '').strip()
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=tzinfo)
+        return dt.astimezone(tzinfo)
+    except Exception:
+        return None
 
 
 async def deliver_scheduled_backup() -> None:
-    """Create and send one new restorable backup document at the configured time.
+    """Send backups on a configurable interval: 1/3/6/12/24 hours or 7 days.
 
-    The job runs every minute but attempts delivery only once per local calendar
-    day. Telegram delivery uses sendDocument and never edits an existing message.
+    The scheduler calls this every minute. A persisted anchor/last-success timestamp
+    prevents duplicates across restarts. Failed attempts are retried after 15 minutes.
     """
-    # Local import keeps normal bot startup lightweight and avoids importing the
-    # web backup stack before the database/application are initialized.
     from app.api.admin_web import (
         _effective_backup_chat_id,
         _save_settings_map,
@@ -35,34 +47,26 @@ async def deliver_scheduled_backup() -> None:
     )
 
     values = await _settings_map()
-    configured_time = str(values.get('backup_time') or '03:00').strip()
-    now = _now_local()
-    try:
-        due_hour, due_minute = [int(part) for part in configured_time.split(':', 1)]
-        due_at = now.replace(hour=due_hour, minute=due_minute, second=0, microsecond=0)
-    except Exception:
-        logger.error('Invalid backup_time setting: %s', configured_time)
+    if str(values.get('backup_schedule_enabled') or '1') != '1':
         return
+
+    interval_minutes = normalize_backup_interval(values.get('backup_interval_minutes') or '1440')
+    now = _now_local()
+    last_success = _parse_dt(values.get('backup_last_scheduled_at', ''), now.tzinfo)
+    anchor = last_success or _parse_dt(values.get('backup_schedule_anchor_at', ''), now.tzinfo)
+    if anchor is None:
+        # First configuration/start: establish a deterministic anchor instead of
+        # immediately spamming a backup on process start.
+        await _save_settings_map({'backup_schedule_anchor_at': now.isoformat()})
+        return
+
+    due_at = anchor + timedelta(minutes=interval_minutes)
     if now < due_at:
         return
 
-    today = now.date().isoformat()
-    if values.get('backup_last_scheduled_date') == today:
+    last_attempt = _parse_dt(values.get('backup_last_scheduled_attempt_at', ''), now.tzinfo)
+    if last_attempt and now - last_attempt < timedelta(minutes=15):
         return
-
-    last_attempt_raw = str(values.get('backup_last_scheduled_attempt_at') or '').strip()
-    if last_attempt_raw:
-        try:
-            last_attempt = datetime.fromisoformat(last_attempt_raw)
-            if last_attempt.tzinfo is None:
-                last_attempt = last_attempt.replace(tzinfo=now.tzinfo)
-            if now - last_attempt < timedelta(minutes=15):
-                return
-        except Exception:
-            pass
-
-    # Claim this retry window before doing I/O. A failed delivery is retried
-    # every 15 minutes until it succeeds, without creating duplicate backups.
     await _save_settings_map({'backup_last_scheduled_attempt_at': now.isoformat()})
 
     destination = str(values.get('backup_destination') or 'channel').strip()
@@ -77,6 +81,7 @@ async def deliver_scheduled_backup() -> None:
     try:
         path = await _write_backup_file()
         stamp = now.strftime('%Y%m%d_%H%M%S')
+        interval_label = BACKUP_INTERVAL_LABELS.get(interval_minutes, f'{interval_minutes} minutes')
         result = await _telegram_send_backup(
             token,
             target,
@@ -84,18 +89,25 @@ async def deliver_scheduled_backup() -> None:
             destination,
             caption=(
                 '🕒 D BOT scheduled portable backup v4\n\n'
+                f'🔁 Cycle: {interval_label}\n'
                 '✅ New backup document\n'
                 '✅ Restorable from Backup & Restore'
             ),
             filename=f'dbot_scheduled_backup_{stamp}.json',
         )
-        await _save_settings_map({
-            'backup_last_backup_status': 'ok' if result.get('ok') else 'error',
+        success = bool(result.get('ok'))
+        save_values = {
+            'backup_last_backup_status': 'ok' if success else 'error',
             'backup_last_backup_message': result.get('message', ''),
             'backup_last_backup_at': attempted_at,
-            'backup_last_scheduled_date': today if result.get('ok') else '',
-        })
-        if not result.get('ok'):
+        }
+        if success:
+            save_values.update({
+                'backup_last_scheduled_at': now.isoformat(),
+                'backup_schedule_anchor_at': now.isoformat(),
+            })
+        await _save_settings_map(save_values)
+        if not success:
             logger.error('Scheduled backup delivery failed: %s', result.get('message'))
     except Exception as exc:
         logger.exception('Scheduled backup crashed')

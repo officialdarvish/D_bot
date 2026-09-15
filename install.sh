@@ -182,6 +182,11 @@ valid_email(){
   [[ "$email" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]
 }
 
+valid_web_path(){
+  local value="$1"
+  [[ "$value" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{3,63}$ ]]
+}
+
 setup_header(){
   clear || true
   echo "╔══════════════════════════════════════════════════════════════╗"
@@ -284,6 +289,19 @@ setup_wizard(){
     WEB_ADMIN_PASSWORD="$(ask_secret_default 'Web admin password' "$(generate_password)")"
   fi
 
+  AUTO_WEB_PATH="$(ask_yes_no 'Auto-generate a private Web Path?' 'y')"
+  if [ "$AUTO_WEB_PATH" = "true" ]; then
+    WEB_PATH="dbot-$(openssl rand -hex 6)"
+  else
+    while true; do
+      WEB_PATH="$(ask_default 'Web Path (4-64 chars: letters, numbers, _ or -)' 'dbot')"
+      WEB_PATH="${WEB_PATH#/}"
+      WEB_PATH="${WEB_PATH%/}"
+      valid_web_path "$WEB_PATH" && break
+      warn "Invalid Web Path. It must be 4-64 characters, start with a letter/number, and use only letters, numbers, _ or -."
+    done
+  fi
+
   setup_step 3 "Database"
   POSTGRES_DB="$(ask_default 'PostgreSQL database name' 'd_bot')"
   POSTGRES_USER="$(ask_default 'PostgreSQL username' 'dbot')"
@@ -296,7 +314,8 @@ setup_wizard(){
     warn "Port must be between 1 and 65535."
   done
   TZ_VALUE="$(ask_default 'Timezone' 'Asia/Tehran')"
-  CHANNEL_URL="$(ask_optional 'Default Telegram channel URL, optional: ')"
+  CHANNEL_URL=""
+  echo "Forced channel and Rules are configured after first web login in the Setup Wizard."
 
   POSTGRES_HOST="db"
   POSTGRES_PORT="5432"
@@ -315,7 +334,8 @@ setup_wizard(){
   echo "Domain             : ${DOMAIN_NAME}"
   echo "SSL certificate    : active"
   echo "Admin Telegram IDs : ${ADMIN_IDS}"
-  echo "Web login          : https://${DOMAIN_NAME}/login"
+  echo "Web path           : /${WEB_PATH}"
+  echo "Web login          : https://${DOMAIN_NAME}/${WEB_PATH}/login"
   echo "Web username       : ${WEB_ADMIN_USERNAME}"
   echo "Database           : ${POSTGRES_DB}"
   echo "Database user      : ${POSTGRES_USER}"
@@ -323,7 +343,7 @@ setup_wizard(){
   echo "Nginx HTTP port    : ${NGINX_HTTP_PORT}"
   echo "Nginx HTTPS port   : ${NGINX_HTTPS_PORT}"
   echo "Timezone           : ${TZ_VALUE}"
-  echo "Channel URL        : ${CHANNEL_URL:-not set}"
+  echo "Forced channel     : configured later in Web Setup Wizard"
   echo
   CONFIRM_SETUP="$(ask_yes_no 'Save this setup and continue installation?' 'y')"
   if [ "$CONFIRM_SETUP" != "true" ]; then
@@ -358,6 +378,8 @@ REDIS_PORT=${REDIS_PORT}
 REDIS_DB=${REDIS_DB}
 SERVER_SYNC_SECONDS=${SERVER_SYNC_SECONDS}
 DOMAIN_NAME=${DOMAIN_NAME}
+WEB_PATH=${WEB_PATH}
+PUBLIC_BASE_URL=
 ENABLE_HTTPS=${ENABLE_HTTPS}
 LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL}
 WEB_ADMIN_USERNAME=${WEB_ADMIN_USERNAME}
@@ -385,8 +407,9 @@ EOFENV
   echo "Telegram Bot Token : [saved in .env]"
   echo "Admin Telegram IDs : ${ADMIN_IDS}"
   echo "Website Domain     : ${DOMAIN_NAME}"
+  echo "Web Path           : /${WEB_PATH}"
   echo "HTTPS Enabled      : ${ENABLE_HTTPS}"
-  echo "Web Admin Login    : https://${DOMAIN_NAME}/login"
+  echo "Web Admin Login    : https://${DOMAIN_NAME}/${WEB_PATH}/login"
   echo "Web Admin Username : ${WEB_ADMIN_USERNAME}"
   echo "Web Admin Password : ${WEB_ADMIN_PASSWORD}"
   echo "Database Name      : ${POSTGRES_DB}"
@@ -545,17 +568,20 @@ show_web_credentials(){
   HTTPS_PORT_DISPLAY="${NGINX_HTTPS_PORT:-443}"
   USER_DISPLAY="${WEB_ADMIN_USERNAME:-admin}"
   PASS_DISPLAY="${WEB_ADMIN_PASSWORD:-change_this_admin_password}"
+  WEB_PATH_DISPLAY="${WEB_PATH:-dbot}"
+  WEB_PATH_DISPLAY="${WEB_PATH_DISPLAY#/}"
+  WEB_PATH_DISPLAY="${WEB_PATH_DISPLAY%/}"
   if [ "${ENABLE_HTTPS:-true}" = "true" ]; then
     if [ "${HTTPS_PORT_DISPLAY}" = "443" ]; then
-      LOGIN_URL="https://${DOMAIN_DISPLAY}/login"
+      LOGIN_URL="https://${DOMAIN_DISPLAY}/${WEB_PATH_DISPLAY}/login"
     else
-      LOGIN_URL="https://${DOMAIN_DISPLAY}:${HTTPS_PORT_DISPLAY}/login"
+      LOGIN_URL="https://${DOMAIN_DISPLAY}:${HTTPS_PORT_DISPLAY}/${WEB_PATH_DISPLAY}/login"
     fi
   else
     if [ "${HTTP_PORT_DISPLAY}" = "80" ]; then
-      LOGIN_URL="http://${DOMAIN_DISPLAY}/login"
+      LOGIN_URL="http://${DOMAIN_DISPLAY}/${WEB_PATH_DISPLAY}/login"
     else
-      LOGIN_URL="http://${DOMAIN_DISPLAY}:${HTTP_PORT_DISPLAY}/login"
+      LOGIN_URL="http://${DOMAIN_DISPLAY}:${HTTP_PORT_DISPLAY}/${WEB_PATH_DISPLAY}/login"
     fi
   fi
   echo
@@ -563,7 +589,8 @@ show_web_credentials(){
   echo "        D Bot Web Admin Access"
   echo "================================================"
   echo "Login URL          : ${LOGIN_URL}"
-  echo "Direct API URL     : http://${DOMAIN_DISPLAY}:${API_PORT:-8000}/login"
+  echo "Web Path           : /${WEB_PATH_DISPLAY}"
+  echo "Direct API URL     : http://${DOMAIN_DISPLAY}:${API_PORT:-8000}/${WEB_PATH_DISPLAY}/login"
   echo "Web Admin Username : ${USER_DISPLAY}"
   echo "Web Admin Password : ${PASS_DISPLAY}"
   echo "Role               : Owner"

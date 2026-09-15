@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import secrets
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -14,6 +16,8 @@ import httpx
 from app.core.config import settings
 
 GB = 1024 ** 3
+SANAEI_TARGET_VERSION = "3.8.0"
+
 
 
 @dataclass(slots=True)
@@ -24,6 +28,8 @@ class XuiClientPayload:
     total_gb: int | float = 0
     expire_days: int = 0
     limit_ip: int = 0
+    # Sanaei / 3x-ui v3.8.0 registered-device limit (0 = unlimited).
+    limit_hwid: int = 0
     enable: bool = True
 
     @property
@@ -54,6 +60,10 @@ class XUIClient:
     are never used for client mutations.
     """
 
+    _shared_clients: dict[str, httpx.AsyncClient] = {}
+    _shared_auth_until: dict[str, float] = {}
+    _shared_auth_locks: dict[str, asyncio.Lock] = {}
+
     def __init__(self, base_url: str, username: str, password: str, *, timeout: float | httpx.Timeout | None = None) -> None:
         self.base_url = self._normalize_base_url(base_url)
         if not self.base_url:
@@ -64,15 +74,20 @@ class XUIClient:
         headers = {
             "Accept": "application/json, text/plain, */*",
             "X-Requested-With": "XMLHttpRequest",
-            "User-Agent": "D-Bot/3x-ui-client",
+            "User-Agent": f"D-Bot/3x-ui-client sanaei/{SANAEI_TARGET_VERSION}",
         }
-        # Optional 3x-ui API token support. In the server password/token field,
-        # admins may enter: token:<API_TOKEN> or bearer:<API_TOKEN>.
+        # 3x-ui v3.8.0 recommends Bearer tokens for automation. Keep backward
+        # compatibility with username/password while supporting token:, bearer:
+        # and api-token: prefixes in the existing encrypted secret field.
         lowered = (password or "").strip().lower()
-        if lowered.startswith("token:") or lowered.startswith("bearer:"):
-            token = (password or "").split(":", 1)[1].strip()
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
+        token = ""
+        for prefix in ("token:", "bearer:", "api-token:", "apitoken:"):
+            if lowered.startswith(prefix):
+                token = (password or "")[len(prefix):].strip()
+                break
+        self.api_token = token
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         verify_tls: bool | str = bool(settings.XUI_VERIFY_TLS)
         if settings.XUI_CA_BUNDLE:
             verify_tls = settings.XUI_CA_BUNDLE
@@ -83,13 +98,25 @@ class XUIClient:
             pool=max(float(settings.XUI_POOL_TIMEOUT_SECONDS or 8.0), 1.0),
         )
         self.read_retry_attempts = max(int(settings.XUI_READ_RETRY_ATTEMPTS or 3), 1)
-        self.client = httpx.AsyncClient(
-            base_url=self.base_url + "/",
-            timeout=request_timeout,
-            follow_redirects=True,
-            verify=verify_tls,
-            headers=headers,
-        )
+        secret_fingerprint = hashlib.sha256((password or "").encode("utf-8")).hexdigest()[:20]
+        self._pool_key = f"{self.base_url}|{self.username}|{secret_fingerprint}|{verify_tls}"
+        pooled = self._shared_clients.get(self._pool_key)
+        if pooled is None:
+            pooled = httpx.AsyncClient(
+                base_url=self.base_url + "/",
+                timeout=request_timeout,
+                follow_redirects=True,
+                verify=verify_tls,
+                headers=headers,
+                limits=httpx.Limits(
+                    max_connections=max(int(getattr(settings, "XUI_MAX_CONNECTIONS", 40) or 40), 4),
+                    max_keepalive_connections=max(int(getattr(settings, "XUI_MAX_KEEPALIVE_CONNECTIONS", 20) or 20), 2),
+                    keepalive_expiry=max(float(getattr(settings, "XUI_KEEPALIVE_EXPIRY_SECONDS", 30.0) or 30.0), 5.0),
+                ),
+            )
+            self._shared_clients[self._pool_key] = pooled
+        self.client = pooled
+        self._auth_lock = self._shared_auth_locks.setdefault(self._pool_key, asyncio.Lock())
 
     def _normalize_base_url(self, value: str) -> str:
         raw = (value or "").strip().rstrip("/")
@@ -128,7 +155,19 @@ class XUIClient:
             return raw
 
     async def close(self) -> None:
-        await self.client.aclose()
+        # Clients are process-scoped and pooled by server/auth fingerprint so
+        # subsequent Telegram actions reuse TCP/TLS connections and login cookies.
+        # Actual cleanup happens once during process shutdown.
+        return None
+
+    @classmethod
+    async def close_shared_clients(cls) -> None:
+        clients = list({id(c): c for c in cls._shared_clients.values()}.values())
+        cls._shared_clients.clear()
+        cls._shared_auth_until.clear()
+        cls._shared_auth_locks.clear()
+        if clients:
+            await asyncio.gather(*(c.aclose() for c in clients), return_exceptions=True)
 
     def _path(self, path: str) -> str:
         """Return a relative URL so httpx keeps hidden 3x-ui base paths.
@@ -160,13 +199,29 @@ class XUIClient:
         return urlunsplit((parsed.scheme, parsed.netloc, "", "", "")).rstrip("/")
 
     async def _prepare_3xui_session(self) -> str:
-        """Load the login shell to receive session cookie + CSRF token.
+        """Prepare a cookie session using the official v3.8.0 CSRF endpoint.
 
-        Newer 3x-ui builds protect /login and API routes with CSRF. The login
-        page at the hidden base path contains <meta name="csrf-token" ...> and
-        sets the 3x-ui cookie. We must preserve both for the following login/API
-        requests.
+        /csrf-token is much smaller than loading the full SPA shell. Older panels
+        that do not expose it fall back to the historical login-page probe.
         """
+        try:
+            response = await self.client.get(self._path("/csrf-token"))
+            if response.status_code < 400:
+                try:
+                    data = response.json()
+                except Exception:
+                    data = {}
+                token = ""
+                if isinstance(data, dict):
+                    raw = data.get("obj") or data.get("csrfToken") or data.get("token")
+                    if raw:
+                        token = str(raw).strip()
+                if token:
+                    self.client.headers["X-CSRF-Token"] = token
+                    return token
+        except Exception:
+            pass
+
         last_error = ""
         for entry in (".", "login"):
             try:
@@ -176,12 +231,11 @@ class XUIClient:
                     self.client.headers["X-CSRF-Token"] = token
                     return token
                 if response.status_code < 400:
-                    # Some panels render an empty/minimal shell but still set the cookie.
                     return ""
                 last_error = f"GET {response.url} -> HTTP {response.status_code}"
             except Exception as exc:
                 last_error = str(exc)
-        self.last_error = last_error or "Could not load 3x-ui login page"
+        self.last_error = last_error or "Could not prepare 3x-ui login session"
         return ""
 
     def _is_transient_transport_error(self, exc: BaseException) -> bool:
@@ -212,6 +266,8 @@ class XUIClient:
                 if response.status_code >= 400:
                     body = (response.text or "").strip().replace("\n", " ")[:300]
                     self.last_error = f"{method} {response.url} -> HTTP {response.status_code}: {body}"
+                    if response.status_code in {401, 403}:
+                        self._shared_auth_until[self._pool_key] = 0.0
                     response.raise_for_status()
                 ctype = response.headers.get("content-type", "")
                 if "application/json" in ctype:
@@ -260,61 +316,75 @@ class XUIClient:
         return str(data)
 
     async def login(self) -> bool:
-        # If an API token is configured, no form login is needed. Verify it with
-        # a lightweight API call so wrong tokens are caught early. 3x-ui also
-        # supports panel session-cookie auth from /login.
-        if self.client.headers.get("Authorization"):
-            try:
-                data = await self._request("GET", "/panel/api/clients/list/paged?page=1&pageSize=1")
-                return self._is_success(data)
-            except Exception as exc:
-                self.last_error = str(exc)
+        """Authenticate against 3x-ui v3.8.0 with pooled-session reuse.
+
+        Bearer tokens are verified against the lightweight server/status endpoint
+        and cached briefly. Cookie sessions reuse both the HTTP connection and the
+        authenticated cookie, eliminating repeated login round-trips on every bot
+        button press.
+        """
+        now = time.monotonic()
+        if self._shared_auth_until.get(self._pool_key, 0.0) > now:
+            return True
+        async with self._auth_lock:
+            now = time.monotonic()
+            if self._shared_auth_until.get(self._pool_key, 0.0) > now:
+                return True
+            ttl = max(float(getattr(settings, "XUI_AUTH_CACHE_SECONDS", 180.0) or 180.0), 15.0)
+            if self.api_token:
+                try:
+                    data = await self._request("GET", "/panel/api/server/status")
+                    if self._is_success(data):
+                        self._shared_auth_until[self._pool_key] = time.monotonic() + ttl
+                        return True
+                except Exception as exc:
+                    self.last_error = str(exc)
+                    return False
                 return False
 
-        csrf_token = await self._prepare_3xui_session()
-        payload = {"username": self.username, "password": self.password}
-        common_headers = {
-            "X-Requested-With": "XMLHttpRequest",
-            "Origin": self._origin(),
-            "Referer": self.base_url + "/",
-        }
-        if csrf_token:
-            common_headers["X-CSRF-Token"] = csrf_token
+            csrf_token = await self._prepare_3xui_session()
+            payload = {"username": self.username, "password": self.password}
+            headers = {
+                "X-Requested-With": "XMLHttpRequest",
+                "Origin": self._origin(),
+                "Referer": self.base_url + "/",
+            }
+            if csrf_token:
+                headers["X-CSRF-Token"] = csrf_token
 
-        last_error: Exception | None = None
-        # New 3x-ui versions accept JSON + CSRF. Older x-ui variants may accept
-        # form data. Try both, then verify by calling the inbounds API with the
-        # same cookie jar.
-        for kwargs in (
-            {"json": payload, "headers": common_headers},
-            {"data": payload, "headers": common_headers},
-        ):
-            try:
-                response = await self.client.post(self._path("/login"), **kwargs)
-                if response.status_code >= 400:
-                    body = (response.text or "").strip().replace("\n", " ")[:300]
-                    self.last_error = f"POST {response.url} -> HTTP {response.status_code}: {body}"
-                    response.raise_for_status()
-
-                # If the server returns a fresh CSRF token after login, keep it.
-                new_token = self._extract_csrf_token(response.text or "")
-                if new_token:
-                    self.client.headers["X-CSRF-Token"] = new_token
-                    common_headers["X-CSRF-Token"] = new_token
-
+            last_error: Exception | None = None
+            for kwargs in (
+                {"json": payload, "headers": headers},
+                {"data": payload, "headers": headers},
+            ):
                 try:
-                    data = await self._request("GET", "/panel/api/clients/list/paged?page=1&pageSize=1")
-                    if self._is_success(data):
+                    response = await self.client.post(self._path("/login"), **kwargs)
+                    if response.status_code >= 400:
+                        body = (response.text or "").strip().replace("\n", " ")[:300]
+                        self.last_error = f"POST {response.url} -> HTTP {response.status_code}: {body}"
+                        response.raise_for_status()
+                    new_token = self._extract_csrf_token(response.text or "")
+                    if new_token:
+                        self.client.headers["X-CSRF-Token"] = new_token
+                    try:
+                        data = response.json()
+                    except Exception:
+                        data = {}
+                    # Official v3.8.0 returns {success:true}; trust that response
+                    # instead of adding another verification request.
+                    if isinstance(data, dict) and self._is_success(data):
+                        self._shared_auth_until[self._pool_key] = time.monotonic() + ttl
+                        return True
+                    # Compatibility fallback for older builds with non-JSON login.
+                    probe = await self._request("GET", "/panel/api/server/status")
+                    if self._is_success(probe):
+                        self._shared_auth_until[self._pool_key] = time.monotonic() + ttl
                         return True
                 except Exception as exc:
                     last_error = exc
-                    continue
-            except Exception as exc:
-                last_error = exc
-
-        if last_error:
-            self.last_error = str(last_error)
-        return False
+            if last_error:
+                self.last_error = str(last_error)
+            return False
 
     async def get_inbounds(self) -> list[dict[str, Any]]:
         for method, path in (
@@ -322,7 +392,7 @@ class XUIClient:
             ("POST", "/panel/api/inbounds/list"),
         ):
             try:
-                data = await self._request(method, path, _retry_safe=True)
+                data = await self._client_api_request(method, path, _retry_safe=True)
                 if not self._is_success(data):
                     continue
                 obj = self._obj(data)
@@ -333,6 +403,11 @@ class XUIClient:
             except Exception:
                 continue
         return []
+
+    async def get_server_status(self) -> dict[str, Any]:
+        data = await self._client_api_request("GET", "/panel/api/server/status")
+        obj = self._obj(data)
+        return obj if isinstance(obj, dict) else {}
 
     def _load_settings(self, inbound: dict[str, Any] | None) -> dict[str, Any]:
         if not inbound:
@@ -356,6 +431,7 @@ class XUIClient:
             "flow": sample.get("flow", ""),
             "email": payload.email,
             "limitIp": int(payload.limit_ip or 0),
+            "limitHwid": max(int(payload.limit_hwid or 0), 0),
             "totalGB": payload.total_bytes,
             "expiryTime": payload.expiry_ms,
             "enable": bool(payload.enable),
@@ -416,7 +492,7 @@ class XUIClient:
         # Use the current 3x-ui Client API only. Older inbound getClientTraffics
         # endpoints are removed on many panels and create repeated 404 requests.
         try:
-            data = await self._request("GET", f"/panel/api/clients/traffic/{encoded}")
+            data = await self._client_api_request("GET", f"/panel/api/clients/traffic/{encoded}")
             if self._is_success(data):
                 obj = self._obj(data)
                 if isinstance(obj, dict):
@@ -425,8 +501,83 @@ class XUIClient:
             return None
         return None
 
+    async def get_client_hwids(self, email: str) -> list[dict[str, Any]]:
+        """Return registered Sanaei HWID devices for one client.
+
+        The v3.8.0 API intentionally exposes device metadata / short fingerprints
+        only; the raw X-HWID and full stored hash are never requested or logged.
+        """
+        clean = str(email or "").strip()
+        if not clean:
+            return []
+        data = await self._client_api_request(
+            "POST", f"/panel/api/clients/hwids/{quote(clean, safe='')}"
+        )
+        obj = self._obj(data)
+        if isinstance(obj, list):
+            return [row for row in obj if isinstance(row, dict)]
+        if isinstance(obj, dict):
+            for key in ("hwids", "devices", "items", "data"):
+                rows = obj.get(key)
+                if isinstance(rows, list):
+                    return [row for row in rows if isinstance(row, dict)]
+        return []
+
+    async def clear_client_hwids(self, email: str) -> Any:
+        clean = str(email or "").strip()
+        if not clean:
+            raise RuntimeError("X-UI client email not found")
+        return await self._client_api_request(
+            "DELETE", f"/panel/api/clients/hwids/{quote(clean, safe='')}"
+        )
+
+    async def delete_client_hwid(self, email: str, hwid_id: int) -> Any:
+        clean = str(email or "").strip()
+        try:
+            device_id = int(hwid_id)
+        except Exception as exc:
+            raise RuntimeError("Invalid HWID device id") from exc
+        if not clean or device_id <= 0:
+            raise RuntimeError("Invalid HWID device")
+        return await self._client_api_request(
+            "DELETE", f"/panel/api/clients/hwids/{quote(clean, safe='')}/{device_id}"
+        )
+
+    async def set_client_hwid_limit(self, email: str, limit_hwid: int) -> Any:
+        """Update only the HWID limit through v3.8.0 bulkAdjust.
+
+        This avoids replacing the full client record when support/admin actions
+        only need to change the allowed registered-device count.
+        """
+        clean = str(email or "").strip()
+        if not clean:
+            raise RuntimeError("X-UI client email not found")
+        try:
+            limit = max(int(limit_hwid or 0), 0)
+        except Exception as exc:
+            raise RuntimeError("Invalid HWID limit") from exc
+        return await self.bulk_adjust_clients([clean], limit_hwid=limit)
+
     async def _client_api_request(self, method: str, path: str, **kwargs: Any) -> Any:
-        data = await self._request(method, path, **kwargs)
+        """Call the v3.8.0 panel API with one safe cookie re-authentication.
+
+        Sanaei v3.8.0 returns HTTP 401 for invalid/expired API authentication.
+        Bearer tokens are intentionally never retried because a 401 means the
+        token itself must be fixed. Cookie sessions, however, may simply have
+        expired; re-authenticate once and replay the request. A 401/403 is
+        rejected by auth middleware before the mutation is applied, so this
+        retry cannot duplicate a successful write.
+        """
+        try:
+            data = await self._request(method, path, **kwargs)
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code if exc.response is not None else 0
+            if self.api_token or status not in {401, 403}:
+                raise
+            self._shared_auth_until[self._pool_key] = 0.0
+            if not await self.login():
+                raise
+            data = await self._request(method, path, **kwargs)
         if not self._is_success(data):
             raise RuntimeError(self._error_message(data) or f"3x-ui Client API {method} {path} failed")
         return data
@@ -528,11 +679,28 @@ class XUIClient:
     async def delete_depleted_clients(self) -> Any:
         return await self._client_api_request("POST", "/panel/api/clients/delDepleted")
 
-    async def bulk_adjust_clients(self, emails: Iterable[str], *, add_days: int = 0, add_bytes: int = 0, flow: str = "") -> Any:
-        return await self._client_api_request("POST", "/panel/api/clients/bulkAdjust", json={
+    async def bulk_adjust_clients(
+        self,
+        emails: Iterable[str],
+        *,
+        add_days: int = 0,
+        add_bytes: int = 0,
+        flow: str = "",
+        limit_hwid: int | None = None,
+        ad_tag: str | None = None,
+    ) -> Any:
+        payload: dict[str, Any] = {
             "emails": self._clean_emails(emails),
-            "addDays": int(add_days or 0), "addBytes": int(add_bytes or 0), "flow": str(flow or ""),
-        })
+            "addDays": int(add_days or 0),
+            "addBytes": int(add_bytes or 0),
+            "flow": str(flow or ""),
+        }
+        # Added to the official bulk-adjust contract in Sanaei 3x-ui v3.8.0.
+        if limit_hwid is not None:
+            payload["limitHwid"] = max(int(limit_hwid), 0)
+        if ad_tag is not None:
+            payload["adTag"] = str(ad_tag)
+        return await self._client_api_request("POST", "/panel/api/clients/bulkAdjust", json=payload)
 
     async def bulk_set_enabled(self, emails: Iterable[str], enabled: bool) -> Any:
         path = "/panel/api/clients/bulkEnable" if enabled else "/panel/api/clients/bulkDisable"
@@ -714,7 +882,7 @@ class XUIClient:
         if "allowedIPs" in out:
             out["allowedIPs"] = self._normalize_string_list(out.get("allowedIPs"))
 
-        for int_key in ("limitIp", "totalGB", "expiryTime", "tgId", "reset"):
+        for int_key in ("limitIp", "limitHwid", "totalGB", "expiryTime", "tgId", "reset", "resetDay", "resetMax", "resetCount", "persistentKeepalive", "keepAlive"):
             if int_key in out and out.get(int_key) is not None:
                 try:
                     out[int_key] = int(out.get(int_key) or 0)
@@ -737,7 +905,7 @@ class XUIClient:
             return None
         encoded = quote(str(email), safe="")
         try:
-            data = await self._request("GET", f"/panel/api/clients/get/{encoded}")
+            data = await self._client_api_request("GET", f"/panel/api/clients/get/{encoded}")
         except httpx.HTTPStatusError as exc:
             if exc.response is not None and exc.response.status_code in {404, 400}:
                 return None
@@ -799,10 +967,8 @@ class XUIClient:
             "/panel/api/clients/list/paged?page=1&pageSize=500",
         ):
             try:
-                data = await self._request("GET", path)
+                data = await self._client_api_request("GET", path)
             except Exception:
-                continue
-            if not self._is_success(data):
                 continue
             obj = self._obj(data)
             candidates: Any = obj
@@ -944,12 +1110,18 @@ class XUIClient:
         return await self.update_client(email, client, inbound_ids)
 
     async def set_client_enabled(self, email: str, enabled: bool) -> dict[str, Any]:
-        found = await self.find_client(email)
-        if not found or not found.get("client"):
-            raise RuntimeError("X-UI client not found")
-        client = dict(found["client"])
-        client["enable"] = bool(enabled)
-        return await self._update_client(client)
+        """Toggle a client through v3.8.0's dedicated bulk endpoint.
+
+        The panel's dedicated enable/disable path preserves traffic-reset
+        schedule fields and applies multi-inbound / multi-node changes with the
+        concurrent fan-out added in v3.8.0. It also avoids the old
+        read-modify-write round trip, which noticeably speeds admin actions.
+        """
+        clean_email = str(email or '').strip()
+        if not clean_email:
+            raise RuntimeError("X-UI client email not found")
+        data = await self.bulk_set_enabled([clean_email], bool(enabled))
+        return data if isinstance(data, dict) else {"result": data}
 
     def _new_sub_id(self) -> str:
         return secrets.token_urlsafe(18).replace("-", "").replace("_", "")[:24]
@@ -1048,7 +1220,7 @@ class XUIClient:
             raise RuntimeError("X-UI add days failed: expiryTime did not change on panel")
         return data
 
-    async def reset_client_plan(self, email: str, total_gb: int | float, expire_days: int, inbound_ids: Iterable[int] | None = None, current_inbound_ids_hint: Iterable[int] | None = None, *, exact_inbound_scope: bool = False) -> dict[str, Any]:
+    async def reset_client_plan(self, email: str, total_gb: int | float, expire_days: int, inbound_ids: Iterable[int] | None = None, current_inbound_ids_hint: Iterable[int] | None = None, *, exact_inbound_scope: bool = False, limit_hwid: int | None = None) -> dict[str, Any]:
         """Start a fresh service cycle and update inbounds additively.
 
         Renewal resets consumed traffic, replaces quota/expiry, and enables the
@@ -1114,7 +1286,11 @@ class XUIClient:
                 return 0
 
         before_used = used_bytes(found)
-        payload = XuiClientPayload(email=email, total_gb=total_gb, expire_days=expire_days)
+        payload = XuiClientPayload(
+            email=email, total_gb=total_gb, expire_days=expire_days,
+            limit_hwid=max(int(limit_hwid or 0), 0) if limit_hwid is not None else 0,
+        )
+        target_hwid_limit = max(int(limit_hwid or 0), 0) if limit_hwid is not None else None
 
         # Never pass inboundIds to updateClient. Some 3x-ui builds interpret the
         # query as an exact replacement and detach memberships that are omitted.
@@ -1183,6 +1359,8 @@ class XUIClient:
         client["totalGB"] = payload.total_bytes
         client["expiryTime"] = payload.expiry_ms
         client["enable"] = True
+        if target_hwid_limit is not None:
+            client["limitHwid"] = target_hwid_limit
 
         # Deliberately omit inboundIds. This updates the existing client record
         # in place and keeps every inbound exactly as it was before renewal. A
@@ -1201,10 +1379,11 @@ class XUIClient:
         real_total = 0
         real_expiry = 0
         real_enabled = False
+        real_hwid_limit = 0
         latest_found: dict[str, Any] = {}
 
         async def verify_direct(delays: tuple[float, ...]) -> bool:
-            nonlocal real, real_total, real_expiry, real_enabled, latest_found
+            nonlocal real, real_total, real_expiry, real_enabled, real_hwid_limit, latest_found
             for delay in delays:
                 if delay:
                     await asyncio.sleep(delay)
@@ -1220,10 +1399,15 @@ class XUIClient:
                 except Exception:
                     real_expiry = 0
                 real_enabled = panel_enabled(real.get("enable"))
+                try:
+                    real_hwid_limit = max(int(real.get("limitHwid") or 0), 0)
+                except Exception:
+                    real_hwid_limit = 0
 
                 total_ok = (not payload.total_bytes) or real_total == payload.total_bytes
                 expiry_ok = (not payload.expiry_ms) or abs(real_expiry - payload.expiry_ms) <= 120000
-                if total_ok and expiry_ok and real_enabled:
+                hwid_ok = target_hwid_limit is None or real_hwid_limit == target_hwid_limit
+                if total_ok and expiry_ok and hwid_ok and real_enabled:
                     return True
             return False
 
@@ -1268,9 +1452,14 @@ class XUIClient:
                     real_total = int(real.get("totalGB") or 0)
                     real_expiry = int(real.get("expiryTime") or 0)
                     real_enabled = panel_enabled(real.get("enable"))
+                    try:
+                        real_hwid_limit = max(int(real.get("limitHwid") or 0), 0)
+                    except Exception:
+                        real_hwid_limit = 0
                     total_ok = (not payload.total_bytes) or real_total == payload.total_bytes
                     expiry_ok = (not payload.expiry_ms) or abs(real_expiry - payload.expiry_ms) <= 120000
-                    if total_ok and expiry_ok and real_enabled:
+                    hwid_ok = target_hwid_limit is None or real_hwid_limit == target_hwid_limit
+                    if total_ok and expiry_ok and hwid_ok and real_enabled:
                         verified = True
                     break
             except Exception:
@@ -1283,6 +1472,7 @@ class XUIClient:
                 "X-UI renew verification failed: "
                 f"email={email}, before_total={before_total}, target_total={payload.total_bytes}, after_total={real_total}, "
                 f"before_expiry={before_expiry}, target_expiry={payload.expiry_ms}, after_expiry={real_expiry}, "
+                f"target_hwid_limit={target_hwid_limit}, after_hwid_limit={real_hwid_limit}, "
                 f"after_enabled={real_enabled}{enable_detail}{update_detail}"
             )
 

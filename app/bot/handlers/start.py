@@ -16,6 +16,8 @@ from app.database.defaults import WELCOME_TEXT_DEFAULT, RULES_TEXT_DEFAULT, get_
 from app.bot.utils import edit_or_answer, ui_message, ui_callback_message, ui_page, remember_ui_message, get_ui_message_id, forget_ui_message, send_single_message
 from app.bot.error_reporting import report_bot_error
 from app.services.referral_service import maybe_grant_invite_reward, notify_referrer_about_new_subset
+from app.services.web_access import read_web_access
+from app.services.web_credentials import read_web_credentials
 from app.bot.states.admin_states import InitialSetupWizard
 
 router = Router()
@@ -71,6 +73,8 @@ def extract_channel_chat_id(url: str) -> str | None:
 
 
 async def check_channel_join(bot, user_id: int) -> tuple[bool, str, str]:
+    if (await get_setting_value('force_join_enabled', '0')) != '1':
+        return True, '', ''
     channel_url = normalize_channel_url(await get_setting_value('channel_url', ''))
     if not channel_url:
         return True, '', ''
@@ -480,6 +484,21 @@ async def _show_channel_admin_help(target, channel_url: str):
         remember_ui_message(target.chat.id, sent.message_id)
 
 
+async def _send_web_setup_required(message: Message) -> None:
+    access = await read_web_access()
+    creds = await read_web_credentials()
+    password = creds.password if creds.password_available else 'از منوی dbot → Credentials Center مشاهده/تغییر دهید'
+    text = (
+        '⚙️ مدیر محترم، راه‌اندازی اولیه D BOT باید از وب‌پنل انجام شود.\n\n'
+        f'🌐 لینک راه‌اندازی:\n{access.login_url}\n\n'
+        f'👤 Username: {creds.username}\n'
+        f'🔑 Password: {password}\n\n'
+        'پس از ورود، Setup Wizard باز می‌شود. تنظیمات کانال اجباری، قوانین و متن اصلی را همان‌جا تکمیل کنید؛ '
+        'مقادیر وب و ربات کاملاً از یک دیتابیس خوانده می‌شوند.'
+    )
+    await _safe_send_start_page(message, text, reply_markup=ReplyKeyboardRemove())
+
+
 @router.message(CommandStart())
 @router.message(Command('start'))
 async def start(message: Message, state: FSMContext):
@@ -506,7 +525,7 @@ async def start(message: Message, state: FSMContext):
     user = await get_or_create_user(message)
 
     if message.from_user.id in settings.admin_ids and not await _is_initial_setup_done():
-        await _ask_initial_setup_channel(message, state)
+        await _send_web_setup_required(message)
         return
 
     bot_enabled = await get_setting_value('bot_enabled', '1')
@@ -516,7 +535,7 @@ async def start(message: Message, state: FSMContext):
             '⛔️ ربات در حال حاضر توسط مدیریت خاموش شده است.',
             reply_markup=ReplyKeyboardRemove(),
         )
-    elif not user.accepted_rules:
+    elif (await get_setting_value('rules_enabled', '0')) == '1' and not user.accepted_rules:
         sent = await _safe_send_start_page(
             message,
             await get_setting_value('rules_text', RULES_TEXT_DEFAULT),

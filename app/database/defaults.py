@@ -1,4 +1,6 @@
 from html import escape
+import asyncio
+import time
 from sqlalchemy import select
 from app.database.models import Setting
 from app.database.session import SessionLocal
@@ -30,6 +32,11 @@ DEFAULT_SETTINGS = {
     'test_account_server_id': '',
     'test_account_inbound_ids': '',
     'channel_url': '',
+    'force_join_enabled': '0',
+    'rules_enabled': '0',
+    'backup_interval_minutes': '1440',
+    'backup_sender_mode': 'current',
+    'backup_schedule_enabled': '1',
 
     'service_type_v2ray_enabled': '1',
     'service_type_v2ray_label': 'V2Ray',
@@ -40,6 +47,36 @@ DEFAULT_SETTINGS = {
     'plan_order_reseller': '',
 }
 
+# Bot handlers often need 4-8 independent settings for one screen. Loading a
+# one-second snapshot turns those serial database round-trips into a single
+# query while keeping admin changes effectively immediate.
+_SETTINGS_CACHE: dict[str, str] = {}
+_SETTINGS_CACHE_UNTIL: float = 0.0
+_SETTINGS_CACHE_LOCK = asyncio.Lock()
+_SETTINGS_CACHE_TTL_SECONDS = 1.0
+
+
+def invalidate_settings_cache() -> None:
+    global _SETTINGS_CACHE_UNTIL
+    _SETTINGS_CACHE.clear()
+    _SETTINGS_CACHE_UNTIL = 0.0
+
+
+async def _settings_snapshot() -> dict[str, str]:
+    global _SETTINGS_CACHE, _SETTINGS_CACHE_UNTIL
+    now = time.monotonic()
+    if _SETTINGS_CACHE_UNTIL > now:
+        return _SETTINGS_CACHE
+    async with _SETTINGS_CACHE_LOCK:
+        now = time.monotonic()
+        if _SETTINGS_CACHE_UNTIL <= now:
+            async with SessionLocal() as session:
+                rows = (await session.execute(select(Setting))).scalars().all()
+            _SETTINGS_CACHE = {str(row.key): str(row.value or '') for row in rows}
+            _SETTINGS_CACHE_UNTIL = time.monotonic() + _SETTINGS_CACHE_TTL_SECONDS
+    return _SETTINGS_CACHE
+
+
 async def seed_default_settings() -> None:
     async with SessionLocal() as session:
         for key, value in DEFAULT_SETTINGS.items():
@@ -47,23 +84,22 @@ async def seed_default_settings() -> None:
             if existing is None:
                 session.add(Setting(key=key, value=value))
         await session.commit()
+    invalidate_settings_cache()
+
 
 async def get_setting_value(key: str, default: str = '') -> str:
-    async with SessionLocal() as session:
-        row = await session.get(Setting, key)
-        value = row.value if row else default
-        if key in {'welcome_text', 'rules_text'}:
-            general_keys = ['bot_name', 'support_username', 'admin_description']
-            rows = (await session.execute(select(Setting).where(Setting.key.in_(general_keys)))).scalars().all()
-            values = {item.key: str(item.value or '') for item in rows}
-            replacements = {
-                '{bot_name}': escape(values.get('bot_name') or 'D BOT', quote=False),
-                '{support_username}': escape(values.get('support_username') or '@support', quote=False),
-                '{description}': escape(values.get('admin_description') or 'VPN management bot', quote=False),
-            }
-            for token, replacement in replacements.items():
-                value = str(value or '').replace(token, replacement)
-        return value
+    values = await _settings_snapshot()
+    value = values.get(key, default)
+    if key in {'welcome_text', 'rules_text'}:
+        replacements = {
+            '{bot_name}': escape(values.get('bot_name') or 'D BOT', quote=False),
+            '{support_username}': escape(values.get('support_username') or '@support', quote=False),
+            '{description}': escape(values.get('admin_description') or 'VPN management bot', quote=False),
+        }
+        for token, replacement in replacements.items():
+            value = str(value or '').replace(token, replacement)
+    return value
+
 
 async def set_setting_value(key: str, value: str) -> None:
     async with SessionLocal() as session:
@@ -73,3 +109,4 @@ async def set_setting_value(key: str, value: str) -> None:
         else:
             session.add(Setting(key=key, value=value))
         await session.commit()
+    invalidate_settings_cache()

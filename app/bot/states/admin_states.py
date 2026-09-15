@@ -43,6 +43,7 @@ class AddPlan(StatesGroup):
     volume = State()
     duration = State()
     price = State()
+    hwid_limit = State()
     category_id = State()
     inbound_ids = State()
 

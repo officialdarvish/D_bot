@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import datetime, timezone
 
 import httpx
@@ -6,6 +7,38 @@ import httpx
 from app.core.security import decrypt_text
 from app.database.models import Server, Plan
 from app.xui.client import XUIClient, XuiClientPayload
+
+logger = logging.getLogger(__name__)
+_PLAN_HWID_SYNC_TASKS: set[asyncio.Task] = set()
+
+def schedule_plan_hwid_limit_sync(plan_id: int) -> None:
+    """Start non-blocking propagation of a changed plan HWID limit.
+
+    Keeping this out of the Telegram/web request path makes plan editing return
+    immediately while the v3.8.0 bulk API updates existing subscribers.
+    """
+    try:
+        task = asyncio.create_task(XuiService().sync_plan_hwid_limit(int(plan_id)))
+    except RuntimeError:
+        # No running loop only occurs in import/migration contexts; there are no
+        # active subscribers to synchronize there.
+        return
+    _PLAN_HWID_SYNC_TASKS.add(task)
+
+    def _finished(done: asyncio.Task) -> None:
+        _PLAN_HWID_SYNC_TASKS.discard(done)
+        if done.cancelled():
+            return
+        try:
+            result = done.result()
+            errors = list((result or {}).get('errors') or [])
+            if errors:
+                logger.warning('Plan HWID sync completed with errors: plan_id=%s errors=%s', plan_id, errors)
+        except Exception:
+            logger.exception('Plan HWID sync failed: plan_id=%s', plan_id)
+
+    task.add_done_callback(_finished)
+
 
 class XuiService:
     def _safe_text(self, value):
@@ -82,6 +115,18 @@ class XuiService:
 
     def _plan_inbound_mode(self, plan: Plan) -> str:
         return 'manual' if str((getattr(plan, 'meta', None) or {}).get('inbound_mode') or '').strip().lower() == 'manual' else 'automatic'
+
+    def _plan_hwid_limit(self, plan: Plan | object | None) -> int:
+        """Return the Sanaei registered-device cap saved on a public plan.
+
+        3x-ui v3.8.0 defines limitHwid=0 as unlimited. The getattr fallback
+        keeps referral/test pseudo-plan objects created by older D BOT builds
+        compatible without forcing HWID on those services.
+        """
+        try:
+            return max(int(getattr(plan, 'hwid_limit', 0) or 0), 0)
+        except Exception:
+            return 0
 
     def _configured_inbound_ids(self, server: Server, plan: Plan) -> list[int]:
         mode = self._plan_inbound_mode(plan)
@@ -164,6 +209,7 @@ class XuiService:
             email=email,
             total_gb=plan.volume_gb,
             expire_days=plan.duration_days,
+            limit_hwid=self._plan_hwid_limit(plan),
         )
         return await self.create_client_on_inbounds(
             server,
@@ -728,11 +774,12 @@ class XuiService:
                 plan.duration_days,
                 inbound_ids=renewal_inbound_ids,
                 current_inbound_ids_hint=current_inbound_ids,
+                limit_hwid=self._plan_hwid_limit(plan),
             )
         finally:
             await xui.close()
 
-    async def reset_client_plan(self, server: Server, email: str, total_gb: float, expire_days: int, inbound_ids: list[int] | None = None, current_inbound_ids: list[int] | None = None):
+    async def reset_client_plan(self, server: Server, email: str, total_gb: float, expire_days: int, inbound_ids: list[int] | None = None, current_inbound_ids: list[int] | None = None, *, limit_hwid: int | None = None):
         xui = XUIClient(server.panel_url, server.username, decrypt_text(server.password_encrypted))
         try:
             if not await xui.login(): raise RuntimeError('X-UI login failed')
@@ -742,8 +789,137 @@ class XuiService:
                 expire_days,
                 inbound_ids=inbound_ids,
                 current_inbound_ids_hint=current_inbound_ids,
+                limit_hwid=limit_hwid,
             )
         finally: await xui.close()
+
+    async def get_client_hwids(self, server: Server, email: str) -> dict:
+        xui = XUIClient(server.panel_url, server.username, decrypt_text(server.password_encrypted))
+        try:
+            if not await xui.login():
+                raise RuntimeError('X-UI login failed')
+            found = await xui.find_client(email)
+            client = dict((found or {}).get('client') or {})
+            panel_email = self._safe_text(client.get('email')) or self._safe_text(email)
+            if not panel_email:
+                raise RuntimeError('X-UI client not found')
+            devices = await xui.get_client_hwids(panel_email)
+            try:
+                limit = max(int(client.get('limitHwid') or 0), 0)
+            except Exception:
+                limit = 0
+            used = len(devices)
+            return {
+                'email': panel_email,
+                'limit': limit,
+                'used': used,
+                'remaining': max(limit - used, 0) if limit > 0 else None,
+                'devices': devices,
+            }
+        finally:
+            await xui.close()
+
+    async def clear_client_hwids(self, server: Server, email: str):
+        xui = XUIClient(server.panel_url, server.username, decrypt_text(server.password_encrypted))
+        try:
+            if not await xui.login():
+                raise RuntimeError('X-UI login failed')
+            return await xui.clear_client_hwids(email)
+        finally:
+            await xui.close()
+
+    async def delete_client_hwid(self, server: Server, email: str, hwid_id: int):
+        xui = XUIClient(server.panel_url, server.username, decrypt_text(server.password_encrypted))
+        try:
+            if not await xui.login():
+                raise RuntimeError('X-UI login failed')
+            return await xui.delete_client_hwid(email, hwid_id)
+        finally:
+            await xui.close()
+
+    async def set_client_hwid_limit(self, server: Server, email: str, limit_hwid: int):
+        xui = XUIClient(server.panel_url, server.username, decrypt_text(server.password_encrypted))
+        try:
+            if not await xui.login():
+                raise RuntimeError('X-UI login failed')
+            return await xui.set_client_hwid_limit(email, limit_hwid)
+        finally:
+            await xui.close()
+
+    async def sync_plan_hwid_limit(self, plan_id: int) -> dict:
+        """Propagate a plan HWID cap to all currently active 3x-ui clients.
+
+        Sanaei 3.8.0 supports ``limitHwid`` in ``bulkAdjust``.  Updating a plan
+        therefore costs one authenticated bulk request per X-UI server (chunked
+        for very large plans) instead of one request per subscriber.  New and
+        renewed services already inherit the same plan value separately.
+        """
+        from sqlalchemy import select
+        from app.database.session import SessionLocal
+        from app.database.models import ClientService
+
+        try:
+            pid = int(plan_id)
+        except Exception as exc:
+            raise RuntimeError('Invalid plan id') from exc
+
+        async with SessionLocal() as session:
+            plan = await session.get(Plan, pid)
+            if not plan:
+                raise RuntimeError('Plan not found')
+            limit = self._plan_hwid_limit(plan)
+            services = (await session.execute(
+                select(ClientService).where(
+                    ClientService.plan_id == pid,
+                    ClientService.is_active == True,
+                )
+            )).scalars().all()
+            server_ids = {int(s.server_id) for s in services if getattr(s, 'server_id', None)}
+            servers = {}
+            if server_ids:
+                rows = (await session.execute(select(Server).where(Server.id.in_(server_ids)))).scalars().all()
+                servers = {int(row.id): row for row in rows}
+
+        grouped: dict[int, list[str]] = {}
+        for service in services:
+            sid = int(getattr(service, 'server_id', 0) or 0)
+            server = servers.get(sid)
+            if not server or str(getattr(server, 'server_type', '') or '').lower() != 'xui':
+                continue
+            email = self._safe_text(getattr(service, 'xui_email', None)) or self._safe_text(getattr(service, 'client_username', None))
+            if email and email not in grouped.setdefault(sid, []):
+                grouped[sid].append(email)
+
+        result = {'plan_id': pid, 'limit': limit, 'servers': 0, 'clients': 0, 'errors': []}
+        semaphore = asyncio.Semaphore(4)
+
+        async def sync_server(sid: int, emails: list[str]):
+            server = servers[sid]
+            async with semaphore:
+                xui = XUIClient(server.panel_url, server.username, decrypt_text(server.password_encrypted))
+                try:
+                    if not await xui.login():
+                        raise RuntimeError('X-UI login failed')
+                    # Keep payloads modest while still taking advantage of v3.8.0 bulkAdjust.
+                    for start in range(0, len(emails), 200):
+                        batch = emails[start:start + 200]
+                        if batch:
+                            await xui.bulk_adjust_clients(batch, limit_hwid=limit)
+                    return sid, len(emails), None
+                except Exception as exc:
+                    return sid, 0, f'{type(exc).__name__}: {exc}'
+                finally:
+                    await xui.close()
+
+        if grouped:
+            rows = await asyncio.gather(*(sync_server(sid, emails) for sid, emails in grouped.items()))
+            for sid, count, error in rows:
+                if error:
+                    result['errors'].append({'server_id': sid, 'error': error})
+                else:
+                    result['servers'] += 1
+                    result['clients'] += count
+        return result
 
     async def add_client_volume(self, server: Server, email: str, add_gb: float):
         xui = XUIClient(server.panel_url, server.username, decrypt_text(server.password_encrypted))

@@ -87,7 +87,7 @@ type ResourceMetric = { title: string; value: string; detail: string; percent: n
 type UserItem = { id: number; telegram_id: number; username?: string; full_name?: string; wallet_total: number; purchases: number; referral_code?: string; joined_at?: string; is_blocked?: boolean; is_reseller?: boolean };
 type ServerItem = { id: number; name: string; display_name?: string; server_type: string; server_type_label?: string; panel_url: string; panel_base_url?: string; panel_path?: string; subscription_url?: string; username: string; auth_username?: string; scope?: string; inbound_ids?: unknown[]; inbounds?: { id: number; remark?: string; protocol?: string; enable?: boolean }[]; last_inbound_sync_at?: string; is_active: boolean; user_count?: number; router_name?: string; router_host?: string; router_port?: string | number; router_online?: boolean; router_identity?: string; router_version?: string; router_uptime?: string; router_secrets?: number; router_active?: number; router_error?: string; last_router_sync_at?: string; default_protocol?: string; openvpn_profile_id?: number; l2tp_server?: string; l2tp_ipsec_secret?: string; badge_color?: string; badge_emoji?: string; badge_label?: string };
 type CategoryItem = { id: number; name: string; server_id?: number | null; server_ids?: number[]; server_names?: string[]; is_active?: boolean };
-type PlanItem = { id: number; title: string; volume_gb: number; duration_days: number; price_irt: number; category_id?: number; server_id?: number; inbound_ids?: unknown[]; inbound_mode?: 'automatic' | 'manual'; is_active: boolean; is_unlimited?: boolean };
+type PlanItem = { id: number; title: string; volume_gb: number; duration_days: number; price_irt: number; category_id?: number; server_id?: number; inbound_ids?: unknown[]; inbound_mode?: 'automatic' | 'manual'; hwid_limit?: number; is_active: boolean; is_unlimited?: boolean };
 type ResellerPackage = { id: number; title: string; server_id?: number; volume_gb: number; price_irt: number; reseller_validity_days: number; is_active: boolean };
 type PaymentItem = { id: number; server_type: string; server_id?: number; card_number: string; owner_name: string; is_active: boolean };
 type DiscountItem = { id: number; code: string; discount_type: string; value: number; max_uses: number; per_user_limit: number; used_count: number; expires_at?: string; is_active: boolean; allowed_server_ids?: number[]; allowed_server_names?: string[] };
@@ -98,8 +98,8 @@ type ResellerServicesApi = { ok: boolean; reseller: ResellerItem; items: Reselle
 type OrderItem = { id: number; user?: UserItem | null; plan?: PlanItem | null; amount_irt: number; status: string; payment_method?: string; rejection_reason?: string | null; rejected_by?: number | null; rejected_at?: string | null; receipt_file_id?: string | null; created_at?: string };
 type SettingItem = { key: string; value: string; is_active?: boolean };
 type ServiceTypeItem = { key: string; value: string; is_active: boolean };
-type BackupSettings = { ok: boolean; settings: Record<string, string>; status: { configured: boolean; last_test_status?: string; last_test_message?: string; last_backup_status?: string; last_backup_message?: string; last_backup_at?: string; admin_ok?: boolean } };
-type BackupFormState = { destination: string; bot_token: string; chat_id: string; bot_username: string; time: string; include_database: string; include_files: string };
+type BackupSettings = { ok: boolean; settings: Record<string, string>; status: { configured: boolean; last_test_status?: string; last_test_message?: string; last_backup_status?: string; last_backup_message?: string; last_backup_at?: string; admin_ok?: boolean; last_sales_report_status?: string; last_sales_report_message?: string; last_sales_report_at?: string; last_sales_report_period_start?: string; last_sales_report_period_end?: string } };
+type BackupFormState = { destination: string; sender_mode: string; secondary_bot_token: string; chat_id: string; interval_minutes: string; include_database: string; include_files: string };
 type BackupTestState = { status: 'idle' | 'ok' | 'bad'; message: string; adminOk?: boolean };
 type TestAccountApi = { ok: boolean; settings: Record<string, string>; usage_count: number; usage_items?: { id: number; telegram_id: number; created_at?: string; service_id?: number | null; user?: UserItem | null }[]; servers: ServerItem[] };
 type OpenVPNProfileItem = { id: number; name: string; server_id?: number | null; file_name: string; content: string; is_active: boolean; created_at?: string };
@@ -178,6 +178,23 @@ const navGroups: { label: string; items: { key: SectionKey; title: string; href:
   { label: 'Users', items: [{ key: 'users', title: 'Users', href: '/admin/users', icon: Users }, { key: 'resellers', title: 'Resellers', href: '/admin/resellers', icon: UserCog }] },
   { label: 'System', items: [{ key: 'servers', title: 'Servers', href: '/admin/servers', icon: Server }, { key: 'categories', title: 'Categories', href: '/admin/categories', icon: Layers3 }, { key: 'backup', title: 'Backup & Restore', href: '/admin/backup', icon: Archive }, { key: 'settings', title: 'Settings', href: '/admin/settings', icon: Settings }] }
 ];
+
+function publicWebPath(path: string): string {
+  if (typeof window === 'undefined') return path;
+  const current = window.location.pathname || '';
+  const adminIndex = current.indexOf('/admin');
+  const loginIndex = current.indexOf('/login');
+  const setupIndex = current.indexOf('/setup');
+  const logoutIndex = current.indexOf('/logout');
+  const indexes = [adminIndex, loginIndex, setupIndex, logoutIndex].filter((x) => x >= 0);
+  const prefix = indexes.length ? current.slice(0, Math.min(...indexes)) : '';
+  return `${prefix}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+function internalAdminPath(pathname: string): string {
+  const index = pathname.indexOf('/admin');
+  return index >= 0 ? pathname.slice(index) : pathname;
+}
 
 const sectionTitles: Record<SectionKey, { title: string; subtitle: string }> = {
   dashboard: { title: 'Dashboard 👋', subtitle: '' },
@@ -263,7 +280,7 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
   const [profileAvatar, setProfileAvatar] = useState<string>('');
   const [reloadKey, setReloadKey] = useState(0);
   const [authRequired, setAuthRequired] = useState(false);
-  const [dateRange, setDateRange] = useState({ start: daysAgoIso(30), end: todayIso() });
+  const [dateRange, setDateRange] = useState({ start: daysAgoIso(29), end: todayIso() });
   const { toast, show } = useToast();
 
   useEffect(() => setSection(initialSection), [initialSection]);
@@ -297,14 +314,16 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
     event?.preventDefault();
     setSection(item.key);
     setMobileOpen(false);
-    if (typeof window !== 'undefined' && window.location.pathname !== item.href) {
-      window.history.pushState({}, '', item.href);
+    if (typeof window !== 'undefined') {
+      const target = publicWebPath(item.href);
+      if (window.location.pathname !== target) window.history.pushState({}, '', target);
     }
   }
 
   useEffect(() => {
     const onPop = () => {
-      const match = navGroups.flatMap((g) => g.items).find((x) => x.href === window.location.pathname);
+      const current = internalAdminPath(window.location.pathname);
+      const match = navGroups.flatMap((g) => g.items).find((x) => x.href === current);
       if (match) setSection(match.key);
     };
     window.addEventListener('popstate', onPop);
@@ -315,12 +334,17 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
     if (!modal) return;
     try {
       const result: any = await submitForm(modal.action, values.badge_color ? { ...values, badge_emoji: circleEmojiForColor(String(values.badge_color)) } : values);
-      if (result?.logout || modal.action === '/admin/settings/website' && (String(values.username || '').trim() || String(values.password || '').trim())) {
+      if (result?.logout) {
         show(result?.message || 'Website login changed. Please login again.', true);
-        window.setTimeout(() => { window.location.href = result?.redirect || '/login?updated=1'; }, 650);
+        window.setTimeout(() => { window.location.href = result?.redirect || publicWebPath('/login?updated=1'); }, 650);
         return;
       }
-      show('Saved successfully', true);
+      if (result?.path_changed && result?.redirect) {
+        show(result?.message || 'Web path changed successfully.', true);
+        window.setTimeout(() => { window.location.href = result.redirect; }, 550);
+        return;
+      }
+      show(result?.message || 'Saved successfully', true);
       setModal(null);
       setReloadKey((x) => x + 1);
     } catch (err) {
@@ -350,7 +374,7 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
           <div className="logo-mark mx-auto mb-4"><span>D</span></div>
           <h1>Login required</h1>
           <p className="muted">Your admin session is not active. Login again to open the D BOT admin panel.</p>
-          <a className="btn primary mt-4" href="/login">Open Login</a>
+          <a className="btn primary mt-4" href={publicWebPath('/login')}>Open Login</a>
         </section>
         {toast && <div className={`toast ${toast.good ? 'good' : 'bad'}`}>{toast.text}</div>}
       </main>
@@ -358,10 +382,15 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
   }
 
   return (
-    <div className="shell">
+    <div className={`shell section-${section}`}>
+      <div className="admin-ambient" aria-hidden="true">
+        <span className="admin-ambient-glow" />
+        <span className="admin-ambient-wave one" />
+        <span className="admin-ambient-wave two" />
+      </div>
       <aside className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-head">
-          <a className="brand" href="/admin" onClick={(event) => openSection({ key: 'dashboard', href: '/admin' }, event)}>
+          <a className="brand" href={publicWebPath('/admin')} onClick={(event) => openSection({ key: 'dashboard', href: '/admin' }, event)}>
             <div className="logo-mark"><span>D</span></div>
             <div className="brand-copy"><strong>D BOT</strong></div>
           </a>
@@ -415,7 +444,7 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
             <div><h1>{title.title}</h1>{title.subtitle ? <p>{title.subtitle}</p> : null}</div>
             <div className="actions">
               {section === 'dashboard' && <DateRangePicker value={dateRange} onChange={setDateRange} onApply={() => setReloadKey((x) => x + 1)} />}
-              {section === 'orders-report' && <a href="/admin/orders-report/pdf?all=1" className="btn"><Download size={16} /> Export PDF</a>}
+              {section === 'orders-report' && <a href={publicWebPath('/admin/orders-report/pdf?all=1')} className="btn"><Download size={16} /> Export PDF</a>}
               {section !== 'dashboard' && <button className="btn" onClick={() => setReloadKey((x) => x + 1)}><RefreshCw size={16} /> Refresh</button>}
             </div>
           </div>
@@ -463,7 +492,7 @@ function ProfileModal({ avatar, setAvatar, onClose, show }: { avatar: string; se
         <p className="muted">Role: <b>Owner</b></p>
         <label className="btn primary file-btn"><Upload size={16} /> Upload profile image<input type="file" accept="image/*" onChange={(e) => upload(e.target.files?.[0])} /></label>
         <button className="btn" onClick={() => { localStorage.removeItem('dbot_admin_avatar'); setAvatar(''); show('Profile photo removed', true); }}>Remove photo</button>
-        <a className="btn danger" href="/logout"><LogOut size={16} /> Logout</a>
+        <a className="btn danger" href={publicWebPath('/logout')}><LogOut size={16} /> Logout</a>
       </motion.div>
     </div>
   );
@@ -512,12 +541,18 @@ function useApi<T>(path: string, reloadKey: number, setAuthRequired: (v: boolean
 function DashboardSection({ reloadKey, setAuthRequired, dateRange, show }: any) {
   const qs = `start_date=${encodeURIComponent(dateRange.start)}&end_date=${encodeURIComponent(dateRange.end)}`;
   const { data, loading, error } = useApi<DashboardApi>(`/admin/api/v2/dashboard?${qs}`, reloadKey, setAuthRequired);
-  const chartData = data?.chart_ranges?.[0]?.data || [];
+  const [displayReset, setDisplayReset] = useState(false);
+  useEffect(() => { setDisplayReset(false); }, [reloadKey, dateRange.start, dateRange.end]);
+  const rawChartData = data?.chart_ranges?.[0]?.data || [];
+  const chartData = displayReset ? rawChartData.map((row) => ({ ...row, sales: 0 })) : rawChartData;
+  const chartTicks = chartData.filter((_, index) => index % 3 === 0).map((row) => row.label);
   const stats = data?.stats || {};
   if (loading) return <SkeletonGrid />;
   if (error || !data) return <EmptyState message={error || 'Dashboard could not be loaded.'} />;
+  const displaySales = displayReset ? 0 : Number(stats.monthly_sales || 0);
+  const displayTrend = displayReset ? 0 : Number(stats.monthly_sales_change || 0);
   const statCards = [
-    { label: 'Total Revenue', value: toman(stats.monthly_sales), trend: stats.monthly_sales_change, icon: Gauge, cls: 'purple' },
+    { label: 'Total Revenue', value: toman(displaySales), trend: displayTrend, icon: Gauge, cls: 'purple' },
     { label: 'New Orders', value: money(stats.today_orders), trend: stats.orders_change, icon: ShoppingCart, cls: 'blue' },
     { label: 'Total Users', value: money(stats.users_total), trend: stats.users_change, icon: Users, cls: 'green' },
     { label: 'Active Services', value: money(stats.active_services), trend: stats.conversion_rate, icon: Server, cls: 'cyan' }
@@ -527,30 +562,31 @@ function DashboardSection({ reloadKey, setAuthRequired, dateRange, show }: any) 
       <div className="cards4">
         {statCards.map((card, index) => <StatCard key={card.label} {...card} index={index} />)}
       </div>
-      <div className="dashboard-grid">
-        <section className="panel">
+      <div className="dashboard-grid dashboard-grid-clean">
+        <section className="panel revenue-panel">
           <div className="panel-head">
             <h2>Revenue Overview</h2>
-            <div className="actions"><a className="btn" href="/admin/orders-report/pdf?all=1"><Download size={15} /> Export</a><a className="btn primary" href={`/admin/orders-report?start_date=${dateRange.start}&end_date=${dateRange.end}`}>View Report</a></div>
+            <div className="actions">
+              <button className="btn" type="button" onClick={() => { setDisplayReset(true); show?.('Revenue chart display reset to zero. Stored sales data was not changed.', true); }}><RefreshCw size={15} /> Reset Display</button>
+              <a className="btn" href={publicWebPath('/admin/orders-report/pdf?all=1')}><Download size={15} /> Export</a>
+              <a className="btn primary" href={publicWebPath(`/admin/orders-report?start_date=${dateRange.start}&end_date=${dateRange.end}`)}>View Report</a>
+            </div>
           </div>
-          <div className="panel-title-value"><strong>{toman(stats.monthly_sales)}</strong><span className="stat-trend">{pct(stats.monthly_sales_change)} vs previous range</span></div>
+          <div className="panel-title-value"><strong>{toman(displaySales)}</strong><span className="stat-trend">{pct(displayTrend)} vs previous range</span></div>
           <div className="chart-wrap">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-                <defs><linearGradient id="rev" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#7c3aed" stopOpacity={0.65}/><stop offset="95%" stopColor="#7c3aed" stopOpacity={0}/></linearGradient></defs>
+                <defs><linearGradient id="rev" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#69a7ff" stopOpacity={0.65}/><stop offset="95%" stopColor="#69a7ff" stopOpacity={0}/></linearGradient></defs>
                 <CartesianGrid stroke="rgba(148,163,184,.12)" vertical={false} />
-                <XAxis dataKey="label" tick={{ fill: '#aab4c8', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="label" ticks={chartTicks} interval={0} minTickGap={8} tick={{ fill: '#aab4c8', fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: '#aab4c8', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(v) => tomanChart(Number(v))} />
-                <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid rgba(148,163,184,.2)', borderRadius: 12 }} formatter={(value) => `${tomanChart(Number(value))} × 1,000 Toman`} />
-                <Area type="monotone" dataKey="sales" stroke="#8b5cf6" strokeWidth={3} fill="url(#rev)" dot={false} activeDot={{ r: 7 }} />
+                <Tooltip contentStyle={{ background: '#091524', border: '1px solid rgba(145,190,253,.22)', borderRadius: 12 }} formatter={(value) => `${tomanChart(Number(value))} × 1,000 Toman`} />
+                <Area type="monotone" dataKey="sales" stroke="#7db3ff" strokeWidth={3} fill="url(#rev)" dot={false} activeDot={{ r: 7 }} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </section>
-        <div className="side-stack">
-          <SystemStatus resources={data.resources} />
-          <RecentActivities orders={data.latest_orders} />
-        </div>
+        <SystemStatus resources={data.resources} />
       </div>
       <RecentOrders orders={data.latest_orders} />
     </>
@@ -568,16 +604,11 @@ function StatCard({ label, value, trend, icon: Icon, cls, index }: any) {
 function SystemStatus({ resources }: { resources: ResourceMetric[] }) {
   const fallback = [{ title: 'CPU Usage', percent: 32, cls: 'blue', icon: '⚙️', value: '32%', detail: 'Live' }, { title: 'RAM Usage', percent: 45, cls: 'purple', icon: '🧠', value: '45%', detail: 'Live' }, { title: 'Disk Usage', percent: 67, cls: 'yellow', icon: '💾', value: '67%', detail: 'Live' }, { title: 'Network', percent: 23, cls: 'green', icon: '↗', value: '23%', detail: 'Live' }];
   const rows = resources?.length ? resources : fallback;
-  return <section className="panel"><div className="panel-head"><h2>System Status</h2></div><div className="progress-list">{rows.map((r) => <div className={`progress-row ${r.cls}`} key={r.title}><div className="progress-name"><span className="progress-icon">{r.icon}</span>{r.title.replace('Ram', 'RAM Usage').replace('SSD', 'Disk Usage').replace('CPU', 'CPU Usage')}</div><div className="progress-track"><div className="progress-fill" style={{ width: `${Math.min(100, Math.max(0, Number(r.percent || 0)))}%` }} /></div><b>{Math.round(Number(r.percent || 0))}%</b></div>)}</div></section>;
-}
-
-function RecentActivities({ orders }: { orders: OrderItem[] }) {
-  const rows = orders.slice(0, 6);
-  return <section className="panel"><div className="panel-head"><h2>Recent Activities</h2></div><div className="item-list">{rows.length ? rows.map((o) => <div className="list-row" key={o.id}><div className="row-left"><ShoppingCart size={16} /><div><b>{String(orderUserName(o))}</b> purchased <span className="text-sky-300">{orderPlanTitle(o)}</span></div></div><span className="muted">{shortDate(o.created_at)}</span></div>) : <EmptyInline />}</div></section>;
+  return <section className="panel system-status-wide"><div className="panel-head"><div><h2>System Status</h2><p className="muted system-status-subtitle">Live resource usage</p></div><span className="badge green">Live</span></div><div className="progress-list system-status-list">{rows.map((r) => <div className={`progress-row ${r.cls}`} key={r.title}><div className="progress-name"><span className="progress-icon">{r.icon}</span><span>{(/ram/i.test(r.title) ? 'RAM Usage' : /ssd|disk/i.test(r.title) ? 'Disk Usage' : /cpu/i.test(r.title) ? 'CPU Usage' : r.title)}</span></div><div className="progress-value-row"><div className="progress-track"><div className="progress-fill" style={{ width: `${Math.min(100, Math.max(0, Number(r.percent || 0)))}%` }} /></div><strong>{Math.round(Number(r.percent || 0))}%</strong></div></div>)}</div></section>;
 }
 
 function RecentOrders({ orders }: { orders: OrderItem[] }) {
-  return <section className="card table-card"><div className="panel-head"><h2>Recent Orders</h2><a className="btn" href="/admin/orders-report">View all</a></div><div className="table-scroll"><table><thead><tr><th>Order ID</th><th>User</th><th>Plan</th><th>Amount</th><th>Payment</th><th>Status</th><th>Date</th></tr></thead><tbody>{orders.map((o) => <tr key={o.id}><td className="text-violet-300">#ORD-{o.id}</td><td><div className="row-left"><span className="tiny-avatar">{firstLetter(o.user?.full_name || o.user?.username)}</span>{o.user?.full_name || o.user?.username || o.user?.telegram_id || '-'}</div></td><td>{orderPlanTitle(o)}</td><td>{toman(o.amount_irt)}</td><td>{paymentLabel(o.payment_method)}</td><td><span className={`badge ${statusClass(o.status)}`}>{o.status}</span></td><td>{shortDate(o.created_at)}</td></tr>)}</tbody></table></div></section>;
+  return <section className="card table-card"><div className="panel-head"><h2>Recent Orders</h2><a className="btn" href={publicWebPath('/admin/orders-report')}>View all</a></div><div className="table-scroll"><table><thead><tr><th>Order ID</th><th>User</th><th>Plan</th><th>Amount</th><th>Payment</th><th>Status</th><th>Date</th></tr></thead><tbody>{orders.map((o) => <tr key={o.id}><td className="text-violet-300">#ORD-{o.id}</td><td><div className="row-left"><span className="tiny-avatar">{firstLetter(o.user?.full_name || o.user?.username)}</span>{o.user?.full_name || o.user?.username || o.user?.telegram_id || '-'}</div></td><td>{orderPlanTitle(o)}</td><td>{toman(o.amount_irt)}</td><td>{paymentLabel(o.payment_method)}</td><td><span className={`badge ${statusClass(o.status)}`}>{o.status}</span></td><td>{shortDate(o.created_at)}</td></tr>)}</tbody></table></div></section>;
 }
 
 function UsersSection({ query, reloadKey, setAuthRequired }: any) {
@@ -811,13 +842,13 @@ function PlansSection({ query, reloadKey, setAuthRequired, openModal, runAction,
       <section className="plan-order-panel">
         <div className="panel-head"><h2>Public Plans Order</h2><span className="badge green">Bot Sales</span></div>
         <div className="section-grid plan-sort-grid">
-          {publicPlans.map((p) => <div key={`p${p.id}`} className={`drag-card ${dragging?.id === p.id && dragging.kind === 'public' ? 'dragging' : ''}`} draggable onDragStart={() => setDragging({ kind: 'public', id: p.id })} onDragOver={(e) => e.preventDefault()} onDrop={() => onDropPlan('public', p.id)} onDragEnd={() => setDragging(null)}><EntityCard title={p.title} icon={<Package />} badge={p.is_active ? 'Public / Active' : 'Public / Inactive'} badgeClass={p.is_active ? 'green' : 'red'} kvs={[["Price", toman(p.price_irt)], ['Volume', `${p.volume_gb} GB`], ['Duration', `${p.duration_days} days`], ['Server', p.server_id || '-'], ['Category', p.category_id || '-'], ['Inbound mode', p.inbound_mode === 'manual' ? 'Manual' : 'Automatic'], ['Inbounds', p.inbound_mode === 'manual' ? (p.inbound_ids?.length || 0) : 'All active']]} actions={<><span className="drag-handle"><ListChecks size={15} /> Drag</span><button className="btn" onClick={() => openModal(planForm(catOpts, serverItems, p))}>Edit</button><button className={p.is_active ? 'btn danger' : 'btn success'} onClick={() => runAction(`/admin/toggle/plans/${p.id}`, p.is_active ? 'Plan deactivated' : 'Plan activated')}>{p.is_active ? 'Deactivate' : 'Activate'}</button><button className="btn danger" onClick={() => runAction(`/admin/plans/${p.id}/delete`, 'Plan deleted')}>Delete</button></>} /></div>)}
+          {publicPlans.map((p) => <div key={`p${p.id}`} className={`drag-card ${dragging?.id === p.id && dragging.kind === 'public' ? 'dragging' : ''}`} draggable onDragStart={() => setDragging({ kind: 'public', id: p.id })} onDragOver={(e) => e.preventDefault()} onDrop={() => onDropPlan('public', p.id)} onDragEnd={() => setDragging(null)}><EntityCard headingLevel={3} title={p.title} icon={<Package />} badge={p.is_active ? 'Public / Active' : 'Public / Inactive'} badgeClass={p.is_active ? 'green' : 'red'} kvs={[["Price", toman(p.price_irt)], ['Volume', `${p.volume_gb} GB`], ['Duration', `${p.duration_days} days`], ['Server', p.server_id || '-'], ['Category', p.category_id || '-'], ['Inbound mode', p.inbound_mode === 'manual' ? 'Manual' : 'Automatic'], ['Inbounds', p.inbound_mode === 'manual' ? (p.inbound_ids?.length || 0) : 'All active'], ['HWID devices', Number(p.hwid_limit || 0) > 0 ? `${p.hwid_limit} max` : 'Unlimited']]} actions={<><span className="drag-handle"><ListChecks size={15} /> Drag</span><button className="btn" onClick={() => openModal(planForm(catOpts, serverItems, p))}>Edit</button><button className={p.is_active ? 'btn danger' : 'btn success'} onClick={() => runAction(`/admin/toggle/plans/${p.id}`, p.is_active ? 'Plan deactivated' : 'Plan activated')}>{p.is_active ? 'Deactivate' : 'Activate'}</button><button className="btn danger" onClick={() => runAction(`/admin/plans/${p.id}/delete`, 'Plan deleted')}>Delete</button></>} /></div>)}
         </div>
       </section>
       <section className="plan-order-panel">
         <div className="panel-head"><h2>Reseller Plans Order</h2><span className="badge purple">Reseller Menu</span></div>
         <div className="section-grid plan-sort-grid">
-          {resellerPlans.map((p) => <div key={`r${p.id}`} className={`drag-card ${dragging?.id === p.id && dragging.kind === 'reseller' ? 'dragging' : ''}`} draggable onDragStart={() => setDragging({ kind: 'reseller', id: p.id })} onDragOver={(e) => e.preventDefault()} onDrop={() => onDropPlan('reseller', p.id)} onDragEnd={() => setDragging(null)}><EntityCard title={p.title} icon={<ShieldCheck />} badge={p.is_active ? 'Reseller / Active' : 'Reseller / Inactive'} badgeClass={p.is_active ? 'purple' : 'red'} kvs={[["Price", toman(p.price_irt)], ['Volume', `${p.volume_gb} GB`], ['Validity', `${p.reseller_validity_days} days`], ['Server', p.server_id || '-']]} actions={<><span className="drag-handle"><ListChecks size={15} /> Drag</span><button className="btn" onClick={() => openModal(resellerPlanForm(srvOpts, p))}>Edit</button><button className={p.is_active ? 'btn danger' : 'btn success'} onClick={() => runAction(`/admin/toggle/reseller-plans/${p.id}`, p.is_active ? 'Reseller plan deactivated' : 'Reseller plan activated')}>{p.is_active ? 'Deactivate' : 'Activate'}</button><button className="btn danger" onClick={() => runAction(`/admin/plans/reseller/${p.id}/delete`, 'Reseller plan deleted')}>Delete</button></>} /></div>)}
+          {resellerPlans.map((p) => <div key={`r${p.id}`} className={`drag-card ${dragging?.id === p.id && dragging.kind === 'reseller' ? 'dragging' : ''}`} draggable onDragStart={() => setDragging({ kind: 'reseller', id: p.id })} onDragOver={(e) => e.preventDefault()} onDrop={() => onDropPlan('reseller', p.id)} onDragEnd={() => setDragging(null)}><EntityCard headingLevel={3} title={p.title} icon={<ShieldCheck />} badge={p.is_active ? 'Reseller / Active' : 'Reseller / Inactive'} badgeClass={p.is_active ? 'purple' : 'red'} kvs={[["Price", toman(p.price_irt)], ['Volume', `${p.volume_gb} GB`], ['Validity', `${p.reseller_validity_days} days`], ['Server', p.server_id || '-']]} actions={<><span className="drag-handle"><ListChecks size={15} /> Drag</span><button className="btn" onClick={() => openModal(resellerPlanForm(srvOpts, p))}>Edit</button><button className={p.is_active ? 'btn danger' : 'btn success'} onClick={() => runAction(`/admin/toggle/reseller-plans/${p.id}`, p.is_active ? 'Reseller plan deactivated' : 'Reseller plan activated')}>{p.is_active ? 'Deactivate' : 'Activate'}</button><button className="btn danger" onClick={() => runAction(`/admin/plans/reseller/${p.id}/delete`, 'Reseller plan deleted')}>Delete</button></>} /></div>)}
         </div>
       </section>
     </div>
@@ -1037,13 +1068,14 @@ function OrdersSection({ query, reloadKey, setAuthRequired, dateRange }: any) {
   return <DataTable title={`Orders (${money(data.total || rows.length)})`} columns={['Order', 'User', 'Plan', 'Amount', 'Payment', 'Status', 'Rejection reason', 'Date']} rows={rows.map((o) => [`#ORD-${o.id}`, o.user?.full_name || o.user?.username || o.user?.telegram_id || '-', orderPlanTitle(o), toman(o.amount_irt), paymentLabel(o.payment_method), <span key="s" className={`badge ${statusClass(o.status)}`}>{o.status}</span>, o.rejection_reason || '-', shortDate(o.rejected_at || o.created_at)])} />;
 }
 
-function SettingsSection({ reloadKey, setAuthRequired, openModal }: any) {
+function SettingsSection({ reloadKey, setAuthRequired, openModal, show }: any) {
   const { data, loading, error } = useApi<ApiList<SettingItem>>('/admin/api/v2/settings', reloadKey, setAuthRequired);
   if (loading) return <SkeletonGrid />;
   if (error || !data) return <EmptyState message={error || 'Settings could not be loaded.'} />;
   const map = Object.fromEntries(data.items.map((s) => [s.key, s.value]));
   const domain = String(map.web_domain || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
   const baseUrl = domain ? `https://${domain}` : 'Not configured';
+  const loginUrl = map.web_login_url || (domain ? `${baseUrl}/${map.web_path || 'dbot'}/login` : '-');
   const enabledButtons = USER_BUTTON_FIELDS.filter((item) => map[`button_${item.key}_enabled`] !== '0').length;
 
   return <div className="section-grid settings-grid">
@@ -1062,7 +1094,9 @@ function SettingsSection({ reloadKey, setAuthRequired, openModal }: any) {
       badgeClass={map.bot_enabled === '0' ? 'red' : 'green'}
       kvs={[
         ['Start Text', map.welcome_text ? `${map.welcome_text.slice(0, 64)}...` : '-'],
-        ['Rules Text', map.rules_text ? `${map.rules_text.slice(0, 64)}...` : '-'],
+        ['Forced Channel', map.force_join_enabled === '1' ? (map.channel_url || 'Enabled') : 'Disabled'],
+        ['Rules', map.rules_enabled === '1' ? 'Enabled' : 'Disabled'],
+        ['Rules Text', map.rules_enabled === '1' && map.rules_text ? `${map.rules_text.slice(0, 64)}...` : '-'],
         ['Bot Status', map.bot_enabled === '0' ? 'Disabled' : 'Enabled'],
         ['Database Info', map.database_info || 'Connected'],
       ]}
@@ -1076,12 +1110,14 @@ function SettingsSection({ reloadKey, setAuthRequired, openModal }: any) {
       badgeClass={domain ? 'green' : 'yellow'}
       kvs={[
         ['Website', baseUrl],
-        ['Login link', domain ? `${baseUrl}/login` : '-'],
-        ['Admin panel', domain ? `${baseUrl}/admin` : '-'],
+        ['Web Path', `/${map.web_path || 'dbot'}`],
+        ['Login link', loginUrl],
+        ['Admin panel', domain ? `${baseUrl}/${map.web_path || 'dbot'}/admin` : '-'],
         ['Username', map.web_admin_username || '-'],
-        ['Password', map.web_password_configured === '1' ? 'Configured (protected)' : 'Not configured'],
+        ['Password', map.web_password_configured === '1' ? 'Configured' : 'Not configured'],
         ['Session', `${map.web_token_timeout_minutes || 30} min`],
       ]}
+      actions={<button className="btn primary" onClick={() => openModal(settingsWebsiteForm(map))}><KeyRound size={16} /> Edit Setup</button>}
     />
 
     <EntityCard
@@ -1096,33 +1132,69 @@ function SettingsSection({ reloadKey, setAuthRequired, openModal }: any) {
       ]}
       actions={<button className="btn primary" onClick={() => openModal(settingsButtonsForm(map))}><Settings size={16} /> Manage Buttons</button>}
     />
+
+
+    <section className="card factory-reset-card">
+      <div className="panel-head factory-reset-head">
+        <div className="factory-reset-title">
+          <span className="factory-reset-icon" aria-hidden="true"><Trash2 size={17} /></span>
+          <div>
+            <h2>Factory Reset</h2>
+            <p className="muted">Erase local D BOT data and return this installation to first-run setup.</p>
+          </div>
+        </div>
+        <span className="badge red">Danger Zone</span>
+      </div>
+      <div className="factory-reset-row">
+        <div className="factory-reset-copy">
+          <h3>Fresh-install reset</h3>
+          <p className="muted">Removes plans, users, services, servers, settings, reports, backup configuration and customizations. External X-UI/MikroTik users are not modified.</p>
+        </div>
+        <button className="btn danger factory-reset-btn" type="button" onClick={async () => {
+        if (!window.confirm('Factory Reset will permanently erase ALL D BOT database data and settings. Continue?')) return;
+        const typed = window.prompt('Type FACTORY RESET to confirm:');
+        if (typed !== 'FACTORY RESET') { show?.('Factory Reset cancelled. Confirmation text did not match.', false); return; }
+        try {
+          const result: any = await submitForm('/admin/settings/factory-reset', { confirm: 'FACTORY RESET' });
+          show?.(result?.message || 'Factory Reset completed', true);
+          window.setTimeout(() => { window.location.href = result?.redirect || publicWebPath('/setup'); }, 700);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg === 'AUTH_REQUIRED') setAuthRequired(true);
+          show?.(msg === 'AUTH_REQUIRED' ? 'Please login again' : msg, false);
+        }
+      }}><Trash2 size={16} /> Factory Reset</button></div>
+    </section>
   </div>;
 }
 
 
 function BackupSection({ reloadKey, setAuthRequired, show }: any) {
   const { data, loading, error, setData } = useApi<BackupSettings>('/admin/api/v2/backup/settings', reloadKey, setAuthRequired);
-  const [form, setForm] = useState<BackupFormState>({ destination: 'channel', bot_token: '', chat_id: '', bot_username: '', time: '03:00', include_database: '1', include_files: '1' });
+  const [form, setForm] = useState<BackupFormState>({ destination: 'channel', sender_mode: 'current', secondary_bot_token: '', chat_id: '', interval_minutes: '1440', include_database: '1', include_files: '1' });
   const [test, setTest] = useState<BackupTestState>({ status: 'idle', message: '' });
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [legacySecret, setLegacySecret] = useState('');
   const [legacySecretKind, setLegacySecretKind] = useState<'auto' | 'fernet' | 'bot_token'>('auto');
   const [legacySecretRequired, setLegacySecretRequired] = useState(false);
   const [busy, setBusy] = useState('');
+
   useEffect(() => {
     if (!data?.settings) return;
     setForm({
       destination: data.settings.backup_destination || 'channel',
-      bot_token: data.settings.backup_bot_token || '',
-      chat_id: data.settings.backup_chat_id || data.settings.backup_channel || '',
-      bot_username: data.settings.backup_bot_username || '',
-      time: data.settings.backup_time || '03:00',
+      sender_mode: data.settings.backup_sender_mode || 'current',
+      secondary_bot_token: '',
+      chat_id: data.settings.backup_chat_id || '',
+      interval_minutes: data.settings.backup_interval_minutes || '1440',
       include_database: data.settings.backup_include_database || '1',
       include_files: data.settings.backup_include_files || '1'
     });
     if (data.status?.last_test_status) setTest({ status: data.status.last_test_status === 'ok' ? 'ok' : 'bad', message: data.status.last_test_message || '', adminOk: data.status.admin_ok });
   }, [data]);
+
   function setField(name: keyof BackupFormState, value: string) { setForm((prev) => ({ ...prev, [name]: value })); }
+
   async function saveSettings() {
     setBusy('save');
     try {
@@ -1136,12 +1208,13 @@ function BackupSection({ reloadKey, setAuthRequired, show }: any) {
       show(msg === 'AUTH_REQUIRED' ? 'Please login again' : msg, false);
     } finally { setBusy(''); }
   }
+
   async function testDestination() {
     setBusy('test');
     try {
       const res: any = await submitForm('/admin/backup/test', form);
-      setTest({ status: res.ok === false ? 'bad' : 'ok', message: res.message || 'Test backup sent', adminOk: res.ok !== false });
-      show(res.message || 'Restorable test backup sent', res.ok !== false);
+      setTest({ status: res.ok === false ? 'bad' : 'ok', message: res.message || 'Fresh test message sent', adminOk: res.ok !== false });
+      show(res.message || 'Fresh test message sent', res.ok !== false);
       const fresh = await fetchJson<BackupSettings>('/admin/api/v2/backup/settings');
       setData(fresh);
     } catch (err) {
@@ -1150,6 +1223,7 @@ function BackupSection({ reloadKey, setAuthRequired, show }: any) {
       show(msg, false);
     } finally { setBusy(''); }
   }
+
   async function runBackup() {
     setBusy('backup');
     try {
@@ -1159,6 +1233,21 @@ function BackupSection({ reloadKey, setAuthRequired, show }: any) {
       setData(fresh);
     } catch (err) { show(err instanceof Error ? err.message : String(err), false); } finally { setBusy(''); }
   }
+
+  async function sendSalesReportNow() {
+    setBusy('sales-report');
+    try {
+      const result: any = await submitForm('/admin/reports/monthly-sales/run', {});
+      show(result?.message || '30-day sales PDF report sent', true);
+      const fresh = await fetchJson<BackupSettings>('/admin/api/v2/backup/settings');
+      setData(fresh);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === 'AUTH_REQUIRED') setAuthRequired(true);
+      show(msg === 'AUTH_REQUIRED' ? 'Please login again' : msg, false);
+    } finally { setBusy(''); }
+  }
+
   async function restoreBackup() {
     if (!restoreFile) { show('Choose a JSON backup file first', false); return; }
     if (legacySecretRequired && !legacySecret.trim()) { show('Enter the old source FERNET_KEY or old bot token first', false); return; }
@@ -1183,29 +1272,39 @@ function BackupSection({ reloadKey, setAuthRequired, show }: any) {
       setLegacySecretRequired(false);
     } catch (err) { show(err instanceof Error ? err.message : String(err), false); } finally { setBusy(''); }
   }
+
   if (loading) return <SkeletonGrid />;
   if (error || !data) return <EmptyState message={error || 'Backup settings could not be loaded.'} />;
   const status = data.status || { configured: false };
-  const destinationLabel = form.destination === 'channel' ? 'Telegram Channel' : form.destination === 'group' ? 'Telegram Group' : 'Backup Bot';
+  const secondaryConfigured = data.settings.backup_secondary_bot_configured === '1';
+  const secondaryUsername = data.settings.backup_secondary_bot_username || '';
+  const destinationLabel = form.destination === 'channel' ? 'Telegram Channel' : form.destination === 'group' ? 'Telegram Group' : 'Owner / Backup Bot DM';
+  const senderLabel = form.sender_mode === 'secondary' ? (secondaryUsername ? `Secondary bot @${secondaryUsername}` : 'Secondary backup bot') : 'Current D BOT';
+  const intervalLabel = ({ '60': 'Every 1 hour', '180': 'Every 3 hours', '360': 'Every 6 hours', '720': 'Every 12 hours', '1440': 'Every 24 hours', '10080': 'Every 7 days' } as Record<string, string>)[form.interval_minutes] || `${form.interval_minutes} min`;
+
   return <div className="section-grid backup-grid">
     <section className="card backup-settings-card">
-      <div className="panel-head"><h2>Backup Destination</h2><span className={`badge ${status.configured ? 'green' : 'yellow'}`}>{status.configured ? 'Configured' : 'Not configured'}</span></div>
+      <div className="panel-head"><h2>Backup Delivery</h2><span className={`badge ${status.configured ? 'green' : 'yellow'}`}>{status.configured ? 'Configured' : 'Not configured'}</span></div>
       <div className="form-grid compact-form">
-        <label className="form-field"><span>Send backup to</span><select value={form.destination} onChange={(e) => setField('destination', e.target.value)}><option value="channel">Channel</option><option value="group">Group</option><option value="bot">Bot</option></select></label>
-        <label className="form-field"><span>Backup time</span><input type="time" value={form.time} onChange={(e) => setField('time', e.target.value)} /></label>
-        {form.destination === 'channel' && <label className="form-field full"><span>Channel target</span><input value={form.chat_id} onChange={(e) => setField('chat_id', e.target.value)} placeholder="@channel, -100..., or https://t.me/c/.../post" /><small>Private channel: make the bot administrator while it is running; D BOT detects and saves the numeric channel ID automatically. You can also use -100... or a t.me/c/... post link.</small></label>}
-        {form.destination === 'group' && <label className="form-field full"><span>Group target</span><input value={form.chat_id} onChange={(e) => setField('chat_id', e.target.value)} placeholder="@group, -100..., or https://t.me/c/.../message" /><small>Private group: make the bot administrator while it is running, or enter its numeric -100... ID / t.me/c/... message link.</small></label>}
-        {form.destination === 'bot' && <label className="form-field full"><span>Bot token for sending backup</span><input type="password" value={form.bot_token} onChange={(e) => setField('bot_token', e.target.value)} placeholder="Backup bot token" /></label>}
+        <label className="form-field"><span>Sender bot</span><select value={form.sender_mode} onChange={(e) => setField('sender_mode', e.target.value)}><option value="current">Current D BOT</option><option value="secondary">Secondary backup bot</option></select></label>
+        <label className="form-field"><span>Backup cycle</span><select value={form.interval_minutes} onChange={(e) => setField('interval_minutes', e.target.value)}><option value="60">Every 1 hour</option><option value="180">Every 3 hours</option><option value="360">Every 6 hours</option><option value="720">Every 12 hours</option><option value="1440">Every 24 hours</option><option value="10080">Every 7 days</option></select></label>
+        {form.sender_mode === 'secondary' && <label className="form-field full"><span>Secondary bot token</span><input type="password" autoComplete="off" value={form.secondary_bot_token} onChange={(e) => setField('secondary_bot_token', e.target.value)} placeholder={secondaryConfigured ? 'Configured — leave empty to keep current token' : 'Enter token from @BotFather'} /><small>{secondaryConfigured ? `Secondary bot is configured${secondaryUsername ? ` as @${secondaryUsername}` : ''}. Enter a token only when you want to replace it.` : 'After saving the token, the second bot starts automatically and exposes backup controls to owner IDs only.'}</small></label>}
+        <label className="form-field"><span>Send backup to</span><select value={form.destination} onChange={(e) => setField('destination', e.target.value)}><option value="channel">Channel</option><option value="group">Group</option><option value="bot">Owner / bot chat</option></select></label>
+        {form.destination === 'bot' && <label className="form-field"><span>Owner chat ID</span><input value={form.chat_id} onChange={(e) => setField('chat_id', e.target.value)} placeholder="Leave empty to use first OWNER_ID" /></label>}
+        {form.destination === 'channel' && <label className="form-field full"><span>Channel address</span><input value={form.chat_id} onChange={(e) => setField('chat_id', e.target.value)} placeholder="@channel, -100..., or https://t.me/c/.../post" /><small>The selected sender bot must already be added to this channel as Administrator with Send/Post Messages enabled. Every Test click sends a new message.</small></label>}
+        {form.destination === 'group' && <label className="form-field full"><span>Group address</span><input value={form.chat_id} onChange={(e) => setField('chat_id', e.target.value)} placeholder="@group, -100..., or https://t.me/c/.../message" /><small>The selected sender bot must be an Administrator in the group and able to send messages. Every Test click sends a new message.</small></label>}
         <label className="form-field"><span>Database backup</span><select value={form.include_database} onChange={(e) => setField('include_database', e.target.value)}><option value="1">Enabled</option><option value="0">Disabled</option></select></label>
         <label className="form-field"><span>Files backup</span><select value={form.include_files} onChange={(e) => setField('include_files', e.target.value)}><option value="1">Enabled</option><option value="0">Disabled</option></select></label>
       </div>
-      <div className="card-actions"><button className="btn primary" disabled={busy === 'save'} onClick={saveSettings}><Save size={16} /> Save</button><button className="btn success" disabled={busy === 'test'} onClick={testDestination}><CheckCircle2 size={16} /> Send Test Backup</button><button className="btn" disabled={busy === 'backup'} onClick={runBackup}><Archive size={16} /> Run Manual Backup</button></div>
-      <div className={`backup-test-result ${test.status}`}><span>{test.status === 'ok' ? <CheckCircle2 size={18} /> : test.status === 'bad' ? <XCircle size={18} /> : <Bot size={18} />}</span><b>{test.status === 'idle' ? 'No test backup yet' : 'Backup delivery result'}</b><p>{test.message || 'Send Test Backup creates a new portable JSON document in Telegram. It never edits an existing message.'}</p></div>
+      <div className="card-actions"><button className="btn primary" disabled={busy === 'save'} onClick={saveSettings}><Save size={16} /> Save</button><button className="btn success" disabled={busy === 'test'} onClick={testDestination}><CheckCircle2 size={16} /> Send Fresh Test Message</button><button className="btn" disabled={busy === 'backup'} onClick={runBackup}><Archive size={16} /> Send Backup Now</button><button className="btn" disabled={busy === 'sales-report'} onClick={sendSalesReportNow}><FileText size={16} /> Send Sales Report Now</button></div>
+      <div className={`backup-test-result ${test.status}`}><span>{test.status === 'ok' ? <CheckCircle2 size={18} /> : test.status === 'bad' ? <XCircle size={18} /> : <Bot size={18} />}</span><b>{test.status === 'idle' ? 'No destination test yet' : 'Backup delivery test'}</b><p>{test.message || 'Test validates the bot token, confirms admin status for channels/groups, checks send permission, and creates a brand-new Telegram message on every click.'}</p></div>
     </section>
-    <EntityCard title="Backup Status" icon={<Archive />} badge={status.last_backup_status === 'ok' ? 'Last backup OK' : status.last_backup_status === 'error' ? 'Last backup error' : 'Portable v4'} badgeClass={status.last_backup_status === 'ok' ? 'green' : status.last_backup_status === 'error' ? 'red' : 'purple'} kvs={[["Destination", destinationLabel], [form.destination === 'channel' ? 'Channel target' : form.destination === 'group' ? 'Group target' : 'Bot token', form.destination === 'bot' ? (form.bot_token ? 'Configured' : '-') : (form.chat_id || '-')], ['Last backup', status.last_backup_at ? shortDate(status.last_backup_at) : '-'], ['Last message', status.last_backup_message || '-']]} actions={<a className="btn" href="/admin/backup/download"><Download size={15} /> Download Portable JSON</a>} />
+
+    <EntityCard title="Backup & Sales Reports" icon={<Archive />} badge={status.last_sales_report_status === 'ok' ? 'Sales PDF OK' : status.last_backup_status === 'ok' ? 'Last backup OK' : status.last_backup_status === 'error' ? 'Last backup error' : 'Portable v4'} badgeClass={status.last_sales_report_status === 'ok' ? 'green' : status.last_backup_status === 'ok' ? 'green' : status.last_backup_status === 'error' ? 'red' : 'purple'} kvs={[["Sender", senderLabel], ["Destination", destinationLabel], ['Target', form.chat_id || (form.destination === 'bot' ? 'First OWNER_ID' : '-')], ['Backup cycle', intervalLabel], ['Sales PDF cycle', 'Every 30 days'], ['Last backup', status.last_backup_at ? shortDate(status.last_backup_at) : '-'], ['Last sales PDF', status.last_sales_report_at ? shortDate(status.last_sales_report_at) : '-'], ['Sales PDF status', status.last_sales_report_message || 'Uses the same Telegram destination as backups']]} actions={<a className="btn" href={publicWebPath('/admin/backup/download')}><Download size={15} /> Download Portable JSON</a>} />
+
     <section className="card restore-card">
       <div className="panel-head"><h2>Restore Portable Backup</h2><span className="badge yellow">Cross-install Sync</span></div>
-      <p className="muted">Upload a D BOT portable JSON backup on any VPS or installation. All supported database tables are synchronized, server credentials are decrypted from the backup envelope and re-encrypted with this installation's key, and database sequences are reset.</p>
+      <p className="muted">Upload a D BOT portable JSON backup on any VPS or installation. All supported database tables are synchronized, server credentials and encrypted backup-bot/web secrets are re-encrypted for this installation, and database sequences are reset.</p>
       <label className="restore-drop"><Upload size={28} /><b>{restoreFile ? restoreFile.name : 'Choose portable backup file'}</b><small>JSON only · keep this file private because it contains recoverable service credentials</small><input type="file" accept="application/json,.json" onChange={(e) => { setRestoreFile(e.target.files?.[0] || null); setLegacySecretRequired(false); setLegacySecret(''); }} /></label>
       <details className="backup-test-result" open={legacySecretRequired}>
         <summary><b>Restore an old format 1–3 backup</b></summary>
@@ -1322,7 +1421,7 @@ function TestAccountSection({ reloadKey, setAuthRequired, show }: any) {
 }
 
 function ServiceTypesSection({ reloadKey, setAuthRequired, openModal, runAction, show }: any) {
-  const { data, loading, error, setData } = useApi<ApiList<ServiceTypeItem>>('/api/admin/service-types?v=1.1.7', reloadKey, setAuthRequired);
+  const { data, loading, error, setData } = useApi<ApiList<ServiceTypeItem>>('/api/admin/service-types?v=1.1.8', reloadKey, setAuthRequired);
   const [dragKey, setDragKey] = useState<string>('');
   const [savingOrder, setSavingOrder] = useState(false);
   if (loading) return <SkeletonGrid />;
@@ -1354,8 +1453,9 @@ function ServiceTypesSection({ reloadKey, setAuthRequired, openModal, runAction,
   return <><div className="filterbar"><button className="btn primary" onClick={() => openModal(serviceTypeForm())}><Plus size={16} /> Add Service Type</button><span className="badge">{serviceTypes.length} custom types</span>{savingOrder && <span className="badge yellow">Saving order...</span>}</div><div className="plan-order-note"><ListChecks size={16} /> Drag and drop service type cards to change bot display order. New service types are added at the bottom.</div><div className="section-grid">{serviceTypes.length ? serviceTypes.map((s) => <div key={s.key} className={`drag-card ${dragKey === s.key ? 'dragging' : ''}`} draggable onDragStart={() => setDragKey(s.key)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropOn(s.key)} onDragEnd={() => setDragKey('')}><EntityCard title={s.value} icon={<ListChecks />} badge={s.is_active ? 'Active' : 'Inactive'} badgeClass={s.is_active ? 'green' : 'red'} kvs={[["Value", s.value], ['Display order', serviceTypes.findIndex((x) => x.key === s.key) + 1]]} actions={<><span className="drag-handle"><ListChecks size={15} /> Drag</span><button className="btn" onClick={() => openModal(serviceTypeForm(s))}>Edit</button><button className={s.is_active ? 'btn danger' : 'btn success'} onClick={() => runAction(`/admin/service-types/toggle?key=${encodeURIComponent(s.key)}`, s.is_active ? 'Service type deactivated' : 'Service type activated')}>{s.is_active ? 'Deactivate' : 'Activate'}</button><button className="btn danger" onClick={() => runAction(`/admin/service-types/delete?key=${encodeURIComponent(s.key)}`, 'Service type deleted')}>Delete</button></>} /></div>) : <EmptyState message="No custom service type found. Add V2Ray, OpenVPN, or any other service from here." />}</div></>;
 }
 
-function EntityCard({ title, icon, badge, badgeClass = 'purple', kvs, actions }: { title: string; icon: React.ReactNode; badge?: string; badgeClass?: string; kvs: [string, any][]; actions?: React.ReactNode }) {
-  return <motion.section className="card entity-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} tabIndex={0}><div className="panel-head"><h3 className="row-left"><span className="tiny-avatar">{icon}</span>{title}</h3>{badge && <span className={`badge ${badgeClass}`}>{badge}</span>}</div><div className="kvs">{kvs.map(([k, v]) => <div className="kv" key={k}><span>{k}</span><b>{String(v ?? '-')}</b></div>)}</div>{actions && <div className="card-actions">{actions}</div>}</motion.section>;
+function EntityCard({ title, icon, badge, badgeClass = 'purple', kvs, actions, headingLevel = 2 }: { title: string; icon: React.ReactNode; badge?: string; badgeClass?: string; kvs: [string, any][]; actions?: React.ReactNode; headingLevel?: 2 | 3 }) {
+  const Heading = headingLevel === 3 ? 'h3' : 'h2';
+  return <motion.section className="card entity-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} tabIndex={0}><div className="panel-head"><Heading className="row-left"><span className="tiny-avatar">{icon}</span>{title}</Heading>{badge && <span className={`badge ${badgeClass}`}>{badge}</span>}</div><div className="kvs">{kvs.map(([k, v]) => <div className="kv" key={k}><span>{k}</span><b>{String(v ?? '-')}</b></div>)}</div>{actions && <div className="card-actions">{actions}</div>}</motion.section>;
 }
 
 function DataTable({ title, columns, rows }: { title: string; columns: string[]; rows: React.ReactNode[][] }) {
@@ -1398,7 +1498,9 @@ function FormModal({ modal, onClose, onSubmit, show }: { modal: ModalForm; onClo
       const opt = serverField?.options?.find((o) => String(o.value) === selectedServerId);
       const label = String(opt?.label || '').toLowerCase();
       if (!selectedServerId || selectedServerId === '0') return false;
-      current = label.includes('mikrotik') || label.includes('microtik') || label.includes('mikrotik / custom') ? 'mikrotik' : 'xui';
+      current = label.includes('mikrotik') || label.includes('microtik') || label.includes('mikrotik / custom')
+        ? 'mikrotik'
+        : label.includes('openvpn') ? 'openvpn' : 'xui';
     }
     if (condition.values) return condition.values.includes(current);
     return current === condition.value;
@@ -1496,7 +1598,7 @@ function serverForm(s?: ServerItem): ModalForm {
     action: s ? `/admin/servers/${s.id}/edit` : '/admin/servers/add',
     defaults,
     fields: [
-      { name: 'server_type', label: 'Profile', type: 'select', options: [{ value: 'xui', label: '3x-ui / Sanaei' }, { value: 'mikrotik', label: 'MikroTik / Custom' }] },
+      { name: 'server_type', label: 'Profile', type: 'select', options: [{ value: 'xui', label: '3x-ui / Sanaei 3.8.0' }, { value: 'mikrotik', label: 'MikroTik / Custom' }] },
       { name: 'scope', label: 'Show this server for', type: 'select', options: commonScopeOptions() },
       { name: 'name', label: 'Server name shown to users', required: true, placeholder: 'Germany / DE / OpenVPN Germany' },
       { name: 'display_name', label: 'Display name', placeholder: 'Optional bot/admin display name' },
@@ -1508,7 +1610,7 @@ function serverForm(s?: ServerItem): ModalForm {
       { name: 'subscription_url', label: 'Subscription URL', full: true, placeholder: 'https://sub.example.com/sub/', showWhen: { name: 'server_type', value: 'xui' } },
       { name: 'username', label: 'Username (optional when API token is used)', required: false },
       { name: 'password', label: s ? 'New password / login password' : 'Password / login password', type: 'password', required: false },
-      { name: 'api_key', label: 'API token / MikroTik API key', type: 'password', full: true, placeholder: 'For 3x-ui paste API token; for MikroTik paste api_key if needed' },
+      { name: 'api_key', label: 'API token (recommended) / MikroTik API key', type: 'password', full: true, placeholder: '3x-ui 3.8.0: Settings → Security → API Token' },
       { name: 'l2tp_server', label: 'L2TP server shown in guides', placeholder: 'vpn.example.com', showWhen: { name: 'server_type', value: 'mikrotik' } },
       { name: 'l2tp_ipsec_secret', label: 'L2TP Secret shown in guides', placeholder: 'CHANGE_ME_IPSEC_SECRET', showWhen: { name: 'server_type', value: 'mikrotik' } },
       { name: 'detected_routers', label: 'Detected routers', full: true, placeholder: 'Auto-filled after Test & Auto Fill', showWhen: { name: 'server_type', value: 'mikrotik' } }
@@ -1541,7 +1643,7 @@ function planForm(catOptions: any[], servers: ServerItem[], p?: PlanItem): Modal
   return {
     title: p ? 'Edit Public Plan' : 'Add Plan',
     action: p ? `/admin/plans/${p.id}/edit` : '/admin/plans/add',
-    defaults: p ? { ...p, plan_kind: 'public', inbound_mode: inboundMode } : { plan_kind: 'public', category_id: 0, server_id: 0, reseller_validity_days: 365, inbound_mode: 'automatic', inbound_ids: [] },
+    defaults: p ? { ...p, plan_kind: 'public', inbound_mode: inboundMode, hwid_limit: Number(p.hwid_limit || 0) } : { plan_kind: 'public', category_id: 0, server_id: 0, reseller_validity_days: 365, inbound_mode: 'automatic', inbound_ids: [], hwid_limit: 0 },
     fields: [
       { name: 'plan_kind', label: 'Plan is for', type: 'select', options: [{ value: 'public', label: 'Public' }, { value: 'reseller', label: 'Resellers' }], hidden: !!p },
       { name: 'title', label: 'Plan title', required: true },
@@ -1551,6 +1653,7 @@ function planForm(catOptions: any[], servers: ServerItem[], p?: PlanItem): Modal
       { name: 'reseller_validity_days', label: 'Reseller validity days', type: 'number', required: true, showWhen: { name: 'plan_kind', value: 'reseller' } },
       { name: 'category_id', label: 'Select category', type: 'select', options: catOptions, required: true, showWhen: { name: 'plan_kind', value: 'public' } },
       { name: 'server_id', label: 'Select server', type: 'select', options: serverOptionsList, required: true },
+      { name: 'hwid_limit', label: 'HWID device limit (0 = unlimited)', type: 'number', required: true, placeholder: 'Example: 1 device', showWhenAll: [{ name: 'plan_kind', value: 'public' }, { name: '__selected_server_type', value: 'xui' }] },
       { name: 'inbound_mode', label: 'Inbound selection mode', type: 'select', options: [{ value: 'automatic', label: 'Automatic — use all active server inbounds' }, { value: 'manual', label: 'Manual — choose specific inbounds' }], required: true, full: true, showWhenAll: [{ name: 'plan_kind', value: 'public' }, { name: '__selected_server_type', value: 'xui' }] },
       { name: 'inbound_ids', label: 'Inbounds included in this plan', type: 'multiselect', optionsBy: { name: 'server_id', map: inboundOptionsByServer }, required: true, full: true, showWhenAll: [{ name: 'plan_kind', value: 'public' }, { name: '__selected_server_type', value: 'xui' }, { name: 'inbound_mode', value: 'manual' }] }
     ]
@@ -1632,18 +1735,44 @@ function settingsGeneralForm(map: Record<string, string>): ModalForm {
   };
 }
 
+function settingsWebsiteForm(map: Record<string, string>): ModalForm {
+  return {
+    title: 'Website & SSL — Edit Setup', action: '/admin/settings/website',
+    defaults: {
+      domain: map.web_domain || '',
+      web_path: map.web_path || 'dbot',
+      username: map.web_admin_username || 'admin',
+      password: '',
+      token_timeout: map.web_token_timeout_minutes || '30',
+    },
+    fields: [
+      { name: 'domain', label: 'Domain' },
+      { name: 'web_path', label: 'Web Path', required: true, placeholder: 'dbot-a1b2c3d4' },
+      { name: 'username', label: 'Current Web Admin Username', required: true },
+      { name: 'password', label: 'New password — leave empty to keep current', type: 'password' },
+      { name: 'token_timeout', label: 'Session timeout (minutes)', type: 'number', required: true },
+    ],
+  };
+}
+
 function settingsBotCoreForm(map: Record<string, string>): ModalForm {
   return {
     title: 'Bot Texts & Database', action: '/admin/settings/bot-core',
     defaults: {
       welcome_text: map.welcome_text || '',
+      force_join_enabled: map.force_join_enabled || '0',
+      channel_url: map.channel_url || '',
+      rules_enabled: map.rules_enabled || '0',
       rules_text: map.rules_text || '',
       bot_enabled: map.bot_enabled || '1',
       database_info: map.database_info || 'Connected',
     },
     fields: [
-      { name: 'welcome_text', label: 'Start text', type: 'textarea', full: true },
-      { name: 'rules_text', label: 'Rules text', type: 'textarea', full: true },
+      { name: 'welcome_text', label: 'Start text', type: 'textarea', full: true, required: true },
+      { name: 'force_join_enabled', label: 'Forced channel', type: 'select', options: [{ value: '0', label: 'No — disabled' }, { value: '1', label: 'Yes — require membership' }], required: true },
+      { name: 'channel_url', label: 'Forced channel address', full: true, showWhen: { name: 'force_join_enabled', value: '1' }, placeholder: '@channel, https://t.me/channel or -100...' },
+      { name: 'rules_enabled', label: 'Rules page', type: 'select', options: [{ value: '0', label: 'No — do not show rules' }, { value: '1', label: 'Yes — users must accept rules' }], required: true },
+      { name: 'rules_text', label: 'Rules text', type: 'textarea', full: true, showWhen: { name: 'rules_enabled', value: '1' } },
       { name: 'bot_enabled', label: 'Bot status', type: 'select', options: [{ value: '1', label: 'Enabled' }, { value: '0', label: 'Disabled' }], required: true },
       { name: 'database_info', label: 'Database information text', type: 'textarea', full: true },
     ],

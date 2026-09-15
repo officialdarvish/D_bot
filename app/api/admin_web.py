@@ -4,6 +4,7 @@ from __future__ import annotations
 import html, secrets, subprocess, re, json, os, shutil, tempfile, asyncio, logging, hmac, hashlib
 from datetime import datetime, timedelta
 from typing import Any
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, UploadFile, File, Header
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
@@ -13,22 +14,33 @@ from sqlalchemy import select, func, update, delete, String, text
 from app.core.config import settings
 from app.core.security import encrypt_text, decrypt_text, verify_password
 from app.database.session import SessionLocal
+from app.database.base import Base
 from app.database.models import (
     User, Server, ServerCategory, Plan, PaymentCard, DiscountCode,
     ResellerAccount, ResellerAccessRequest, Ticket, TicketMessage, Order, ClientService, ResellerPackage, Setting, DiscountUsage,
     ResellerBuildConfig, ResellerTopupRequest, WalletTransaction, TestAccountUsage, OpenVPNProfile, ResellerServiceActivity,
-    TestAccountCounter, ServiceUsernameCounter, ServiceDeletionTask,
+    TestAccountCounter, ServiceUsernameCounter, ResellerUsernameCounter, ServiceDeletionTask,
 )
 from app.jobs.server_sync import refresh_server_inbounds
-from app.services.xui_service import XuiService
+from app.services.xui_service import XuiService, schedule_plan_hwid_limit_sync
 from app.services.mikrotik_service import MikroTikService
 from app.services.reseller_service import reconcile_reseller_accounting, remaining_bytes, repair_reseller_services_from_panels
-from app.database.defaults import WELCOME_TEXT_DEFAULT
-from app.bot.keyboards.common import BUTTON_DEFAULTS, button_text_key, button_enabled_key
+from app.database.defaults import WELCOME_TEXT_DEFAULT, RULES_TEXT_DEFAULT
+from app.bot.keyboards.common import BUTTON_DEFAULTS, button_text_key, button_enabled_key, invalidate_button_settings_cache
 from app.services.web_credentials import (
     WEB_ADMIN_PASSWORD_SECRET_KEY,
     ensure_web_password_secret,
+    read_web_credentials,
     save_web_credentials,
+)
+from app.services.web_access import read_web_access, read_web_path, save_web_path, normalize_web_path
+from app.services.backup_config import (
+    BACKUP_SECONDARY_BOT_TOKEN_KEY,
+    BACKUP_INTERVALS,
+    BACKUP_INTERVAL_LABELS,
+    normalize_backup_interval,
+    encrypt_secondary_bot_token,
+    decrypt_secondary_bot_token,
 )
 from app.services.legacy_backup import (
     LegacyBackupSecretInvalid,
@@ -72,6 +84,26 @@ def _safe_next_url(value: str | None) -> str:
     if raw.startswith('/login'):
         return '/admin'
     return raw
+
+
+
+def _request_web_prefix(request: Request) -> str:
+    try:
+        state = request.scope.get('state') or {}
+        prefix = str(state.get('dbot_web_prefix') or '').strip()
+    except Exception:
+        prefix = ''
+    if prefix and prefix.startswith('/'):
+        return prefix.rstrip('/')
+    return ''
+
+
+def _with_web_prefix(request: Request, path: str) -> str:
+    path = '/' + str(path or '').lstrip('/')
+    prefix = _request_web_prefix(request)
+    if prefix and not path.startswith(prefix + '/') and path != prefix:
+        return prefix + path
+    return path
 
 
 def _client_ip(request: Request) -> str:
@@ -233,19 +265,19 @@ async def _auth_user(request: Request) -> str:
     if not token or token not in _sessions:
         if is_api:
             raise HTTPException(status_code=401, detail='Admin session expired')
-        raise HTTPException(status_code=307, headers={'Location': _login_url(str(request.url.path))})
+        raise HTTPException(status_code=307, headers={'Location': _with_web_prefix(request, _login_url(str(request.url.path)))})
     data = _sessions[token]
     if data['expires_at'] <= _now():
         _sessions.pop(token, None)
         if is_api:
             raise HTTPException(status_code=401, detail='Admin session expired')
-        raise HTTPException(status_code=307, headers={'Location': _login_url(str(request.url.path))})
+        raise HTTPException(status_code=307, headers={'Location': _with_web_prefix(request, _login_url(str(request.url.path)))})
     current_credential_version = await db_setting('web_credentials_updated_at', '')
     if str(data.get('credential_version') or '') != str(current_credential_version or ''):
         _sessions.pop(token, None)
         if is_api:
             raise HTTPException(status_code=401, detail='Website credentials changed; login again')
-        raise HTTPException(status_code=307, headers={'Location': '/login?updated=1'})
+        raise HTTPException(status_code=307, headers={'Location': _with_web_prefix(request, '/login?updated=1')})
     if request.method.upper() in {'POST', 'PUT', 'PATCH', 'DELETE'}:
         _verify_csrf(request)
     return data['username']
@@ -1893,54 +1925,166 @@ async def admin_style_asset_short():
 async def admin_script_asset_short():
     return Response(SCRIPT, media_type='application/javascript; charset=utf-8')
 
+# D BOT login visual system adapted from the upstream 3X-UI v3.7.0 login page.
+# Upstream: https://github.com/MHSanaei/3x-ui/tree/v3.7.0/frontend/src/pages/login
+LOGIN_V370_CSS = r"""
+:root{color-scheme:dark;--login-bg:#07111f;--login-panel:rgba(21,35,57,.58);--login-line:rgba(164,190,232,.42);--login-text:#edf5ff;--login-muted:#91a3bd;--login-blue:#69a7ff;--login-blue-2:#8fc0ff;}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%}body{min-height:100vh;background:var(--login-bg);font-family:"Vazirmatn","Segoe UI",Tahoma,Arial,sans-serif}button,input{font:inherit}.db-dark-login-page{position:relative;min-height:100dvh;overflow:hidden;display:grid;place-items:center;padding:86px 24px 74px;background:radial-gradient(circle at 50% -8%,rgba(117,160,220,.19),transparent 36%),radial-gradient(circle at 14% 40%,rgba(54,102,170,.13),transparent 30%),radial-gradient(circle at 91% 62%,rgba(73,111,173,.16),transparent 31%),linear-gradient(180deg,#0a1422 0%,#07111f 48%,#060f1b 100%);isolation:isolate}.db-dark-login-page:before{content:"";position:absolute;inset:0;z-index:-5;pointer-events:none;background:linear-gradient(115deg,transparent 0 23%,rgba(155,194,255,.018) 24%,transparent 25% 53%,rgba(155,194,255,.02) 54%,transparent 55%),radial-gradient(circle at center,transparent 0 54%,rgba(2,8,18,.28) 100%)}.db-login-wave{position:absolute;z-index:-3;border:1px solid rgba(121,164,230,.25);border-radius:50%;pointer-events:none;filter:drop-shadow(0 0 18px rgba(80,136,220,.08));opacity:.9}.db-login-wave-a{width:68vw;height:45vw;min-width:760px;min-height:520px;left:-28vw;top:-2vh;transform:rotate(12deg)}.db-login-wave-b{width:62vw;height:38vw;min-width:700px;min-height:470px;right:-25vw;top:11vh;transform:rotate(-12deg);border-color:rgba(121,164,230,.30)}.db-login-wave-c{width:87vw;height:34vw;min-width:900px;min-height:420px;right:-18vw;bottom:-22vh;transform:rotate(-9deg);border-color:rgba(121,164,230,.19)}.db-login-glow{position:absolute;z-index:-4;border-radius:50%;pointer-events:none;filter:blur(80px);opacity:.24}.db-login-glow-a{width:330px;height:330px;background:#4d78b7;left:9%;top:7%}.db-login-glow-b{width:430px;height:430px;background:#32598c;right:8%;bottom:7%}.db-login-brandbar{position:absolute;top:30px;left:40px;direction:ltr;color:#eaf2ff;font:500 16px/1.2 Inter,"Segoe UI",sans-serif;letter-spacing:.01em;z-index:3}.db-login-brandbar b{font-size:23px;color:#78adff;margin-right:6px}.db-login-status{position:absolute;top:33px;right:40px;display:flex;align-items:center;gap:11px;color:#8fa1ba;font-size:15px;font-weight:500;z-index:3}.db-login-status-dot{width:9px;height:9px;border-radius:50%;background:#74aefe;box-shadow:0 0 0 5px rgba(116,174,254,.05),0 0 18px rgba(116,174,254,.72)}.db-login-sidecopy{position:absolute;right:7.5%;top:38%;z-index:1;color:#71839f;text-align:right;font-size:19px;line-height:2;font-weight:600}.db-login-sidecopy:after{content:"";display:block;width:46px;height:2px;border-radius:99px;background:#627893;margin:17px 0 0 auto}.db-login-card{position:relative;z-index:2;width:min(100%,560px);padding:45px 54px 38px;border-radius:31px;background:linear-gradient(145deg,rgba(35,52,78,.60),rgba(13,25,43,.56));border:1px solid var(--login-line);box-shadow:0 30px 80px rgba(0,0,0,.40),0 0 0 1px rgba(255,255,255,.035) inset,0 1px 0 rgba(255,255,255,.10) inset;backdrop-filter:blur(26px) saturate(125%);-webkit-backdrop-filter:blur(26px) saturate(125%)}.db-login-card:before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(circle at 50% 0,rgba(124,176,255,.08),transparent 28%),linear-gradient(125deg,rgba(255,255,255,.025),transparent 36%)}.db-login-card:after{content:"";position:absolute;width:112px;height:2px;top:-1px;left:18px;background:linear-gradient(90deg,transparent,#a7c7ff,transparent);filter:blur(.2px);opacity:.78}.db-login-botmark{position:relative;z-index:1;width:78px;height:78px;margin:0 auto 24px;border-radius:23px;display:grid;place-items:center;color:#bcd7ff;background:linear-gradient(145deg,rgba(44,64,94,.72),rgba(18,31,51,.7));border:1px solid rgba(147,184,242,.48);box-shadow:0 13px 30px rgba(0,0,0,.23),0 0 22px rgba(89,143,227,.14),inset 0 1px 0 rgba(255,255,255,.09)}.db-login-botmark svg{width:42px;height:42px;filter:drop-shadow(0 0 10px rgba(116,174,254,.18))}.db-login-heading{position:relative;z-index:1;margin:0;color:#e8f1ff;text-align:center;font-size:30px;line-height:1.55;font-weight:800;letter-spacing:-.025em}.db-login-subheading{position:relative;z-index:1;margin:4px 0 30px;color:#95a7c2;text-align:center;font-size:17px;line-height:1.8;font-weight:500}.db-login-alert{position:relative;z-index:1;margin:-10px 0 18px;padding:11px 14px;border-radius:13px;text-align:center;font-size:13px;line-height:1.8;border:1px solid rgba(116,174,254,.25);background:rgba(50,94,153,.10);color:#b9d6ff}.db-login-alert.bad{border-color:rgba(248,113,113,.3);background:rgba(127,29,29,.13);color:#fecaca}.db-login-field{position:relative;z-index:1;direction:ltr;display:flex;align-items:center;gap:14px;min-height:66px;margin-bottom:17px;padding:0 20px;border-radius:16px;border:1px solid rgba(132,158,197,.34);background:rgba(11,22,38,.28);box-shadow:inset 0 1px 0 rgba(255,255,255,.025);transition:border-color .18s ease,background .18s ease,box-shadow .18s ease}.db-login-field:focus-within{border-color:rgba(120,173,255,.70);background:rgba(12,25,43,.48);box-shadow:0 0 0 4px rgba(104,162,248,.07),0 0 30px rgba(77,126,202,.08)}.db-login-icon{width:23px;height:23px;flex:0 0 23px;color:#9db4d4}.db-login-field input{direction:rtl;width:100%;min-width:0;border:0;outline:0;background:transparent;color:#eaf3ff;text-align:right;font-size:17px;caret-color:#8bbaff}.db-login-field input::placeholder{color:#8496b0;opacity:1}.db-login-password-toggle{width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border:0;background:transparent;color:#8fa6c5;padding:0;border-radius:10px;cursor:pointer;transition:color .16s ease,background .16s ease}.db-login-password-toggle:hover{color:#dbe9ff;background:rgba(108,162,242,.07)}.db-login-password-toggle svg{width:22px;height:22px}.db-login-submit{position:relative;z-index:1;width:100%;min-height:69px;margin-top:8px;border:1px solid rgba(130,183,255,.75);border-radius:16px;background:linear-gradient(180deg,rgba(55,89,139,.60),rgba(30,57,96,.70));color:#f3f7ff;font-size:20px;font-weight:800;cursor:pointer;box-shadow:0 15px 34px rgba(0,0,0,.22),0 0 24px rgba(77,135,223,.14),inset 0 1px 0 rgba(255,255,255,.12);transition:transform .17s ease,filter .17s ease,box-shadow .17s ease}.db-login-submit:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 18px 40px rgba(0,0,0,.28),0 0 34px rgba(77,135,223,.20),inset 0 1px 0 rgba(255,255,255,.14)}.db-login-submit:active{transform:translateY(0)}.db-login-submit:disabled{cursor:wait;opacity:.72;transform:none}.db-login-submit-icon{position:absolute;right:22px;top:50%;transform:translateY(-50%);width:25px;height:25px;color:#dbeaff}.db-login-links{position:relative;z-index:1;display:grid;grid-template-columns:1fr 1px 1fr;align-items:center;gap:18px;margin-top:27px;color:#8396b2;font-size:13px}.db-login-links a{color:inherit;text-decoration:none;text-align:center;transition:color .16s ease}.db-login-links a:hover{color:#c5d9f7}.db-login-links-sep{width:1px;height:24px;background:rgba(141,165,199,.30)}.db-login-footer-left,.db-login-footer-right{position:absolute;bottom:26px;z-index:2;color:#6f819a;font:500 14px/1.4 Inter,"Segoe UI",Tahoma,sans-serif}.db-login-footer-left{left:40px;direction:ltr}.db-login-footer-right{right:40px;direction:rtl}.db-login-footer-right:before{content:"...";margin-left:10px;letter-spacing:.25em}.db-login-sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+@media(max-width:1180px){.db-login-sidecopy{display:none}}
+@media(max-width:760px){.db-dark-login-page{padding:76px 15px 66px}.db-login-brandbar{top:23px;left:22px;font-size:13px}.db-login-brandbar b{font-size:19px}.db-login-status{top:26px;right:22px;font-size:12px;gap:8px}.db-login-status-dot{width:7px;height:7px}.db-login-card{width:min(100%,500px);padding:34px 25px 28px;border-radius:25px}.db-login-botmark{width:66px;height:66px;border-radius:20px;margin-bottom:18px}.db-login-botmark svg{width:36px;height:36px}.db-login-heading{font-size:25px}.db-login-subheading{font-size:14px;margin-bottom:23px}.db-login-field{min-height:59px;padding:0 15px;border-radius:14px;margin-bottom:13px}.db-login-field input{font-size:15px}.db-login-submit{min-height:60px;font-size:18px;border-radius:14px}.db-login-links{gap:12px;margin-top:21px;font-size:12px}.db-login-footer-left,.db-login-footer-right{bottom:18px;font-size:11px}.db-login-footer-left{left:18px}.db-login-footer-right{right:18px}.db-login-wave-a{left:-510px}.db-login-wave-b{right:-520px}}
+@media(max-width:480px){.db-dark-login-page{place-items:start center;padding-top:78px}.db-login-status{display:none}.db-login-card{padding:28px 17px 23px}.db-login-heading{font-size:22px}.db-login-subheading{font-size:13px}.db-login-links{grid-template-columns:1fr;gap:9px}.db-login-links-sep{display:none}.db-login-footer-right{display:none}.db-login-field{min-height:56px}.db-login-submit{min-height:57px}}
+@media(max-height:700px) and (min-width:481px){.db-dark-login-page{padding-top:62px;padding-bottom:54px}.db-login-card{padding-top:25px;padding-bottom:24px}.db-login-botmark{width:58px;height:58px;margin-bottom:12px}.db-login-botmark svg{width:32px;height:32px}.db-login-heading{font-size:23px}.db-login-subheading{font-size:13px;margin-bottom:17px}.db-login-field{min-height:52px;margin-bottom:11px}.db-login-submit{min-height:56px}.db-login-links{margin-top:17px}}
+@media(prefers-reduced-motion:reduce){.db-login-field,.db-login-submit,.db-login-password-toggle{transition:none}}
+"""
+
+LOGIN_V370_SCRIPT = r"""
+function togglePassword() {
+  const input = document.getElementById('loginPassword');
+  const openIcon = document.getElementById('passwordEyeOpen');
+  const offIcon = document.getElementById('passwordEyeOff');
+  if (!input) return;
+  const reveal = input.type === 'password';
+  input.type = reveal ? 'text' : 'password';
+  if (openIcon) openIcon.style.display = reveal ? 'none' : '';
+  if (offIcon) offIcon.style.display = reveal ? '' : 'none';
+  const button = document.querySelector('.db-login-password-toggle');
+  if (button) button.setAttribute('aria-label', reveal ? 'Hide password' : 'Show password');
+}
+(function(){
+  const form = document.getElementById('dbLoginForm');
+  if (!form) return;
+  form.addEventListener('submit', function(){
+    const button = form.querySelector('.db-login-submit');
+    const label = form.querySelector('.db-login-submit-label');
+    if (button) button.disabled = true;
+    if (label) label.textContent = 'Signing in...';
+  }, {once:true});
+})();
+"""
+
+
 @router.get('/login', response_class=HTMLResponse)
 async def login_page(request: Request, next: str = '/admin'):
+    """Serve the React/Next.js login UI while FastAPI keeps authentication."""
+    frontend_out = Path(__file__).resolve().parents[2] / 'frontend_out'
+    react_candidates = (
+        frontend_out / 'login' / 'index.html',
+        frontend_out / 'login.html',
+    )
+    for candidate in react_candidates:
+        if candidate.exists() and candidate.is_file():
+            return FileResponse(
+                candidate,
+                media_type='text/html; charset=utf-8',
+                headers={'Cache-Control': 'no-store'},
+            )
+
+    # Source-only fallback for running the Python API without building frontend.
+    # Production Docker builds always copy the exported React frontend to frontend_out.
     next = _safe_next_url(next)
-    err = request.query_params.get('error')
-    timeout = request.query_params.get('timeout')
-    updated = request.query_params.get('updated')
-    note = '<div class="login-alert bad">Invalid username or password.</div>' if err else ('<div class="login-alert">Your session has expired. Please login again.</div>' if timeout else ('<div class="login-alert">Website login was changed. Please login again with the new username/password.</div>' if updated else ''))
-    return f"""<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>D BOT Owner Login</title><style>
-:root{{--bg:#030814;--panel:rgba(15,23,42,.82);--line:rgba(148,163,184,.18);--text:#f8fafc;--muted:#9aa7bd;--primary:#7c3aed;--primary2:#2563eb;--red:#ef4444}}
-*{{box-sizing:border-box}}body{{margin:0;min-height:100vh;color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Tahoma,sans-serif;background:radial-gradient(circle at 12% 0%,rgba(124,58,237,.34),transparent 32%),radial-gradient(circle at 88% 8%,rgba(14,165,233,.22),transparent 26%),linear-gradient(145deg,#020617 0%,#06101f 52%,#040812 100%);display:grid;place-items:center;padding:24px;overflow:hidden}}body:before{{content:'';position:fixed;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:64px 64px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.8),transparent 70%)}}body:after{{content:'';position:fixed;inset:-20%;background:conic-gradient(from 120deg,transparent,rgba(124,58,237,.13),transparent,rgba(14,165,233,.08),transparent);animation:spin 18s linear infinite;pointer-events:none}}@keyframes spin{{to{{transform:rotate(360deg)}}}}
-.login-wrap{{position:relative;z-index:1;width:min(480px,100%)}}.login-card{{position:relative;overflow:hidden;background:linear-gradient(180deg,rgba(15,23,42,.86),rgba(8,13,27,.78));border:1px solid var(--line);border-radius:28px;box-shadow:0 34px 120px rgba(0,0,0,.58);padding:30px;backdrop-filter:blur(20px)}}.login-card:before{{content:'';position:absolute;inset:0;background:radial-gradient(circle at 80% 0%,rgba(124,58,237,.22),transparent 36%);pointer-events:none}}.login-logo{{width:72px;height:72px;margin:0 auto 18px;border-radius:22px;display:grid;place-items:center;background:linear-gradient(135deg,rgba(14,165,233,.95),rgba(124,58,237,.95));box-shadow:0 0 0 8px rgba(124,58,237,.13),0 22px 60px rgba(37,99,235,.28);font-weight:1000;font-size:30px;position:relative}}h1{{margin:0;text-align:center;font-size:29px;letter-spacing:-.05em}}p{{margin:8px 0 20px;text-align:center;color:var(--muted)}}label{{display:grid;gap:8px;margin:13px 0;color:#cbd5e1;font-size:13px}}input{{width:100%;min-height:48px;border:1px solid rgba(148,163,184,.16);border-radius:14px;background:linear-gradient(180deg,rgba(15,23,42,.95),rgba(2,6,23,.7));color:#fff;outline:none;padding:0 13px;color-scheme:dark}}input:focus{{border-color:rgba(139,92,246,.58);box-shadow:0 0 0 4px rgba(124,58,237,.14)}}.password-row{{position:relative}}.password-row button{{position:absolute;right:8px;top:8px;min-height:32px;border:1px solid rgba(148,163,184,.18);border-radius:10px;background:rgba(15,23,42,.84);color:#dbeafe;padding:0 10px;cursor:pointer}}.btn{{width:100%;min-height:48px;border-radius:14px;border:1px solid rgba(139,92,246,.4);background:linear-gradient(135deg,#7c3aed,#4f46e5);box-shadow:0 18px 42px rgba(99,102,241,.24);color:white;font-weight:800;cursor:pointer;margin-top:10px}}.btn:hover{{filter:brightness(1.13);transform:translateY(-1px)}}.btn:active{{transform:scale(.99);filter:brightness(1.25)}}.login-alert{{border:1px solid rgba(148,163,184,.16);background:rgba(15,23,42,.7);border-radius:14px;padding:11px 13px;text-align:center;color:#dbeafe;margin:14px 0}}.login-alert.bad{{border-color:rgba(239,68,68,.36);color:#fecaca;background:rgba(127,29,29,.18)}}.copyright{{font-size:12px;margin-top:18px}}a{{color:#a78bfa}}
-</style><script>function togglePassword(){{const i=document.getElementById('loginPassword'),b=document.getElementById('togglePass');if(i){{i.type=i.type==='password'?'text':'password';b.textContent=i.type==='password'?'Show':'Hide';}}}}</script></head><body><main class="login-wrap"><form class="login-card" method="post" action="/login"><input type="hidden" name="next_url" value="{e(next)}"><div class="login-logo">D</div><h1>D BOT Owner Login</h1><p>Secure owner access</p>{note}<label>Username<input name="username" autocomplete="username" required placeholder="Enter owner username"></label><label>Password<div class="password-row"><input id="loginPassword" name="password" type="password" autocomplete="current-password" required placeholder="Enter password"><button id="togglePass" type="button" onclick="togglePassword()">Show</button></div></label><button class="btn" type="submit">Login</button><p class="copyright">All design and development belongs to <b>D Bot</b>.</p></form></main></body></html>"""
+    login_action = e(_with_web_prefix(request, '/login'))
+    next_value = e(next)
+    return f'''<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#07111f">
+<title>D Bot Panel | Login</title>
+<style>{LOGIN_V370_CSS}</style>
+</head>
+<body>
+<main class="db-dark-login-page" dir="rtl" lang="fa">
+  <form id="dbLoginForm" class="db-login-card" method="post" action="{login_action}" autocomplete="on">
+    <input type="hidden" name="next_url" value="{next_value}">
+    <div class="db-login-botmark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+    </div>
+    <h1 class="db-login-heading">Sign in to Admin Panel</h1>
+    <p class="db-login-subheading">The React interface has not been built yet.</p>
+    <label class="db-login-field"><input name="username" autocomplete="username" required autofocus placeholder="Username"></label>
+    <label class="db-login-field"><input name="password" type="password" autocomplete="current-password" required placeholder="Password"></label>
+    <button class="db-login-submit" type="submit"><span>Sign in</span></button>
+  </form>
+</main>
+</body>
+</html>'''
 
 
 @router.post('/login')
-async def do_login(request: Request, response: Response, username: str = Form(...), password: str = Form(...), next_url: str = Form('/admin')):
-    user = await db_setting('web_admin_username', settings.WEB_ADMIN_USERNAME or '')
-    pwd = await db_setting('web_admin_password', settings.WEB_ADMIN_PASSWORD or '')
-    timeout_min = int(await db_setting('web_token_timeout_minutes', str(SESSION_MINUTES)) or SESSION_MINUTES)
+async def do_login(request: Request, username: str = Form(...), password: str = Form(...), next_url: str = Form('/admin')):
+    try:
+        user = await db_setting('web_admin_username', settings.WEB_ADMIN_USERNAME or '')
+        pwd = await db_setting('web_admin_password', settings.WEB_ADMIN_PASSWORD or '')
+        timeout_raw = await db_setting('web_token_timeout_minutes', str(SESSION_MINUTES))
+    except Exception:
+        logger.exception('Could not read website login settings')
+        return RedirectResponse(_with_web_prefix(request, '/login?error=1'), status_code=303)
+
+    try:
+        timeout_min = int(timeout_raw or SESSION_MINUTES)
+    except (TypeError, ValueError):
+        timeout_min = SESSION_MINUTES
+    timeout_min = max(5, min(timeout_min, 24 * 60))
+
     if not user or not pwd:
         user = settings.WEB_ADMIN_USERNAME or 'admin'
         pwd = settings.WEB_ADMIN_PASSWORD or ''
-    if _login_blocked(request, username):
-        return RedirectResponse('/login?error=1', status_code=303)
-    ok_login = bool(pwd and secrets.compare_digest(username, user) and verify_password(password, pwd))
-    if not ok_login:
-        _record_login_failure(request, username)
-        return RedirectResponse('/login?error=1', status_code=303)
-    _record_login_success(request, username)
-    # Keep a recoverable, FERNET-encrypted copy synchronized after every
-    # successful login. This also upgrades legacy/hash-only installations.
+
+    clean_username = (username or '').strip()
+    if _login_blocked(request, clean_username):
+        return RedirectResponse(_with_web_prefix(request, '/login?error=1'), status_code=303)
+
     try:
-        await ensure_web_password_secret(username=username, password=password, updated_by='website-login')
+        ok_login = bool(pwd and secrets.compare_digest(clean_username, str(user)) and verify_password(password, pwd))
+    except Exception:
+        logger.exception('Website password verification failed unexpectedly')
+        ok_login = False
+
+    if not ok_login:
+        _record_login_failure(request, clean_username)
+        return RedirectResponse(_with_web_prefix(request, '/login?error=1'), status_code=303)
+
+    _record_login_success(request, clean_username)
+
+    # Best-effort migration of legacy/plain credentials. A migration problem must
+    # never turn a valid login into HTTP 500.
+    try:
+        await ensure_web_password_secret(username=clean_username, password=password, updated_by='website-login')
     except Exception:
         logger.exception('Could not synchronize website credentials after successful login')
+
     token = secrets.token_urlsafe(32)
     csrf = secrets.token_urlsafe(32)
-    credential_version = await db_setting('web_credentials_updated_at', '')
+    try:
+        credential_version = await db_setting('web_credentials_updated_at', '')
+    except Exception:
+        logger.exception('Could not read website credential version after login')
+        credential_version = ''
+
+    now = _now()
     _sessions[token] = {
-        'username': username,
-        'created_at': _now(),
-        'expires_at': _now() + timedelta(minutes=timeout_min),
+        'username': clean_username,
+        'created_at': now,
+        'expires_at': now + timedelta(minutes=timeout_min),
         'csrf': csrf,
         'credential_version': credential_version,
     }
-    res = RedirectResponse(_safe_next_url(next_url), status_code=303)
-    res.set_cookie('dbot_admin_token', token, max_age=timeout_min*60, httponly=True, secure=True, samesite='strict')
-    res.set_cookie('dbot_csrf_token', csrf, max_age=timeout_min*60, httponly=False, secure=True, samesite='strict')
+
+    try:
+        setup_done = (await db_setting('initial_setup_done', '0')) == '1'
+    except Exception:
+        logger.exception('Could not read initial setup state after login')
+        setup_done = True
+
+    target = _safe_next_url(next_url) if setup_done else '/setup'
+    res = RedirectResponse(_with_web_prefix(request, target), status_code=303)
+    forwarded_proto = (request.headers.get('x-forwarded-proto') or '').split(',')[0].strip().lower()
+    cookie_secure = forwarded_proto == 'https' or request.url.scheme == 'https'
+    common_cookie = dict(max_age=timeout_min * 60, secure=cookie_secure, samesite='strict', path='/')
+    res.set_cookie('dbot_admin_token', token, httponly=True, **common_cookie)
+    res.set_cookie('dbot_csrf_token', csrf, httponly=False, **common_cookie)
     return res
 
 
@@ -1948,10 +2092,143 @@ async def do_login(request: Request, response: Response, username: str = Form(..
 async def logout(request: Request, timeout: int = 0):
     token = request.cookies.get('dbot_admin_token')
     if token: _sessions.pop(token, None)
-    res = RedirectResponse('/login' + ('?timeout=1' if timeout else ''), status_code=303)
+    res = RedirectResponse(_with_web_prefix(request, '/login' + ('?timeout=1' if timeout else '')), status_code=303)
     res.delete_cookie('dbot_admin_token')
     res.delete_cookie('dbot_csrf_token')
     return res
+
+SETUP_WIZARD_CSS = r"""
+*{box-sizing:border-box}
+:root{color-scheme:dark;--bg:#07111f;--panel:rgba(15,31,51,.78);--line:rgba(145,190,253,.20);--line2:rgba(145,190,253,.34);--text:#eef5ff;--muted:#91a3bd;--blue:#69a7ff;--blue2:#4b83db}
+html,body{min-height:100%}
+body{margin:0;min-height:100vh;direction:ltr;text-align:left;color:var(--text);font-family:Vazirmatn,IRANSansX,Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Tahoma,Arial,sans-serif;background:radial-gradient(circle at 50% -8%,rgba(79,110,153,.18),transparent 32%),radial-gradient(circle at 105% 28%,rgba(48,102,181,.14),transparent 28%),linear-gradient(180deg,#091524 0%,#06101d 48%,#071321 100%);overflow-x:hidden}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(90deg,rgba(2,8,16,.18),transparent 28%,transparent 72%,rgba(2,8,16,.24)),radial-gradient(circle at 50% 55%,transparent 0 22%,rgba(1,7,14,.18) 64%,rgba(1,6,12,.48) 100%)}
+body:after{content:"";position:fixed;width:78vw;height:65vw;right:-43vw;top:8vh;border:1px solid rgba(137,181,244,.15);border-radius:48% 52% 63% 37%/38% 55% 45% 62%;background:linear-gradient(130deg,rgba(102,154,228,.06),transparent 58%,rgba(120,171,237,.04));pointer-events:none;animation:setupWave 26s ease-in-out infinite alternate}
+button,input,textarea,select{font:inherit}
+h1,h2,h3,h4,h5,h6{margin-top:0;color:#eef5ff;line-height:1.3;letter-spacing:-.02em;text-wrap:balance}
+h1{font-size:clamp(25px,2.5vw,32px);font-weight:600}h2{font-size:17px;font-weight:600}h3{font-size:16px}h4{font-size:15px}h5{font-size:14px}h6{font-size:12px}
+.setup-topbar{position:relative;z-index:2;width:min(1240px,calc(100% - 36px));margin:0 auto;padding:24px 0 0;display:flex;align-items:center;justify-content:space-between;direction:ltr;color:#dceaff}
+.setup-brand,.setup-status{display:flex;align-items:center;gap:8px}.setup-brand-mark{color:#83b6ff;font-size:22px;font-weight:600;text-shadow:0 0 17px rgba(79,143,234,.58)}.setup-status{direction:ltr;color:#91a3bd}.setup-status-dot{width:8px;height:8px;border-radius:50%;background:#72b5ff;box-shadow:0 0 14px 4px rgba(92,163,255,.28)}
+.setup-shell{position:relative;z-index:1;width:min(1240px,calc(100% - 36px));margin:0 auto;padding:34px 0 58px}
+.setup-card{position:relative;overflow:hidden;background:linear-gradient(145deg,rgba(35,55,82,.30),rgba(14,28,46,.72) 55%,rgba(12,24,41,.82));border:1px solid var(--line2);border-radius:12px;padding:28px 32px 24px;box-shadow:0 30px 90px rgba(0,0,0,.30),inset 0 1px 0 rgba(255,255,255,.05)}
+.setup-card:before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 88% 0%,rgba(99,157,239,.09),transparent 35%)}
+.setup-card>*{position:relative;z-index:1}.setup-card,.setup-card form,.step,.grid,label{direction:ltr;text-align:left}.setup-intro{max-width:920px;margin:8px 0 0;text-align:left}.muted{color:var(--muted);line-height:1.75}.steps{margin-top:26px;border-top:1px solid rgba(145,190,253,.14)}
+.step{padding:22px 0 24px;border:0;border-bottom:1px solid rgba(145,190,253,.14);border-radius:0;background:transparent}.step h2{margin:0 0 18px;color:#edf5ff}.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px 18px}.full{grid-column:1/-1}
+label{display:grid;gap:7px;font-size:14px;font-weight:400;color:#c4d2e4}input:not([type="radio"]),textarea,select{width:100%;direction:ltr;text-align:left;border:1px solid rgba(136,169,214,.22);background:rgba(10,24,41,.72);color:#f8fbff;border-radius:9px;padding:11px 13px;outline:none;transition:border-color .18s ease,box-shadow .18s ease,background .18s ease}input:not([type="radio"]){min-height:40px}input:not([type="radio"]):focus,textarea:focus,select:focus{border-color:rgba(111,169,248,.58);box-shadow:0 0 0 3px rgba(85,147,234,.08);background:rgba(12,29,49,.82)}textarea{min-height:92px;resize:vertical;line-height:1.75}
+.yesno{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px;max-width:620px}.yesno label{display:flex;align-items:center;justify-content:flex-start;gap:10px;text-align:left;direction:ltr;min-height:40px;border:1px solid rgba(136,169,214,.20);border-radius:9px;padding:8px 12px;background:rgba(10,24,41,.56);cursor:pointer;transition:border-color .18s ease,background .18s ease}.yesno label:hover{border-color:rgba(111,169,248,.38);background:rgba(31,51,79,.50)}.yesno input[type="radio"]{appearance:none;-webkit-appearance:none;width:16px;height:16px;min-width:16px;margin:0;border:2px solid #7185a0;border-radius:50%;background:#08111f;display:grid;place-items:center;padding:0}.yesno input[type="radio"]:checked{border-color:#72b5ff;background:radial-gradient(circle,#72b5ff 0 42%,transparent 47%)}
+.conditional{padding-top:4px}.conditional.hidden{display:none}.actions{display:flex;justify-content:flex-start;margin-top:26px}.btn{border:1px solid rgba(119,178,255,.58);border-radius:10px;padding:11px 22px;min-width:220px;min-height:40px;font-weight:500;cursor:pointer;background:linear-gradient(180deg,rgba(66,111,174,.82),rgba(29,58,99,.92));color:white;box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 12px 28px rgba(25,73,139,.16);transition:transform .15s ease,filter .15s ease,border-color .15s ease}.btn:hover{filter:brightness(1.06);transform:translateY(-1px);border-color:rgba(143,193,255,.78)}
+.note{padding:11px 13px;text-align:left;direction:ltr;border-radius:9px;border:1px solid rgba(96,165,250,.16);background:rgba(24,52,86,.28);color:#bfd8f8;margin-top:12px;line-height:1.7}small.muted{display:block;margin-top:2px;font-size:12px;text-align:left;direction:ltr}
+@keyframes setupWave{from{transform:rotate(-18deg) translate3d(1%,-1%,0) scale(1.02)}to{transform:rotate(-11deg) translate3d(-5%,3%,0) scale(.97)}}
+@media(max-width:760px){.setup-topbar{width:min(100% - 24px,1240px);padding-top:18px;font-size:13px}.setup-shell{width:min(100% - 24px,1240px);padding:20px 0 34px}.setup-card{padding:24px 18px 20px;border-radius:15px}.step{padding:23px 0 25px}.grid{grid-template-columns:1fr;gap:15px}.full{grid-column:auto}.yesno{grid-template-columns:1fr 1fr;max-width:none;width:100%}.yesno label{min-width:0}.actions{justify-content:stretch}.btn{width:100%}}
+@media(max-width:460px){.setup-status span:last-child{display:none}.yesno{grid-template-columns:1fr}.setup-card{padding-inline:15px}}
+@media(prefers-reduced-motion:reduce){body:after{animation:none!important}}
+"""
+
+
+def _setup_wizard_html(request: Request, values: dict[str, str], error: str = '') -> str:
+    force_enabled = values.get('force_join_enabled', '0') == '1'
+    rules_enabled = values.get('rules_enabled', '0') == '1'
+    action = _with_web_prefix(request, '/setup/save') + '?csrf=' + e(_session_csrf_token(request))
+    error_html = f'<div class="note" style="background:#3b1118;color:#fecaca">{e(error)}</div>' if error else ''
+    channel_checked_yes = 'checked' if force_enabled else ''
+    channel_checked_no = 'checked' if not force_enabled else ''
+    rules_checked_yes = 'checked' if rules_enabled else ''
+    rules_checked_no = 'checked' if not rules_enabled else ''
+    channel_hidden = '' if force_enabled else ' hidden'
+    rules_hidden = '' if rules_enabled else ' hidden'
+    return f'''<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>D BOT Setup Wizard</title><style>{SETUP_WIZARD_CSS}</style></head><body>
+<header class="setup-topbar"><div class="setup-brand"><span class="setup-brand-mark">D</span><span>D Bot Panel</span></div><div class="setup-status"><span class="setup-status-dot"></span><span>Secure and consistent setup</span></div></header>
+<main class="setup-shell"><section class="setup-card" aria-labelledby="setup-title"><h1 id="setup-title">Initial D BOT Setup</h1><p class="muted setup-intro">These settings are saved directly to the database and are the same values used by the Telegram bot. Until this wizard is completed, admins are redirected to this page.</p>{error_html}
+<form method="post" action="{action}"><div class="steps">
+<section class="step"><h2>1) Required Channel Membership</h2><div class="yesno"><label><input type="radio" name="force_join_enabled" value="1" {channel_checked_yes} onchange="syncConditional()"> Yes, enable it</label><label><input type="radio" name="force_join_enabled" value="0" {channel_checked_no} onchange="syncConditional()"> No</label></div><div id="channelFields" class="conditional{channel_hidden}" style="margin-top:14px"><label>Channel address<input name="channel_url" value="{e(values.get('channel_url',''))}" placeholder="@channel, -100..., or https://t.me/channel"></label><div class="note">When enabled, the bot must be an administrator of this channel so it can verify user membership.</div></div></section>
+<section class="step"><h2>2) Usage Rules</h2><div class="yesno"><label><input type="radio" name="rules_enabled" value="1" {rules_checked_yes} onchange="syncConditional()"> Yes, show rules</label><label><input type="radio" name="rules_enabled" value="0" {rules_checked_no} onchange="syncConditional()"> No</label></div><div id="rulesFields" class="conditional{rules_hidden}" style="margin-top:14px"><label>Rules text<textarea name="rules_text" dir="auto">{e(values.get('rules_text', RULES_TEXT_DEFAULT))}</textarea></label></div></section>
+<section class="step"><h2>3) Bot and Home Page Information</h2><div class="grid"><label>Bot name<input name="bot_name" value="{e(values.get('bot_name','D BOT'))}" required></label><label>Support username<input name="support_username" value="{e(values.get('support_username','@support'))}"></label><label class="full">Description<textarea name="admin_description" dir="auto">{e(values.get('admin_description','VPN management bot'))}</textarea></label><label class="full">Home page text<textarea name="welcome_text" dir="auto" required>{e(values.get('welcome_text', WELCOME_TEXT_DEFAULT))}</textarea></label></div></section>
+<section class="step"><h2>4) Web Path</h2><div class="grid"><label class="full">Secure login path<input name="web_path" value="{e(values.get('web_path','dbot'))}" required placeholder="Example: dbot-a1b2c3d4"><small class="muted">The login URL will be /WEB-PATH/login.</small></label></div></section>
+</div><div class="actions"><button class="btn" type="submit">Save and complete setup</button></div></form></section></main>
+<script>function syncConditional(){{const f=document.querySelector('input[name="force_join_enabled"]:checked')?.value==='1';const r=document.querySelector('input[name="rules_enabled"]:checked')?.value==='1';document.getElementById('channelFields').classList.toggle('hidden',!f);document.getElementById('rulesFields').classList.toggle('hidden',!r);}}syncConditional();</script></body></html>'''
+
+
+async def _setup_values() -> dict[str, str]:
+    m = await _settings_map()
+    return {
+        'force_join_enabled': m.get('force_join_enabled', '0'),
+        'channel_url': m.get('channel_url', ''),
+        'rules_enabled': m.get('rules_enabled', '0'),
+        'rules_text': m.get('rules_text', RULES_TEXT_DEFAULT),
+        'welcome_text': m.get('welcome_text', WELCOME_TEXT_DEFAULT),
+        'bot_name': m.get('bot_name', 'D BOT'),
+        'support_username': m.get('support_username', '@support'),
+        'admin_description': m.get('admin_description', 'VPN management bot'),
+        'web_path': await read_web_path(),
+    }
+
+
+@router.get('/setup', response_class=HTMLResponse)
+async def setup_wizard_page(request: Request, _: str = Depends(_auth_user)):
+    if (await db_setting('initial_setup_done', '0')) == '1':
+        return RedirectResponse(_with_web_prefix(request, '/admin'), status_code=303)
+    return HTMLResponse(_setup_wizard_html(request, await _setup_values()))
+
+
+@router.post('/setup/save', response_class=HTMLResponse)
+async def setup_wizard_save(
+    request: Request,
+    force_join_enabled: str = Form('0'),
+    channel_url: str = Form(''),
+    rules_enabled: str = Form('0'),
+    rules_text: str = Form(''),
+    welcome_text: str = Form(''),
+    bot_name: str = Form('D BOT'),
+    support_username: str = Form(''),
+    admin_description: str = Form(''),
+    web_path: str = Form(''),
+    _: str = Depends(_auth_user),
+):
+    values = await _setup_values()
+    values.update({
+        'force_join_enabled': '1' if force_join_enabled == '1' else '0',
+        'channel_url': channel_url.strip(),
+        'rules_enabled': '1' if rules_enabled == '1' else '0',
+        'rules_text': rules_text.strip(),
+        'welcome_text': welcome_text.strip(),
+        'bot_name': bot_name.strip() or 'D BOT',
+        'support_username': support_username.strip(),
+        'admin_description': admin_description.strip(),
+        'web_path': web_path.strip(),
+    })
+    try:
+        clean_path = normalize_web_path(web_path)
+        if values['force_join_enabled'] == '1':
+            if not values['channel_url']:
+                raise ValueError('A channel address is required when mandatory membership is enabled.')
+            check = await _telegram_validate_destination(settings.BOT_TOKEN, values['channel_url'], 'channel', send_test=False)
+            if not check.get('ok'):
+                raise ValueError('Required channel validation failed: ' + str(check.get('message') or 'The bot must be an administrator of the channel.'))
+        if values['rules_enabled'] == '1' and not values['rules_text']:
+            raise ValueError('Rules text cannot be empty while usage rules are enabled.')
+        if not values['welcome_text']:
+            raise ValueError('Home page text cannot be empty.')
+    except ValueError as exc:
+        return HTMLResponse(_setup_wizard_html(request, values, str(exc)), status_code=400)
+
+    async with SessionLocal() as s:
+        for key, value in {
+            'force_join_enabled': values['force_join_enabled'],
+            'channel_url': values['channel_url'] if values['force_join_enabled'] == '1' else '',
+            'rules_enabled': values['rules_enabled'],
+            'rules_text': values['rules_text'],
+            'welcome_text': values['welcome_text'],
+            'bot_name': values['bot_name'],
+            'support_username': values['support_username'],
+            'admin_description': values['admin_description'],
+            'initial_setup_done': '1',
+            'web_setup_completed_at': datetime.utcnow().isoformat(),
+        }.items():
+            await s.merge(Setting(key=key, value=value))
+        await save_web_path(clean_path, session=s, commit=False)
+        await s.commit()
+    return RedirectResponse(f'/{clean_path}/admin', status_code=303)
+
 
 
 
@@ -2229,7 +2506,7 @@ async def st_add(request: Request, name: str = Form(...), _: str = Depends(_auth
             order.append(key)
         await s.merge(Setting(key='service_type_order', value='|'.join(order)))
         await s.commit()
-    return ok(request, '/admin/service-types', 'Service Types اضافه شد')
+    return ok(request, '/admin/service-types', 'Service type added')
 @router.post('/admin/service-types/edit')
 async def st_edit(request: Request, key: str = Form(...), name: str = Form(...), _: str = Depends(_auth_user)):
     async with SessionLocal() as s:
@@ -2505,11 +2782,11 @@ async def servers(request: Request, _: str = Depends(_auth_user)):
         items=(await s.execute(select(Server).order_by(Server.id.desc()))).scalars().all()
         counts=dict((await s.execute(select(ClientService.server_id,func.count(ClientService.id)).group_by(ClientService.server_id))).all())
     scope_select = select_field('scope','Show for',[('public','Public sales'),('reseller','Reseller'),('all','Public + Reseller')],'public')
-    add_form='<form method="post" action="/admin/servers/add" class="formgrid"><div><label>Profile</label><select name="server_type"><option value="xui">3x-ui Sanaei</option><option value="mikrotik">MikroTik / Custom</option></select></div>'+scope_select+field('name','Server name')+field('display_name','Display name')+field('panel_url','Panel URL / Origin')+field('panel_path','Panel Web Path','text','/')+field('subscription_url','Subscription URL')+field('username','Username')+field('password','Password','password')+field('api_key','MikroTik / Custom API Key','password')+field('badge_label','Service badge text','text','')+field('badge_color','Service badge color','color','#2563eb')+field('badge_emoji','Bot circle emoji','text','')+field('l2tp_server','L2TP Server','text','vpn.example.com')+field('l2tp_ipsec_secret','L2TP Secret','text','CHANGE_ME_IPSEC_SECRET')+'<div class="full"><button class="btn primary">Save</button></div></form>'
+    add_form='<form method="post" action="/admin/servers/add" class="formgrid"><div><label>Profile</label><select name="server_type"><option value="xui">3x-ui Sanaei 3.8.0</option><option value="mikrotik">MikroTik / Custom</option></select></div>'+scope_select+field('name','Server name')+field('display_name','Display name')+field('panel_url','Panel URL / Origin')+field('panel_path','Panel Web Path','text','/')+field('subscription_url','Subscription URL')+field('username','Username')+field('password','Password','password')+field('api_key','3x-ui API Token / MikroTik API Key','password')+field('badge_label','Service badge text','text','')+field('badge_color','Service badge color','color','#2563eb')+field('badge_emoji','Bot circle emoji','text','')+field('l2tp_server','L2TP Server','text','vpn.example.com')+field('l2tp_ipsec_secret','L2TP Secret','text','CHANGE_ME_IPSEC_SECRET')+'<div class="full"><button class="btn primary">Save</button></div></form>'
     cards=[]
     for sv in items:
         m=sv.meta or {}; inbs=m.get('inbound_ids') or []
-        edit='<form method="post" action="/admin/servers/'+str(sv.id)+'/edit" class="formgrid">'+field('name','Server name','text',sv.name)+select_field('scope','Show for',[('public','Public sales'),('reseller','Reseller'),('all','Public + Reseller')],server_scope(sv))+field('display_name','Display name','text',m.get('display_name') or sv.name)+field('panel_url','Panel URL / Origin','text',m.get('panel_base_url') or sv.panel_url)+field('panel_path','Panel Web Path','text',m.get('panel_path') or '/')+field('subscription_url','Subscription URL','text',sv.subscription_url or '')+field('username','Username','text',sv.username)+field('password','New password','password')+field('api_key','New MikroTik / Custom API Key','password')+field('badge_label','Service badge text','text',m.get('badge_label') or ('MikroTik / OpenVPN' if sv.server_type == 'mikrotik' else 'V2Ray'))+field('badge_color','Service badge color','color',m.get('badge_color') or ('#f97316' if sv.server_type == 'mikrotik' else '#2563eb'))+field('badge_emoji','Bot circle emoji','text',m.get('badge_emoji') or ('🟠' if sv.server_type == 'mikrotik' else '🔵'))+field('l2tp_server','L2TP Server','text',m.get('l2tp_server') or 'vpn.example.com')+field('l2tp_ipsec_secret','L2TP Secret','text',m.get('l2tp_ipsec_secret') or 'CHANGE_ME_IPSEC_SECRET')+'<div class="full"><button class="btn primary">Save</button></div></form>'
+        edit='<form method="post" action="/admin/servers/'+str(sv.id)+'/edit" class="formgrid">'+field('name','Server name','text',sv.name)+select_field('scope','Show for',[('public','Public sales'),('reseller','Reseller'),('all','Public + Reseller')],server_scope(sv))+field('display_name','Display name','text',m.get('display_name') or sv.name)+field('panel_url','Panel URL / Origin','text',m.get('panel_base_url') or sv.panel_url)+field('panel_path','Panel Web Path','text',m.get('panel_path') or '/')+field('subscription_url','Subscription URL','text',sv.subscription_url or '')+field('username','Username','text',sv.username)+field('password','New password','password')+field('api_key','New 3x-ui API Token / MikroTik API Key','password')+field('badge_label','Service badge text','text',m.get('badge_label') or ('MikroTik / OpenVPN' if sv.server_type == 'mikrotik' else 'V2Ray'))+field('badge_color','Service badge color','color',m.get('badge_color') or ('#f97316' if sv.server_type == 'mikrotik' else '#2563eb'))+field('badge_emoji','Bot circle emoji','text',m.get('badge_emoji') or ('🟠' if sv.server_type == 'mikrotik' else '🔵'))+field('l2tp_server','L2TP Server','text',m.get('l2tp_server') or 'vpn.example.com')+field('l2tp_ipsec_secret','L2TP Secret','text',m.get('l2tp_ipsec_secret') or 'CHANGE_ME_IPSEC_SECRET')+'<div class="full"><button class="btn primary">Save</button></div></form>'
         cards.append(f'''<div class="card server-card"><div class="server-glow"></div><div class="headrow"><h3><span class="service-dot" style="background:{e(m.get('badge_color') or ('#f97316' if sv.server_type == 'mikrotik' else '#2563eb'))}"></span> {e(m.get('display_name') or sv.name)} <small class="muted">{e(m.get('badge_label') or ('MikroTik / OpenVPN' if sv.server_type == 'mikrotik' else 'V2Ray'))}</small></h3><span class="badge status" data-fa="Online" data-en="Online">Online</span></div><div class="server-meta"><div><span>Panel</span><b>{e(sv.server_type)}</b></div><div><span>Users</span><b>{counts.get(sv.id,0)}</b></div><div><span>Inbound</span><b>{len(inbs)}</b></div><div><span>Status</span><b>ON</b></div></div><div class="kvs"><div class="kv"><span>Server name</span><b>{e(sv.name)}</b></div><div class="kv"><span>Panel type</span><b>{e(sv.server_type)}</b></div><div class="kv"><span>Usage</span><b>Public sales / Resellers</b></div><div class="kv"><span>Users</span><b>{counts.get(sv.id,0)}</b></div><div class="kv"><span>Inbound</span><b>{len(inbs)}</b></div></div><div class="rowactions"><a data-action="1" class="btn success" href="/admin/servers/{sv.id}/refresh">Refresh</a><button class="btn" onclick="openModal('srvEdit{sv.id}')">Edit</button><a data-action="1" class="btn {'danger' if sv.is_active else 'success'}" href="/admin/toggle/servers/{sv.id}">{'Deactivate' if sv.is_active else 'Activate'}</a><a data-action="1" class="btn" href="/admin/servers/{sv.id}/duplicate">Duplicate</a><button class="btn danger" onclick="askDelete('/admin/servers/{sv.id}/delete')">Delete</button></div></div>{modal('srvEdit'+str(sv.id),'Edit Server','Edit Server',edit)}''')
     return layout('Servers','Servers','<div class="headrow"><h2>Servers</h2><button class="btn primary" onclick="openModal(\'srvAdd\')">+ Add Server</button></div>'+modal('srvAdd','Add Server','Add Server',add_form)+'<div class="gridcards">'+''.join(cards)+'</div>','/admin/servers')
 
@@ -2998,12 +3275,12 @@ async def categories(request: Request, _: str = Depends(_auth_user)):
         if key in seen:
             continue
         seen.add(key); items.append(c)
-    form='<form method="post" action="/admin/categories/add" class="formgrid">'+field('name','Category name')+f'<div class="full"><label>Servers</label><div class="checkbox-grid">{_server_options_html(srvs)}</div><small class="muted">هر سروری که می‌خواهید این کتگوری داخلش نمایش داده شود را تیک بزنید.</small></div><div class="full"><button class="btn primary">Save</button></div></form>'
+    form='<form method="post" action="/admin/categories/add" class="formgrid">'+field('name','Category name')+f'<div class="full"><label>Servers</label><div class="checkbox-grid">{_server_options_html(srvs)}</div><small class="muted">Select every server where this category should be available.</small></div><div class="full"><button class="btn primary">Save</button></div></form>'
     cards=''
     for c in items:
         selected=_category_linked_server_ids(c)
         names=[((srv.meta or {}).get('display_name') or srv.name) for srv in srvs if srv.id in selected]
-        edit='<form method="post" action="/admin/categories/'+str(c.id)+'/edit" class="formgrid">'+field('name','Category name','text',c.name)+f'<div class="full"><label>Servers</label><div class="checkbox-grid">{_server_options_html(srvs, selected)}</div><small class="muted">برای انتخاب چند سرور فقط تیک بزنید.</small></div><div class="full"><button class="btn primary">Save</button></div></form>'
+        edit='<form method="post" action="/admin/categories/'+str(c.id)+'/edit" class="formgrid">'+field('name','Category name','text',c.name)+f'<div class="full"><label>Servers</label><div class="checkbox-grid">{_server_options_html(srvs, selected)}</div><small class="muted">Select all servers you want to include.</small></div><div class="full"><button class="btn primary">Save</button></div></form>'
         linked = ', '.join(names) if names else '-'
         cards+=f'<div class="card"><h3>🗂 {e(c.name)}</h3><p class="muted">Servers: {e(linked)}</p><p class="muted">Status: {"Active" if getattr(c,"is_active",True) else "Inactive"}</p><div class="rowactions"><button class="btn" onclick="openModal(\'catEdit{c.id}\')">Edit</button><button class="btn danger" onclick="askDelete(\'/admin/categories/{c.id}/delete\')">Delete</button></div></div>'+modal('catEdit'+str(c.id),'Edit Category','Edit Category',edit)
     return layout('Categories','Categories','<div class="headrow"><h2>Categories</h2><button class="btn primary" onclick="openModal(\'catAdd\')">+ Add Category</button></div>'+modal('catAdd','Add Category','Add Category',form)+'<div class="gridcards">'+cards+'</div>','/admin/categories')
@@ -3140,14 +3417,16 @@ async def plans(request: Request, _: str = Depends(_auth_user)):
     catopts=''.join(f'<option value="{c.id}">{e(c.name)}</option>' for c in cats); srvopts=''.join(f'<option value="{srv.id}">{e(srv.name)}</option>' for srv in srvs)
     cat_select_options = '<option value="0">Category is required</option>' + catopts
     srv_select_options = '<option value="0">Server is required</option>' + srvopts
-    form='<form method="post" action="/admin/plans/add" class="formgrid"><div><label data-fa="Plan type" data-en="Plan type">Plan type</label><select name="plan_kind"><option value="public">Public Plan</option><option value="reseller">Reseller Plan</option></select></div>'+field('title','Plan title')+field('price_irt','Price','number')+field('volume_gb','Volume GB','number')+field('duration_days','Duration days','number')+field('reseller_validity_days','Reseller validity days','number',365)+f'<div><label>Category</label><select name="category_id" required>{cat_select_options}</select></div><div><label>Server</label><select name="server_id" required>{srv_select_options}</select></div><div class="full"><button class="btn primary">Save</button></div></form>'
+    form='<form method="post" action="/admin/plans/add" class="formgrid"><div><label data-fa="Plan type" data-en="Plan type">Plan type</label><select name="plan_kind"><option value="public">Public Plan</option><option value="reseller">Reseller Plan</option></select></div>'+field('title','Plan title')+field('price_irt','Price','number')+field('volume_gb','Volume GB','number')+field('duration_days','Duration days','number')+field('hwid_limit','HWID device limit (0 = unlimited)','number',0)+field('reseller_validity_days','Reseller validity days','number',365)+f'<div><label>Category</label><select name="category_id" required>{cat_select_options}</select></div><div><label>Server</label><select name="server_id" required>{srv_select_options}</select></div><div class="full"><button class="btn primary">Save</button></div></form>'
     cards=''
     for p in items:
-        edit='<form method="post" action="/admin/plans/'+str(p.id)+'/edit" class="formgrid">'+field('title','Plan title','text',p.title)+field('price_irt','Price','number',p.price_irt)+field('volume_gb','Volume GB','number',p.volume_gb)+field('duration_days','Duration days','number',p.duration_days)+f'<div><label>Category</label><select name="category_id" required>{option_rows(cats, p.category_id)}</select></div><div><label>Server</label><select name="server_id" required>{option_rows(srvs, p.server_id)}</select></div><div class="full"><button class="btn primary">Save</button></div></form>'
+        edit='<form method="post" action="/admin/plans/'+str(p.id)+'/edit" class="formgrid">'+field('title','Plan title','text',p.title)+field('price_irt','Price','number',p.price_irt)+field('volume_gb','Volume GB','number',p.volume_gb)+field('duration_days','Duration days','number',p.duration_days)+field('hwid_limit','HWID device limit (0 = unlimited)','number',max(int(getattr(p,'hwid_limit',0) or 0),0))+f'<div><label>Category</label><select name="category_id" required>{option_rows(cats, p.category_id)}</select></div><div><label>Server</label><select name="server_id" required>{option_rows(srvs, p.server_id)}</select></div><div class="full"><button class="btn primary">Save</button></div></form>'
         status_label = 'Active' if p.is_active else 'Inactive'
         toggle_class = 'danger' if p.is_active else 'success'
         toggle_label = 'Deactivate' if p.is_active else 'Activate'
-        cards += f'<div class="card"><h3>📦 {e(p.title)}</h3><div class="value">{money(p.price_irt)}</div><p>{p.volume_gb}GB / {p.duration_days} days</p><p class="muted">Server: {p.server_id} | Status: {status_label}</p><div class="rowactions"><button class="btn" onclick="openModal(\'planEdit{p.id}\')">Edit</button><a data-action="1" class="btn {toggle_class}" href="/admin/toggle/plans/{p.id}">{toggle_label}</a><button class="btn danger" onclick="askDelete(\'/admin/plans/{p.id}/delete\')">Delete</button></div></div>' + modal('planEdit'+str(p.id),'Edit Plan','Edit Plan',edit)
+        hwid_limit = max(int(getattr(p, 'hwid_limit', 0) or 0), 0)
+        hwid_label = 'Unlimited' if hwid_limit <= 0 else f'{hwid_limit} devices'
+        cards += f'<div class="card"><h3>📦 {e(p.title)}</h3><div class="value">{money(p.price_irt)}</div><p>{p.volume_gb}GB / {p.duration_days} days</p><p class="muted">Server: {p.server_id} | HWID: {hwid_label} | Status: {status_label}</p><div class="rowactions"><button class="btn" onclick="openModal(\'planEdit{p.id}\')">Edit</button><a data-action="1" class="btn {toggle_class}" href="/admin/toggle/plans/{p.id}">{toggle_label}</a><button class="btn danger" onclick="askDelete(\'/admin/plans/{p.id}/delete\')">Delete</button></div></div>' + modal('planEdit'+str(p.id),'Edit Plan','Edit Plan',edit)
     reseller_form='<form method="post" action="/admin/plans/reseller/add" class="formgrid">'+field('title','Plan title')+field('price_irt','Price','number')+field('volume_gb','Volume GB','number')+field('reseller_validity_days','Validity days','number',365)+f'<div class="full"><label>Server</label><select name="server_id" required>{srv_select_options}</select></div><div class="full"><button class="btn primary">Save reseller plan</button></div></form>'
     reseller=''
     for x in rp:
@@ -3161,7 +3440,7 @@ async def plans(request: Request, _: str = Depends(_auth_user)):
         notice = '<div class="card" style="margin-bottom:16px"><b>⚠️ To create a plan, add at least one server and one category first.</b></div>'
     return layout('Plans','Plans',notice + '<div class="headrow"><h2>Plans</h2><div class="rowactions"><button class="btn primary" onclick="openModal(\'planAdd\')" data-fa="Add Plan" data-en="Add plan">Add Plan</button></div></div>'+modal('planAdd','Add Plan','Add Plan',form)+'<div class="tabs"><span class="badge">Public Plans</span><span class="badge">Reseller Plans</span></div><div class="gridcards">'+cards+reseller+'</div>','/admin/plans')
 @router.post('/admin/plans/add')
-async def plan_add(request: Request, plan_kind:str=Form('public'), title:str=Form(...), volume_gb:int=Form(0), duration_days:int=Form(0), reseller_validity_days:int=Form(365), price_irt:int=Form(0), category_id:int=Form(0), server_id:int=Form(0), inbound_mode:str=Form('automatic'), inbound_ids:str=Form(''), _: str = Depends(_auth_user)):
+async def plan_add(request: Request, plan_kind:str=Form('public'), title:str=Form(...), volume_gb:int=Form(0), duration_days:int=Form(0), reseller_validity_days:int=Form(365), price_irt:int=Form(0), category_id:int=Form(0), server_id:int=Form(0), inbound_mode:str=Form('automatic'), inbound_ids:str=Form(''), hwid_limit:int=Form(0), _: str = Depends(_auth_user)):
     if not server_id:
         return fail(request, 'Server is required to create a plan.')
     async with SessionLocal() as s:
@@ -3180,10 +3459,10 @@ async def plan_add(request: Request, plan_kind:str=Form('public'), title:str=For
         mode, inbs, inbound_error = _resolve_plan_inbound_config(srv, inbound_mode, inbound_ids)
         if inbound_error:
             return fail(request, inbound_error)
-        s.add(Plan(title=title,volume_gb=volume_gb,duration_days=duration_days,price_irt=price_irt,category_id=category_id,server_id=server_id,inbound_ids=inbs,is_active=True, meta={'inbound_mode': mode})); await s.commit()
+        s.add(Plan(title=title,volume_gb=volume_gb,duration_days=duration_days,price_irt=price_irt,category_id=category_id,server_id=server_id,inbound_ids=inbs,hwid_limit=max(int(hwid_limit or 0),0) if srv.server_type == 'xui' else 0,is_active=True, meta={'inbound_mode': mode})); await s.commit()
     return ok(request, '/admin/plans', 'Public plan added')
 @router.post('/admin/plans/{pid}/edit')
-async def plan_edit(request: Request, pid:int, title:str=Form(...), volume_gb:int=Form(0), duration_days:int=Form(0), price_irt:int=Form(0), category_id:int=Form(0), server_id:int=Form(0), inbound_mode:str|None=Form(None), inbound_ids:str=Form(''), _: str = Depends(_auth_user)):
+async def plan_edit(request: Request, pid:int, title:str=Form(...), volume_gb:int=Form(0), duration_days:int=Form(0), price_irt:int=Form(0), category_id:int=Form(0), server_id:int=Form(0), inbound_mode:str|None=Form(None), inbound_ids:str=Form(''), hwid_limit:int=Form(0), _: str = Depends(_auth_user)):
     if not category_id:
         return fail(request, 'Category is required to edit the plan.')
     if not server_id:
@@ -3198,17 +3477,21 @@ async def plan_edit(request: Request, pid:int, title:str=Form(...), volume_gb:in
             return fail(request, 'Selected category was not found.', 404)
         if not srv:
             return fail(request, 'Selected server was not found.', 404)
+        old_hwid_limit = max(int(getattr(obj, 'hwid_limit', 0) or 0), 0)
         requested_mode = inbound_mode if inbound_mode is not None else (_plan_inbound_mode(obj) if obj.server_id == server_id else 'automatic')
         requested_ids = inbound_ids if inbound_mode is not None else obj.inbound_ids
         mode, inbs, inbound_error = _resolve_plan_inbound_config(srv, requested_mode, requested_ids)
         if inbound_error:
             return fail(request, inbound_error)
-        obj.title=title; obj.volume_gb=volume_gb; obj.duration_days=duration_days; obj.price_irt=price_irt; obj.category_id=category_id; obj.server_id=server_id; obj.inbound_ids=inbs
+        obj.title=title; obj.volume_gb=volume_gb; obj.duration_days=duration_days; obj.price_irt=price_irt; obj.category_id=category_id; obj.server_id=server_id; obj.inbound_ids=inbs; obj.hwid_limit=max(int(hwid_limit or 0),0) if srv.server_type == 'xui' else 0
         meta = dict(obj.meta or {})
         meta['inbound_mode'] = mode
         obj.meta = meta
+        new_hwid_limit = max(int(getattr(obj, 'hwid_limit', 0) or 0), 0)
         await s.commit()
-    return ok(request, '/admin/plans', 'Plan updated')
+    if new_hwid_limit != old_hwid_limit:
+        schedule_plan_hwid_limit_sync(pid)
+    return ok(request, '/admin/plans', 'Plan updated; HWID policy is syncing to active services' if new_hwid_limit != old_hwid_limit else 'Plan updated')
 @router.post('/admin/plans/{pid}/delete')
 @router.get('/admin/plans/{pid}/delete')
 async def plan_del(request: Request, pid:int, _: str = Depends(_auth_user)):
@@ -3340,13 +3623,13 @@ async def discounts(request: Request, _: str = Depends(_auth_user)):
     async with SessionLocal() as s:
         items=(await s.execute(select(DiscountCode).order_by(DiscountCode.id.desc()))).scalars().all()
         srvs=(await s.execute(select(Server).order_by(Server.id.desc()))).scalars().all()
-    form='<form method="post" action="/admin/discounts/add" class="formgrid">'+field('code','Code')+'<div><label>Type</label><select name="discount_type"><option value="percent">Percent</option><option value="fixed">Fixed</option></select></div>'+field('value','Value','number')+field('max_uses','Max uses','number')+field('per_user_limit','Per user limit','number')+f'<div class="full"><label>Allowed servers</label><div class="checkbox-grid">{_server_options_html(srvs, field_name="allowed_server_ids")}</div><small class="muted">خالی باشد یعنی برای همه سرورها فعال است.</small></div><div class="full"><button class="btn primary">Save</button></div></form>'
+    form='<form method="post" action="/admin/discounts/add" class="formgrid">'+field('code','Code')+'<div><label>Type</label><select name="discount_type"><option value="percent">Percent</option><option value="fixed">Fixed</option></select></div>'+field('value','Value','number')+field('max_uses','Max uses','number')+field('per_user_limit','Per user limit','number')+f'<div class="full"><label>Allowed servers</label><div class="checkbox-grid">{_server_options_html(srvs, field_name="allowed_server_ids")}</div><small class="muted">Leave empty to enable it for all servers.</small></div><div class="full"><button class="btn primary">Save</button></div></form>'
     cards=''
     srv_by_id={s.id:s for s in srvs}
     for d in items:
         selected=_discount_allowed_server_ids(d)
         names=[((srv_by_id[sid].meta or {}).get('display_name') or srv_by_id[sid].name) for sid in selected if sid in srv_by_id]
-        edit='<form method="post" action="/admin/discounts/'+str(d.id)+'/edit" class="formgrid">'+field('code','Code','text',d.code)+'<div><label>Type</label><select name="discount_type"><option value="percent">Percent</option><option value="fixed">Fixed</option></select></div>'+field('value','Value','number',d.value)+field('max_uses','Max uses','number',d.max_uses)+field('per_user_limit','Per user limit','number',d.per_user_limit)+f'<div class="full"><label>Allowed servers</label><div class="checkbox-grid">{_server_options_html(srvs, selected, field_name="allowed_server_ids")}</div><small class="muted">خالی باشد یعنی برای همه سرورها فعال است.</small></div><div class="full"><button class="btn primary">Save</button></div></form>'
+        edit='<form method="post" action="/admin/discounts/'+str(d.id)+'/edit" class="formgrid">'+field('code','Code','text',d.code)+'<div><label>Type</label><select name="discount_type"><option value="percent">Percent</option><option value="fixed">Fixed</option></select></div>'+field('value','Value','number',d.value)+field('max_uses','Max uses','number',d.max_uses)+field('per_user_limit','Per user limit','number',d.per_user_limit)+f'<div class="full"><label>Allowed servers</label><div class="checkbox-grid">{_server_options_html(srvs, selected, field_name="allowed_server_ids")}</div><small class="muted">Leave empty to enable it for all servers.</small></div><div class="full"><button class="btn primary">Save</button></div></form>'
         scope=', '.join(names) if names else 'All servers'
         cards+=f'<div class="card"><h3>🎟 {e(d.code)}</h3><p>{e(d.discount_type)}: {d.value}</p><p class="muted">used {d.used_count}/{d.max_uses} | per user {d.per_user_limit}</p><p class="muted">Allowed: {e(scope)}</p><div class="rowactions"><button class="btn" onclick="openModal(\'discEdit{d.id}\')">Edit</button><button class="btn danger" onclick="askDelete(\'/admin/discounts/{d.id}/delete\')">Delete</button></div></div>'+modal('discEdit'+str(d.id),'Edit Discount','Edit Discount',edit)
     return simple_section('/admin/discounts','Discount Codes','Discount Codes','Add Discount Code','discAdd',form,cards)
@@ -3606,7 +3889,7 @@ def _prepare_backup_for_restore(
     # remains in the settings table for login verification; this encrypted copy
     # only powers the VPS Credentials Center and is re-encrypted for the target.
     for row in prepared.get('settings', []):
-        if str(row.get('key') or '') != WEB_ADMIN_PASSWORD_SECRET_KEY:
+        if str(row.get('key') or '') not in {WEB_ADMIN_PASSWORD_SECRET_KEY, BACKUP_SECONDARY_BOT_TOKEN_KEY}:
             continue
         raw = str(row.get('value') or '')
         if not raw:
@@ -3639,15 +3922,15 @@ async def _export_backup_payload() -> dict[str, Any]:
                             'Restore the original FERNET_KEY or save that server password again before creating a backup.'
                         ) from exc
                     item['password_encrypted'] = seal_portable_secret(plaintext, portable_box)
-                elif section == 'settings' and str(item.get('key') or '') == WEB_ADMIN_PASSWORD_SECRET_KEY:
+                elif section == 'settings' and str(item.get('key') or '') in {WEB_ADMIN_PASSWORD_SECRET_KEY, BACKUP_SECONDARY_BOT_TOKEN_KEY}:
                     raw_secret = str(item.get('value') or '')
                     if raw_secret:
                         try:
                             plaintext = decrypt_text(raw_secret)
                         except RuntimeError as exc:
                             raise ValueError(
-                                'The current website password secret cannot be read. '
-                                'Reset the website password once, then create the backup again.'
+                                f'The encrypted setting {item.get("key") or "secret"} cannot be read. '
+                                'Reset that secret once, then create the backup again.'
                             ) from exc
                         item['value'] = seal_portable_secret(plaintext, portable_box)
                 out.append(item)
@@ -3673,11 +3956,25 @@ async def _write_backup_file() -> str:
     return tmp.name
 
 
-async def _telegram_token(settings_map: dict[str, str] | None = None, supplied: str = '') -> str:
+async def _telegram_token(
+    settings_map: dict[str, str] | None = None,
+    supplied: str = '',
+    sender_mode: str | None = None,
+) -> str:
     if supplied.strip():
         return supplied.strip()
     settings_map = settings_map or await _settings_map()
-    return (settings_map.get('backup_bot_token') or settings.BOT_TOKEN or '').strip()
+    mode = (sender_mode or settings_map.get('backup_sender_mode') or 'current').strip().lower()
+    if mode == 'secondary':
+        encrypted = str(settings_map.get(BACKUP_SECONDARY_BOT_TOKEN_KEY) or '')
+        token = decrypt_secondary_bot_token(encrypted)
+        # One-way migration for older builds that stored this setting in plain text.
+        if not token:
+            legacy = str(settings_map.get('backup_bot_token') or '').strip()
+            if legacy:
+                token = legacy
+        return token
+    return (settings.BOT_TOKEN or '').strip()
 
 
 def _default_backup_chat_id() -> str:
@@ -3727,6 +4024,103 @@ def _telegram_error_message(data: dict[str, Any]) -> str:
     return str(data)[:1000]
 
 
+async def _telegram_validate_destination(
+    token: str,
+    chat_id: str,
+    destination: str,
+    *,
+    send_test: bool = True,
+) -> dict[str, Any]:
+    """Validate bot identity, membership/admin rights and optionally send a fresh test message."""
+    import httpx
+
+    destination = destination if destination in {'channel', 'group', 'bot'} else 'channel'
+    normalized = _normalize_telegram_target(destination, chat_id)
+    if not token:
+        return {'ok': False, 'admin_ok': False, 'message': 'Telegram bot token is not configured'}
+    if not normalized:
+        return {'ok': False, 'admin_ok': False, 'message': 'Telegram destination is not configured'}
+    if destination in {'channel', 'group'} and is_private_invite_link(normalized):
+        return {'ok': False, 'admin_ok': False, 'message': private_target_help()}
+
+    base = f'https://api.telegram.org/bot{token}'
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=10.0)) as client:
+            me_res = await client.get(base + '/getMe')
+            me = me_res.json()
+            if not me.get('ok'):
+                return {'ok': False, 'admin_ok': False, 'message': _telegram_error_message(me)}
+            bot_info = me.get('result') or {}
+            bot_id = bot_info.get('id')
+            bot_username = str(bot_info.get('username') or '')
+
+            resolved_chat_id = normalized
+            chat_title = ''
+            chat_type = ''
+            if destination in {'channel', 'group'}:
+                chat_res = await client.get(base + '/getChat', params={'chat_id': normalized})
+                chat_data = chat_res.json()
+                if not chat_data.get('ok'):
+                    return {'ok': False, 'admin_ok': False, 'message': _telegram_error_message(chat_data), 'bot_username': bot_username}
+                chat = chat_data.get('result') or {}
+                resolved_chat_id = str(chat.get('id') or normalized)
+                chat_title = str(chat.get('title') or '')
+                chat_type = str(chat.get('type') or '')
+
+                member_res = await client.get(base + '/getChatMember', params={'chat_id': resolved_chat_id, 'user_id': bot_id})
+                member_data = member_res.json()
+                if not member_data.get('ok'):
+                    return {'ok': False, 'admin_ok': False, 'message': _telegram_error_message(member_data), 'bot_username': bot_username, 'chat_id': resolved_chat_id}
+                member = member_data.get('result') or {}
+                status = str(member.get('status') or '')
+                if status not in {'administrator', 'creator'}:
+                    return {
+                        'ok': False,
+                        'admin_ok': False,
+                        'message': f'Bot must be administrator in this {destination}. Current status: {status or "unknown"}.',
+                        'bot_username': bot_username,
+                        'chat_id': resolved_chat_id,
+                    }
+                if destination == 'channel' and status == 'administrator' and member.get('can_post_messages') is False:
+                    return {
+                        'ok': False,
+                        'admin_ok': False,
+                        'message': 'Bot is administrator but Send/Post Messages permission is disabled.',
+                        'bot_username': bot_username,
+                        'chat_id': resolved_chat_id,
+                    }
+
+            if send_test:
+                stamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')
+                text_value = (
+                    '🧪 D BOT backup delivery test\n\n'
+                    f'✅ Fresh test message\n🕒 {stamp}\n'
+                    'If you can see this message, backup destination messaging is configured correctly.'
+                )
+                send_res = await client.post(base + '/sendMessage', data={'chat_id': resolved_chat_id, 'text': text_value})
+                send_data = send_res.json()
+                if not send_data.get('ok'):
+                    return {
+                        'ok': False,
+                        'admin_ok': destination == 'bot',
+                        'message': _telegram_error_message(send_data),
+                        'bot_username': bot_username,
+                        'chat_id': resolved_chat_id,
+                    }
+
+            return {
+                'ok': True,
+                'admin_ok': True,
+                'message': 'Fresh Telegram test message sent successfully' if send_test else 'Telegram destination validated successfully',
+                'bot_username': bot_username,
+                'chat_id': str(resolved_chat_id),
+                'chat_title': chat_title,
+                'chat_type': chat_type,
+            }
+    except Exception as exc:
+        return {'ok': False, 'admin_ok': False, 'message': f'Telegram validation failed: {exc}'}
+
+
 async def _telegram_send_backup(
     token: str,
     chat_id: str,
@@ -3735,6 +4129,7 @@ async def _telegram_send_backup(
     *,
     caption: str = '📦 D BOT portable backup v4',
     filename: str = 'dbot_portable_backup_v4.json',
+    content_type: str = 'application/json',
 ) -> dict[str, Any]:
     """Send a new Telegram document message. No message is edited."""
     import httpx
@@ -3750,7 +4145,7 @@ async def _telegram_send_backup(
                 res = await client.post(
                     base + '/sendDocument',
                     data={'chat_id': chat_id, 'caption': caption},
-                    files={'document': (filename, fh, 'application/json')},
+                    files={'document': (filename, fh, content_type)},
                 )
             data = res.json()
     except Exception as exc:
@@ -3759,7 +4154,7 @@ async def _telegram_send_backup(
     return {
         'ok': ok,
         'admin_ok': ok,
-        'message': 'New restorable backup file sent successfully' if ok else _telegram_error_message(data),
+        'message': 'Document sent successfully' if ok else _telegram_error_message(data),
     }
 
 
@@ -3913,24 +4308,55 @@ async def backup(request: Request, _: str = Depends(_auth_user)):
 async def backup_save(
     request: Request,
     destination: str = Form('channel'),
-    bot_token: str = Form(''),
+    sender_mode: str = Form('current'),
+    secondary_bot_token: str = Form(''),
     chat_id: str = Form(''),
-    bot_username: str = Form(''),
-    time: str = Form('03:00'),
+    interval_minutes: str = Form('1440'),
     include_database: str = Form('1'),
     include_files: str = Form('1'),
     _: str = Depends(_auth_user),
 ):
     destination = destination if destination in {'channel', 'group', 'bot'} else 'channel'
-    await _save_settings_map({
+    sender_mode = sender_mode if sender_mode in {'current', 'secondary'} else 'current'
+    interval = normalize_backup_interval(interval_minutes)
+    current = await _settings_map()
+    original_target = chat_id.strip()
+    normalized_chat_id = _effective_backup_chat_id(destination, original_target, current)
+    if destination in {'channel', 'group'} and not original_target:
+        return fail(request, f'{destination.title()} address/chat ID is required')
+    if destination == 'bot' and not normalized_chat_id:
+        normalized_chat_id = _default_backup_chat_id()
+
+    supplied_token = secondary_bot_token.strip() if sender_mode == 'secondary' else ''
+    token = await _telegram_token(current, supplied=supplied_token, sender_mode=sender_mode)
+    validation: dict[str, Any] | None = None
+    if destination in {'channel', 'group'}:
+        validation = await _telegram_validate_destination(token, normalized_chat_id, destination, send_test=False)
+        if not validation.get('ok'):
+            return fail(request, str(validation.get('message') or f'{destination.title()} validation failed'))
+        normalized_chat_id = str(validation.get('chat_id') or normalized_chat_id)
+
+    values: dict[str, Any] = {
         'backup_destination': destination,
-        'backup_bot_token': bot_token.strip(),
-        'backup_chat_id': _effective_backup_chat_id(destination, chat_id.strip(), await _settings_map()),
-        'backup_bot_username': bot_username.strip(),
-        'backup_time': time or '03:00',
+        'backup_sender_mode': sender_mode,
+        'backup_chat_id': normalized_chat_id,
+        'backup_target_input': original_target,
+        'backup_interval_minutes': str(interval),
+        'backup_schedule_enabled': '1',
         'backup_include_database': '1' if include_database == '1' else '0',
         'backup_include_files': '1' if include_files == '1' else '0',
-    })
+        'backup_admin_ok': '1' if destination == 'bot' or (validation and validation.get('admin_ok')) else '0',
+    }
+    if validation and sender_mode == 'secondary':
+        values['backup_secondary_bot_username'] = str(validation.get('bot_username') or current.get('backup_secondary_bot_username') or '')
+    if str(current.get('backup_interval_minutes') or '') != str(interval):
+        values['backup_schedule_anchor_at'] = datetime.utcnow().isoformat()
+    if sender_mode == 'secondary':
+        if secondary_bot_token.strip():
+            values[BACKUP_SECONDARY_BOT_TOKEN_KEY] = encrypt_secondary_bot_token(secondary_bot_token.strip())
+        elif not current.get(BACKUP_SECONDARY_BOT_TOKEN_KEY) and not current.get('backup_bot_token'):
+            return fail(request, 'Secondary backup bot token is required')
+    await _save_settings_map(values)
     return ok(request, '/admin/backup', 'Backup settings saved')
 
 
@@ -3938,57 +4364,61 @@ async def backup_save(
 async def backup_test(
     request: Request,
     destination: str = Form('channel'),
-    bot_token: str = Form(''),
+    sender_mode: str = Form('current'),
+    secondary_bot_token: str = Form(''),
     chat_id: str = Form(''),
-    bot_username: str = Form(''),
-    time: str = Form('03:00'),
+    interval_minutes: str = Form('1440'),
     include_database: str = Form('1'),
     include_files: str = Form('1'),
     _: str = Depends(_auth_user),
 ):
     destination = destination if destination in {'channel', 'group', 'bot'} else 'channel'
+    sender_mode = sender_mode if sender_mode in {'current', 'secondary'} else 'current'
+    interval = normalize_backup_interval(interval_minutes)
     current = await _settings_map()
-    token = await _telegram_token(current, supplied=bot_token)
-    normalized_chat_id = _effective_backup_chat_id(destination, chat_id.strip(), current)
-    path = ''
-    try:
-        path = await _write_backup_file()
-        stamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-        result = await _telegram_send_backup(
-            token,
-            normalized_chat_id,
-            path,
-            destination,
-            caption=(
-                '🧪 D BOT test backup\n\n'
-                '✅ New document message\n'
-                '✅ Portable JSON v4\n'
-                '✅ Restorable from Backup & Restore'
-            ),
-            filename=f'dbot_test_backup_{stamp}.json',
-        )
-    except ValueError as exc:
-        result = {'ok': False, 'admin_ok': False, 'message': f'Backup creation failed: {exc}'}
-    finally:
-        if path:
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
-    await _save_settings_map({
+    original_target = chat_id.strip()
+    normalized_chat_id = _effective_backup_chat_id(destination, original_target, current)
+    if destination == 'bot' and not normalized_chat_id:
+        normalized_chat_id = _default_backup_chat_id()
+
+    supplied_token = secondary_bot_token.strip() if sender_mode == 'secondary' else ''
+    token = await _telegram_token(current, supplied=supplied_token, sender_mode=sender_mode)
+    result = await _telegram_validate_destination(token, normalized_chat_id, destination, send_test=True)
+    resolved_chat_id = str(result.get('chat_id') or normalized_chat_id or '')
+    bot_username = str(result.get('bot_username') or '')
+
+    values: dict[str, Any] = {
         'backup_destination': destination,
-        'backup_bot_token': bot_token.strip(),
-        'backup_chat_id': normalized_chat_id,
-        'backup_bot_username': bot_username.strip(),
-        'backup_time': time or '03:00',
+        'backup_sender_mode': sender_mode,
+        'backup_chat_id': resolved_chat_id,
+        'backup_target_input': original_target,
+        'backup_secondary_bot_username': bot_username if sender_mode == 'secondary' else str(current.get('backup_secondary_bot_username') or ''),
+        'backup_interval_minutes': str(interval),
+        'backup_schedule_enabled': '1',
         'backup_include_database': '1' if include_database == '1' else '0',
         'backup_include_files': '1' if include_files == '1' else '0',
         'backup_last_test_status': 'ok' if result.get('ok') else 'error',
         'backup_last_test_message': result.get('message', ''),
-        'backup_admin_ok': '1' if result.get('ok') else '0',
-    })
+        'backup_admin_ok': '1' if result.get('admin_ok') else '0',
+        'backup_last_test_at': datetime.utcnow().isoformat(),
+    }
+    if str(current.get('backup_interval_minutes') or '') != str(interval):
+        values['backup_schedule_anchor_at'] = datetime.utcnow().isoformat()
+    if sender_mode == 'secondary' and supplied_token:
+        values[BACKUP_SECONDARY_BOT_TOKEN_KEY] = encrypt_secondary_bot_token(supplied_token)
+    await _save_settings_map(values)
+
     status = 200 if result.get('ok') else 400
-    return JSONResponse({'ok': bool(result.get('ok')), 'message': result.get('message'), 'admin_ok': bool(result.get('ok'))}, status_code=status)
+    return JSONResponse(
+        {
+            'ok': bool(result.get('ok')),
+            'message': result.get('message'),
+            'admin_ok': bool(result.get('admin_ok')),
+            'bot_username': bot_username,
+            'chat_id': resolved_chat_id,
+        },
+        status_code=status,
+    )
 
 
 @router.post('/admin/backup/run')
@@ -4100,26 +4530,51 @@ async def backup_restore(
     return ok(request, '/admin/backup', f'Restore completed. {total} rows synchronized and credentials re-encrypted for this installation.')
 
 
+@router.post('/admin/reports/monthly-sales/run')
+async def run_monthly_sales_report_now(request: Request, _: str = Depends(_auth_user)):
+    from app.jobs.monthly_sales_report import deliver_monthly_sales_report
+    result = await deliver_monthly_sales_report(force=True)
+    if not result.get('ok'):
+        return fail(request, 'Monthly sales report failed: ' + str(result.get('message') or 'Unknown error'))
+    return JSONResponse({'ok': True, 'message': str(result.get('message') or '30-day sales PDF report sent successfully')})
+
+
 @router.get('/admin/api/v2/backup/settings')
 async def api_v2_backup_settings(_: str = Depends(_auth_user)):
     m = await _settings_map()
+    sender_mode = (m.get('backup_sender_mode') or 'current').strip()
+    interval = normalize_backup_interval(m.get('backup_interval_minutes') or '1440')
     settings_payload = {
         'backup_destination': m.get('backup_destination', 'channel'),
-        'backup_bot_token': '',
-        'backup_chat_id': m.get('backup_chat_id', m.get('backup_channel', '')),
-        'backup_bot_username': m.get('backup_bot_username', ''),
-        'backup_time': m.get('backup_time', '03:00'),
+        'backup_sender_mode': sender_mode,
+        'backup_secondary_bot_configured': '1' if (m.get(BACKUP_SECONDARY_BOT_TOKEN_KEY) or m.get('backup_bot_token')) else '0',
+        'backup_secondary_bot_username': m.get('backup_secondary_bot_username', ''),
+        'backup_chat_id': m.get('backup_target_input') or m.get('backup_chat_id', m.get('backup_channel', '')),
+        'backup_resolved_chat_id': m.get('backup_chat_id', ''),
+        'backup_interval_minutes': str(interval),
+        'backup_interval_label': BACKUP_INTERVAL_LABELS.get(interval, str(interval)),
+        'backup_schedule_enabled': m.get('backup_schedule_enabled', '1'),
         'backup_include_database': m.get('backup_include_database', '1'),
         'backup_include_files': m.get('backup_include_files', '1'),
+        'monthly_sales_report_enabled': m.get('monthly_sales_report_enabled', '1'),
+        'monthly_sales_report_interval_days': '30',
     }
+    destination_configured = bool(settings_payload['backup_resolved_chat_id'] or settings_payload['backup_chat_id'])
+    sender_configured = sender_mode == 'current' or settings_payload['backup_secondary_bot_configured'] == '1'
     return {'ok': True, 'settings': settings_payload, 'status': {
-        'configured': bool(settings_payload['backup_chat_id'] or settings_payload['backup_bot_token']),
+        'configured': bool(destination_configured and sender_configured),
         'last_test_status': m.get('backup_last_test_status', ''),
         'last_test_message': m.get('backup_last_test_message', ''),
         'admin_ok': m.get('backup_admin_ok') == '1',
         'last_backup_status': m.get('backup_last_backup_status', ''),
         'last_backup_message': m.get('backup_last_backup_message', ''),
         'last_backup_at': m.get('backup_last_backup_at', ''),
+        'last_scheduled_at': m.get('backup_last_scheduled_at', ''),
+        'last_sales_report_status': m.get('monthly_sales_report_last_status', ''),
+        'last_sales_report_message': m.get('monthly_sales_report_last_message', ''),
+        'last_sales_report_at': m.get('monthly_sales_report_last_sent_at', ''),
+        'last_sales_report_period_start': m.get('monthly_sales_report_last_period_start', ''),
+        'last_sales_report_period_end': m.get('monthly_sales_report_last_period_end', ''),
     }}
 
 
@@ -4286,20 +4741,50 @@ async def settings_buttons_save(
             await session.merge(Setting(key=button_text_key(name), value=text_value))
             await session.merge(Setting(key=button_enabled_key(name), value=enabled_value))
         await session.commit()
+        invalidate_button_settings_cache()
     return ok(request, '/admin/settings', 'Bottom button settings saved successfully')
 
 
 
 
 @router.post('/admin/settings/bot-core')
-async def bot_core_settings_save(request: Request, welcome_text: str = Form(''), rules_text: str = Form(''), bot_enabled: str = Form('1'), database_info: str = Form(''), _: str = Depends(_auth_user)):
+async def bot_core_settings_save(
+    request: Request,
+    welcome_text: str = Form(''),
+    force_join_enabled: str = Form('0'),
+    channel_url: str = Form(''),
+    rules_enabled: str = Form('0'),
+    rules_text: str = Form(''),
+    bot_enabled: str = Form('1'),
+    database_info: str = Form(''),
+    _: str = Depends(_auth_user),
+):
+    force_enabled = str(force_join_enabled) == '1'
+    rules_on = str(rules_enabled) == '1'
+    channel = channel_url.strip()
+    rules = rules_text.strip()
+    welcome = welcome_text.strip()
+    if not welcome:
+        return fail(request, 'Start text cannot be empty')
+    if force_enabled:
+        if not channel:
+            return fail(request, 'Forced channel address is required when forced join is enabled')
+        check = await _telegram_validate_destination(settings.BOT_TOKEN, channel, 'channel', send_test=False)
+        if not check.get('ok'):
+            return fail(request, 'Forced channel validation failed: ' + str(check.get('message') or 'Bot must be administrator in the channel'))
+    if rules_on and not rules:
+        return fail(request, 'Rules text cannot be empty when Rules are enabled')
     async with SessionLocal() as s:
-        await s.merge(Setting(key='welcome_text', value=welcome_text.strip()))
-        await s.merge(Setting(key='rules_text', value=rules_text.strip()))
+        await s.merge(Setting(key='welcome_text', value=welcome))
+        await s.merge(Setting(key='force_join_enabled', value='1' if force_enabled else '0'))
+        await s.merge(Setting(key='channel_url', value=channel if force_enabled else ''))
+        await s.merge(Setting(key='rules_enabled', value='1' if rules_on else '0'))
+        if rules:
+            await s.merge(Setting(key='rules_text', value=rules))
         await s.merge(Setting(key='bot_enabled', value='1' if str(bot_enabled) == '1' else '0'))
         await s.merge(Setting(key='database_info', value=database_info.strip() or 'Connected'))
         await s.commit()
-    return ok(request, '/admin/settings', 'Bot texts, bot status, and database info saved')
+    return ok(request, '/admin/settings', 'Bot, forced channel and rules settings saved')
 
 
 @router.post('/admin/settings/channel')
@@ -4311,45 +4796,80 @@ async def channel_settings_save(request: Request, channel_url:str=Form(''), _: s
 
 
 @router.post('/admin/settings/website')
-async def website_settings_save(request: Request, domain:str=Form(''), username:str=Form(''), password:str=Form(''), token_timeout:int=Form(30), _: str = Depends(_auth_user)):
-    domain = domain.strip().replace('https://','').replace('http://','').strip('/')
+async def website_settings_save(
+    request: Request,
+    domain: str = Form(''),
+    web_path: str = Form(''),
+    username: str = Form(''),
+    password: str = Form(''),
+    token_timeout: int = Form(30),
+    _: str = Depends(_auth_user),
+):
+    domain = domain.strip().replace('https://', '').replace('http://', '').strip('/')
     username = username.strip()
     password = password.strip()
-    credentials_changed = bool(username or password)
     try:
+        clean_path = normalize_web_path(web_path or await read_web_path())
         async with SessionLocal() as s:
+            current_domain_row = await s.get(Setting, 'web_domain')
+            current_domain = str(current_domain_row.value or '').strip() if current_domain_row else ''
+            current_path = await read_web_path(s)
+            creds = await read_web_credentials(s)
+            username_changed = bool(username and username != creds.username)
+            password_changed = bool(password)
+            path_changed = clean_path != current_path
+            domain_changed = bool(domain and domain != current_domain)
+
             if domain:
                 await s.merge(Setting(key='web_domain', value=domain))
-            if username or password:
+            if username_changed or password_changed:
                 await save_web_credentials(
-                    username=username or None,
-                    password=password or None,
+                    username=username if username_changed else None,
+                    password=password if password_changed else None,
                     updated_by='website-admin-panel',
                     session=s,
                     commit=False,
                 )
+            if path_changed:
+                await save_web_path(clean_path, session=s, commit=False)
             await s.merge(Setting(key='web_token_timeout_minutes', value=str(max(5, token_timeout))))
             await s.commit()
     except ValueError as exc:
         return fail(request, str(exc))
-    if domain:
+
+    if domain_changed:
         ssl_ok, ssl_msg = await _apply_ssl_for_domain(domain)
         await _save_settings_map({'web_ssl_status': 'active' if ssl_ok else 'error', 'web_ssl_message': ssl_msg})
         if not ssl_ok:
             return fail(request, 'SSL request failed: ' + ssl_msg)
         _schedule_site_and_bot_restart('website_settings_ssl_success')
-    if credentials_changed:
+
+    if username_changed or password_changed:
         _sessions.clear()
+        login_redirect = f'/{clean_path}/login?updated=1'
         if is_ajax(request):
-            res = JSONResponse({'ok': True, 'message': 'Website login changed. Please login again with the new credentials.', 'redirect': '/login?updated=1', 'logout': True})
+            res = JSONResponse({
+                'ok': True,
+                'message': 'Website login changed. Please login again with the new credentials.',
+                'redirect': login_redirect,
+                'logout': True,
+            })
             res.delete_cookie('dbot_admin_token')
             res.delete_cookie('dbot_csrf_token')
             return res
-        res = RedirectResponse('/login?updated=1', status_code=303)
+        res = RedirectResponse(login_redirect, status_code=303)
         res.delete_cookie('dbot_admin_token')
         res.delete_cookie('dbot_csrf_token')
         return res
-    return ok(request, '/admin/settings', 'Website settings saved and SSL applied')
+
+    if path_changed and is_ajax(request):
+        return JSONResponse({
+            'ok': True,
+            'message': 'Web path changed successfully.',
+            'redirect': f'/{clean_path}/admin/settings',
+            'path_changed': True,
+        })
+    return ok(request, '/admin/settings', 'Website settings saved successfully')
 
 
 @router.post('/admin/settings/ssl/apply')
@@ -4363,6 +4883,56 @@ async def website_ssl_apply(request: Request, _: str = Depends(_auth_user)):
         return fail(request, 'SSL apply failed: ' + ssl_msg)
     _schedule_site_and_bot_restart('manual_ssl_apply_success')
     return ok(request, '/admin/settings', 'SSL applied successfully. Site and bot restart requested.')
+
+
+
+
+@router.post('/admin/settings/factory-reset')
+async def factory_reset_settings(
+    request: Request,
+    confirm: str = Form(''),
+    confirmation: str = Form(''),
+    _: str = Depends(_auth_user),
+):
+    """Reset local D BOT data while preserving web access needed to run setup again.
+
+    Remote X-UI/MikroTik accounts are intentionally not deleted. The database,
+    plans, users, orders, bot settings, backup configuration and local services
+    are cleared; only web login/path access is retained to prevent lockout.
+    """
+    if (confirmation or confirm).strip() != 'FACTORY RESET':
+        return fail(request, 'Type FACTORY RESET exactly to confirm the factory reset.', 400)
+
+    preserve_keys = {
+        'web_admin_username', 'web_admin_password', WEB_ADMIN_PASSWORD_SECRET_KEY,
+        'web_credentials_updated_at', 'web_credentials_updated_by',
+        'web_path', 'web_domain', 'web_token_timeout_minutes',
+        'web_ssl_status', 'web_ssl_message',
+    }
+    try:
+        async with SessionLocal() as session:
+            async with session.begin():
+                rows = (await session.execute(select(Setting).where(Setting.key.in_(preserve_keys)))).scalars().all()
+                preserved = {str(row.key): str(row.value or '') for row in rows}
+                # Break the database's cyclic/self references before delete order.
+                await session.execute(update(User).values(referred_by_user_id=None))
+                await session.execute(update(Server).values(category_id=None))
+                await session.execute(update(ServerCategory).values(server_id=None))
+                for model in _restore_delete_order():
+                    await session.execute(delete(model))
+                for key, value in preserved.items():
+                    await session.merge(Setting(key=key, value=value))
+                await session.merge(Setting(key='initial_setup_done', value='0'))
+
+        _failed_logins.clear()
+        return JSONResponse({
+            'ok': True,
+            'message': 'Factory Reset completed. Local D BOT data and settings were cleared.',
+            'redirect': _with_web_prefix(request, '/setup'),
+        })
+    except Exception as exc:
+        logger.exception('Factory Reset failed')
+        return JSONResponse({'ok': False, 'message': f'Factory Reset failed: {exc}'}, status_code=500)
 
 
 # -----------------------------------------------------------------------------
@@ -4431,6 +5001,7 @@ def plan_json(p):
         'category_id': p.category_id, 'server_id': p.server_id,
         'inbound_ids': p.inbound_ids or [],
         'inbound_mode': _plan_inbound_mode(p),
+        'hwid_limit': max(int(getattr(p, 'hwid_limit', 0) or 0), 0),
         'is_unlimited': p.is_unlimited,
         'is_active': p.is_active, 'meta': p.meta or {}
     }
@@ -4920,7 +5491,7 @@ async def api_v2_reseller_services(rid: int, _: str = Depends(_auth_user)):
         remaining = max(0, total - used)
         srv = servers.get(svc.server_id)
         plan = plans.get(svc.plan_id)
-        title = plan.title if plan else 'نمایندگی'
+        title = plan.title if plan else 'Reseller'
         items.append({
             'id': svc.id,
             'username': svc.client_username or svc.xui_email or '-',
@@ -5004,7 +5575,9 @@ async def api_v2_reseller_services(rid: int, _: str = Depends(_auth_user)):
 @router.get('/admin/api/v2/settings')
 async def api_v2_settings(_: str = Depends(_auth_user)):
     async with SessionLocal() as s:
-        items=(await s.execute(select(Setting).order_by(Setting.key))).scalars().all()
+        items = (await s.execute(select(Setting).order_by(Setting.key))).scalars().all()
+        credentials = await read_web_credentials(s)
+        access = await read_web_access(s)
     raw_map = {it.key: str(it.value or '') for it in items}
     removed_message_keys = {
         'user_home_text', 'user_rules_text',
@@ -5013,18 +5586,28 @@ async def api_v2_settings(_: str = Depends(_auth_user)):
         'user_renewal_xui_template', 'user_renewal_openvpn_template',
         'user_openvpn_profile_caption',
     }
-    safe=[]
+    safe = []
     for it in items:
         if it.key in removed_message_keys:
             continue
-        val=it.value
-        if any(k in it.key.lower() for k in ['password','token','secret']): val='••••••••'
-        safe.append({'key':it.key,'value':val})
-    # Synthetic safe values used by the read-only Website & SSL card.
-    safe.append({'key':'web_password_configured','value':'1' if raw_map.get('web_admin_password') else '0'})
+        val = it.value
+        if any(k in it.key.lower() for k in ['password', 'token', 'secret']):
+            val = '••••••••'
+        safe.append({'key': it.key, 'value': val})
+
+    # Live/synthetic values for Website & SSL. These come from the shared DB
+    # credential service so Edit Setup always shows the actually usable username.
+    safe.extend([
+        {'key': 'web_admin_username', 'value': credentials.username},
+        {'key': 'web_password_configured', 'value': '1' if (credentials.password_available or raw_map.get('web_admin_password')) else '0'},
+        {'key': 'web_password_status', 'value': 'Configured' if (credentials.password_available or raw_map.get('web_admin_password')) else 'Not configured'},
+        {'key': 'web_path', 'value': access.web_path},
+        {'key': 'web_login_url', 'value': access.login_url},
+        {'key': 'web_credentials_updated_at', 'value': credentials.updated_at},
+    ])
     for name, (default_text, default_enabled) in BUTTON_DEFAULTS.items():
         if button_text_key(name) not in raw_map:
-            safe.append({'key':button_text_key(name),'value':default_text})
+            safe.append({'key': button_text_key(name), 'value': default_text})
         if button_enabled_key(name) not in raw_map:
-            safe.append({'key':button_enabled_key(name),'value':'1' if default_enabled else '0'})
-    return {'ok':True,'items':safe}
+            safe.append({'key': button_enabled_key(name), 'value': '1' if default_enabled else '0'})
+    return {'ok': True, 'items': safe}
