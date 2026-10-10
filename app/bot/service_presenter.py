@@ -1,0 +1,286 @@
+from __future__ import annotations
+
+import logging
+import os
+
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+
+from app.bot.qr_card import make_qr_card
+
+
+logger = logging.getLogger(__name__)
+
+
+SERVICE_CARD_XUI_TEXT = (
+    '━━━━━━━━━━━━━━\n'
+    'سرویس شما با موفقیت ساخته شد\n'
+    '━━━━━━━━━━━━━━\n'
+    '👤 نام کاربری: <code>{username}</code>\n'
+    '📦 پلن: <b>{title}</b>\n'
+    '💾 حجم: <b>{volume_gb} گیگ</b>\n'
+    '⏳ مدت: <b>{duration_days} روز</b>\n\n'
+    '🔗 لینک ساب‌اسکریپشن:\n<code>{sub_link}</code>\n\n'
+    '<b>⚠️ فقط و فقط برنامه Happ مورد تایید ما هستش.</b>\n'
+    '<b>اگر از برنامه دیگری استفاده می‌کنید، هرچه زودتر Happ را از App Store یا Google Play دانلود و نصب کنید.</b>\n\n'
+    '<b>در غیر این صورت، وصل نشدن سرورها مسئولیتش با خود شماست و در پشتیبانی خدماتی ارائه نمی‌شود.</b>\n\n'
+    '✅ مراحل اضافه کردن در Happ:\n'
+    '1) برنامه Happ را باز کنید.\n'
+    '2) روی دکمه + بزنید.\n'
+    '3) گزینه Import / Subscription را انتخاب کنید.\n'
+    '4) لینک بالا را Paste کنید.\n'
+    '5) ذخیره کنید و سرورها را از داخل Happ انتخاب کنید.\n\n'
+    '♻️ بروزرسانی لینک در Happ هر ۱۲ ساعت:\n'
+    '1) وارد Happ شوید.\n'
+    '2) روی Subscription همین سرویس بزنید.\n'
+    '3) گزینه Update / Refresh Subscription را بزنید.\n'
+    '4) بعد از بروزرسانی، دوباره یکی از سرورها را انتخاب و وصل شوید.'
+)
+
+TEST_SERVICE_CARD_XUI_TEXT = SERVICE_CARD_XUI_TEXT.replace(
+    'سرویس شما با موفقیت ساخته شد',
+    '🎁 اکانت تست شما با موفقیت ساخته شد',
+)
+
+SERVICE_CARD_BASIC_TEXT = (
+    '━━━━━━━━━━━━━━\n'
+    'سرویس شما با موفقیت ساخته شد\n'
+    '━━━━━━━━━━━━━━\n'
+    '👤 نام کاربری: <code>{username}</code>\n'
+    '📦 پلن: <b>{title}</b>\n'
+    '💾 حجم: <b>{volume_gb} گیگ</b>\n'
+    '⏳ مدت: <b>{duration_days} روز</b>\n'
+)
+
+TEST_SERVICE_CARD_BASIC_TEXT = (
+    '━━━━━━━━━━━━━━\n'
+    '🎁 اکانت تست شما با موفقیت ساخته شد\n'
+    '━━━━━━━━━━━━━━\n'
+    '👤 نام کاربری: <code>{username}</code>\n'
+    '📦 پلن: <b>{title}</b>\n'
+    '💾 حجم: <b>{volume_gb} گیگ</b>\n'
+    '⏳ مدت: <b>{duration_days} روز</b>\n'
+)
+
+SERVICE_CARD_MIKROTIK_TEXT = (
+    '━━━━━━━━━━━━━━\n'
+    'سرویس شما با موفقیت ساخته شد\n'
+    '━━━━━━━━━━━━━━\n'
+    '👤 نام کاربری: <code>{username}</code>\n'
+    '📦 پلن: <b>{title}</b>\n'
+    '💾 حجم: <b>{volume_gb} گیگ</b>\n'
+    '⏳ مدت: <b>{duration_days} روز</b>\n'
+    '{password_line}\n'
+    '📲 <b>آموزش اضافه کردن کانفیگ OpenVPN</b>\n\n'
+    '1️⃣ برنامه <b>OpenVPN Connect</b> رو باز کنید\n'
+    '2️⃣ روی گزینه <b>Import Profile</b> یا <b>Upload File</b> بزنید\n'
+    '3️⃣ وارد بخش <b>File</b> بشید\n'
+    '4️⃣ فایل کانفیگ با فرمت <code>.ovpn</code> رو انتخاب کنید\n'
+    '5️⃣ روی گزینه <b>Add</b> بزنید\n'
+    '6️⃣ تیک گزینه <b>Save Password</b> رو فعال کنید\n'
+    '7️⃣ اطلاعات <b>Username / Password / Private Key</b> رو وارد کنید\n'
+    '8️⃣ دکمه اتصال رو فعال کنید ✅\n\n'
+    '📱 <b>راهنمای اضافه کردن برای آیفون - L2TP</b>\n'
+    '1) Settings را باز کنید.\n'
+    '2) وارد VPN & Device Management شوید.\n'
+    '3) Add VPN Configuration را بزنید.\n'
+    '4) Type را روی L2TP بگذارید.\n'
+    '5) اطلاعات زیر را وارد کنید:\n'
+    '   Account : <code>{username}</code>\n'
+    '   Password : <code>{password}</code>\n'
+    '6) server : <code>{l2tp_server}</code>\n'
+    '7) secret : <code>{l2tp_ipsec_secret}</code>'
+)
+
+TEST_SERVICE_CARD_MIKROTIK_TEXT = SERVICE_CARD_MIKROTIK_TEXT.replace(
+    'سرویس شما با موفقیت ساخته شد',
+    '🎁 اکانت تست شما با موفقیت ساخته شد',
+)
+
+
+def _format_gb(value) -> str:
+    try:
+        n = float(value or 0)
+    except Exception:
+        n = 0.0
+    return str(int(n)) if n.is_integer() else f'{n:g}'
+
+
+def mikrotik_guide_text(l2tp_server: str | None = None, l2tp_ipsec_secret: str | None = None, username: str | None = None, password: str | None = None) -> str:
+    server = (l2tp_server or 'vpn.example.com').strip()
+    secret = (l2tp_ipsec_secret or 'CHANGE_ME_IPSEC_SECRET').strip()
+    account = (username or '').strip() or 'Username سرویس'
+    pwd = (password or '').strip() or 'Password سرویس'
+    return (
+        '📲 <b>آموزش اضافه کردن کانفیگ OpenVPN</b>\n\n'
+        '1️⃣ برنامه <b>OpenVPN Connect</b> رو باز کنید\n'
+        '2️⃣ روی گزینه <b>Import Profile</b> یا <b>Upload File</b> بزنید\n'
+        '3️⃣ وارد بخش <b>File</b> بشید\n'
+        '4️⃣ فایل کانفیگ با فرمت <code>.ovpn</code> رو انتخاب کنید\n'
+        '5️⃣ روی گزینه <b>Add</b> بزنید\n'
+        '6️⃣ تیک گزینه <b>Save Password</b> رو فعال کنید\n'
+        '7️⃣ اطلاعات <b>Username / Password / Private Key</b> رو وارد کنید\n'
+        '8️⃣ دکمه اتصال رو فعال کنید ✅\n\n'
+        '📱 <b>راهنمای اضافه کردن برای آیفون - L2TP</b>\n'
+        '1) Settings را باز کنید.\n'
+        '2) وارد VPN & Device Management شوید.\n'
+        '3) Add VPN Configuration را بزنید.\n'
+        '4) Type را روی L2TP بگذارید.\n'
+        '5) اطلاعات زیر را وارد کنید:\n'
+        f'   Account : <code>{account}</code>\n'
+        f'   Password : <code>{pwd}</code>\n'
+        f'6) server : <code>{server}</code>\n'
+        f'7) secret : <code>{secret}</code>'
+    )
+
+
+def happ_guide_text(sub_link: str) -> str:
+    return (
+        f'🔗 لینک ساب‌اسکریپشن:\n<code>{sub_link}</code>\n\n'
+        f'<b>⚠️ فقط و فقط برنامه Happ مورد تایید ما هستش.</b>\n'
+        f'<b>اگر از برنامه دیگری استفاده می‌کنید، هرچه زودتر Happ را از App Store یا Google Play دانلود و نصب کنید.</b>\n\n'
+        f'<b>در غیر این صورت، وصل نشدن سرورها مسئولیتش با خود شماست و در پشتیبانی خدماتی ارائه نمی‌شود.</b>\n\n'
+        f'✅ مراحل اضافه کردن در Happ:\n'
+        f'1) برنامه Happ را باز کنید.\n'
+        f'2) روی دکمه + بزنید.\n'
+        f'3) گزینه Import / Subscription را انتخاب کنید.\n'
+        f'4) لینک بالا را Paste کنید.\n'
+        f'5) ذخیره کنید و سرورها را از داخل Happ انتخاب کنید.\n\n'
+        f'♻️ بروزرسانی لینک در Happ هر ۱۲ ساعت:\n'
+        f'1) وارد Happ شوید.\n'
+        f'2) روی Subscription همین سرویس بزنید.\n'
+        f'3) گزینه Update / Refresh Subscription را بزنید.\n'
+        f'4) بعد از بروزرسانی، دوباره یکی از سرورها را انتخاب و وصل شوید.'
+    )
+
+
+def build_service_caption(*, username: str, title: str, volume_gb, duration_days, sub_link: str | None, is_test: bool = False, server_type: str = 'xui', password: str | None = None, l2tp_server: str | None = None, l2tp_ipsec_secret: str | None = None) -> str:
+    volume_label = _format_gb(volume_gb)
+    duration_label = duration_days
+    is_mikrotik = (server_type or '').lower() == 'mikrotik'
+
+    if is_mikrotik:
+        template = TEST_SERVICE_CARD_MIKROTIK_TEXT if is_test else SERVICE_CARD_MIKROTIK_TEXT
+        pwd = (password or '').strip() or 'Password سرویس'
+        password_line = f'🔐 رمز عبور: <code>{password}</code>\n' if password else ''
+        return template.format(
+            username=username,
+            title=title,
+            volume_gb=volume_label,
+            duration_days=duration_label,
+            password_line=password_line,
+            password=pwd,
+            l2tp_server=(l2tp_server or 'vpn.example.com').strip(),
+            l2tp_ipsec_secret=(l2tp_ipsec_secret or 'CHANGE_ME_IPSEC_SECRET').strip(),
+        )
+
+    if sub_link:
+        template = TEST_SERVICE_CARD_XUI_TEXT if is_test else SERVICE_CARD_XUI_TEXT
+        return template.format(
+            username=username,
+            title=title,
+            volume_gb=volume_label,
+            duration_days=duration_label,
+            sub_link=sub_link,
+        )
+
+    template = TEST_SERVICE_CARD_BASIC_TEXT if is_test else SERVICE_CARD_BASIC_TEXT
+    return template.format(
+        username=username,
+        title=title,
+        volume_gb=volume_label,
+        duration_days=duration_label,
+    )
+
+
+async def send_service_info(
+    bot,
+    chat_id,
+    username: str,
+    title: str,
+    volume_gb,
+    duration_days,
+    sub_link: str | None,
+    *,
+    is_test: bool = False,
+    reply_markup=None,
+    service_id: int | None = None,
+    server_type: str = 'xui',
+    password: str | None = None,
+    l2tp_server: str | None = None,
+    l2tp_ipsec_secret: str | None = None,
+):
+    caption = build_service_caption(
+        username=username,
+        title=title,
+        volume_gb=volume_gb,
+        duration_days=duration_days,
+        sub_link=sub_link,
+        is_test=is_test,
+        server_type=server_type,
+        password=password,
+        l2tp_server=l2tp_server,
+        l2tp_ipsec_secret=l2tp_ipsec_secret,
+    )
+
+    # Respect caller-provided controls (for example the persistent Home
+    # button used by admin-created services). MikroTik also needs its profile
+    # action, so merge both keyboards instead of silently replacing one.
+    markup = reply_markup
+    if (server_type or '').lower() == 'mikrotik' and service_id:
+        rows = [[InlineKeyboardButton(text='📥 دریافت پروفایل سرور', callback_data=f'svc:profile:{service_id}')]]
+        if reply_markup is not None:
+            rows.extend(list(getattr(reply_markup, 'inline_keyboard', []) or []))
+        markup = InlineKeyboardMarkup(inline_keyboard=rows)
+
+    if sub_link and (server_type or '').lower() != 'mikrotik':
+        qr_path = make_qr_card(
+            sub_link,
+            title='VPN BOT',
+            subtitle='VPN',
+            username=username,
+            plan_title=title,
+            volume_gb=volume_gb,
+            duration_days=duration_days,
+            server_name='Multi Location',
+        )
+        try:
+            await bot.send_photo(
+                chat_id,
+                FSInputFile(qr_path),
+                caption=caption,
+                parse_mode='HTML',
+                reply_markup=markup,
+            )
+        except TelegramBadRequest as exc:
+            # Telegram occasionally rejects an otherwise valid generated PNG
+            # with IMAGE_PROCESS_FAILED. The service already exists at this
+            # point, so fall back to the complete text/link instead of turning
+            # a delivery issue into an unhandled provisioning error.
+            if 'IMAGE_PROCESS_FAILED' not in str(exc).upper():
+                raise
+            logger.warning('Telegram QR image processing failed chat_id=%s; falling back to text delivery', chat_id)
+            await bot.send_message(
+                chat_id,
+                caption,
+                parse_mode='HTML',
+                reply_markup=markup,
+            )
+        finally:
+            try:
+                os.unlink(qr_path)
+            except OSError:
+                pass
+    else:
+        await bot.send_message(chat_id, caption, parse_mode='HTML', reply_markup=markup)
+        if (server_type or '').lower() == 'mikrotik' and service_id:
+            try:
+                from app.bot.profile_delivery import send_openvpn_profile_document
+                await send_openvpn_profile_document(
+                    bot,
+                    chat_id,
+                    int(service_id),
+                    caption=None,
+                )
+            except Exception:
+                pass

@@ -1,0 +1,53 @@
+<svg width="1200" height="520" viewBox="0 0 1200 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#EEF2FF"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="1200" height="520" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#64748B" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="520" rx="30" fill="url(#bg)"/>
+  <text x="600" y="60" text-anchor="middle" fill="#0F172A" font-size="34" font-family="Inter, Segoe UI, Arial" font-weight="800">Service Architecture</text>
+  <text x="600" y="92" text-anchor="middle" fill="#64748B" font-size="17" font-family="Inter, Segoe UI, Arial">One Docker stack for bot, API, admin panel, database and cache</text>
+
+  <g filter="url(#shadow)" font-family="Inter, Segoe UI, Arial">
+    <rect x="74" y="150" width="210" height="126" rx="24" fill="#FFFFFF" stroke="#BFDBFE"/>
+    <text x="179" y="194" text-anchor="middle" fill="#1D4ED8" font-size="21" font-weight="800">Telegram Bot</text>
+    <text x="179" y="226" text-anchor="middle" fill="#475569" font-size="15">Aiogram handlers</text>
+    <text x="179" y="250" text-anchor="middle" fill="#475569" font-size="15">orders · tickets · configs</text>
+
+    <rect x="360" y="150" width="210" height="126" rx="24" fill="#FFFFFF" stroke="#A7F3D0"/>
+    <text x="465" y="194" text-anchor="middle" fill="#047857" font-size="21" font-weight="800">FastAPI</text>
+    <text x="465" y="226" text-anchor="middle" fill="#475569" font-size="15">Admin API</text>
+    <text x="465" y="250" text-anchor="middle" fill="#475569" font-size="15">services · jobs · webhooks</text>
+
+    <rect x="646" y="150" width="210" height="126" rx="24" fill="#FFFFFF" stroke="#DDD6FE"/>
+    <text x="751" y="194" text-anchor="middle" fill="#7C3AED" font-size="21" font-weight="800">Admin Panel</text>
+    <text x="751" y="226" text-anchor="middle" fill="#475569" font-size="15">Next.js dashboard</text>
+    <text x="751" y="250" text-anchor="middle" fill="#475569" font-size="15">users · plans · reports</text>
+
+    <rect x="932" y="150" width="210" height="126" rx="24" fill="#FFFFFF" stroke="#FED7AA"/>
+    <text x="1037" y="194" text-anchor="middle" fill="#EA580C" font-size="21" font-weight="800">VPN Panels</text>
+    <text x="1037" y="226" text-anchor="middle" fill="#475569" font-size="15">3x-ui · X-UI</text>
+    <text x="1037" y="250" text-anchor="middle" fill="#475569" font-size="15">MikroTik · OpenVPN</text>
+
+    <rect x="236" y="342" width="230" height="110" rx="24" fill="#FFFFFF" stroke="#CBD5E1"/>
+    <text x="351" y="386" text-anchor="middle" fill="#0F172A" font-size="21" font-weight="800">PostgreSQL</text>
+    <text x="351" y="418" text-anchor="middle" fill="#475569" font-size="15">orders · users · plans</text>
+
+    <rect x="734" y="342" width="230" height="110" rx="24" fill="#FFFFFF" stroke="#CBD5E1"/>
+    <text x="849" y="386" text-anchor="middle" fill="#0F172A" font-size="21" font-weight="800">Redis</text>
+    <text x="849" y="418" text-anchor="middle" fill="#475569" font-size="15">cache · session state</text>
+  </g>
+
+  <g stroke="#64748B" stroke-width="3" stroke-linecap="round" opacity="0.55">
+    <path d="M284 213H360"/>
+    <path d="M570 213H646"/>
+    <path d="M856 213H932"/>
+    <path d="M465 276V314C465 330 449 342 433 342"/>
+    <path d="M751 276V314C751 330 767 342 783 342"/>
+    <path d="M465 276V314C465 330 479 342 495 342H705C721 342 735 330 735 314V276"/>
+  </g>
+</svg>
