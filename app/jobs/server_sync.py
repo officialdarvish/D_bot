@@ -1,0 +1,372 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import datetime
+from sqlalchemy import or_, select
+from app.database.session import SessionLocal
+from app.core.config import settings
+from app.database.models import Server, Plan, ResellerBuildConfig, ClientService
+from app.services.xui_service import XuiService
+from app.services.mikrotik_service import MikroTikService
+from app.services.pasarguard_service import PasarGuardService
+from app.services.reseller_service import apply_reseller_usage_delta, release_reserved_volume, drop_inactive_reservation
+from app.services.service_grace import local_terminal_reason, mark_service_active, mark_service_disabled
+
+logger = logging.getLogger(__name__)
+
+
+async def sync_mikrotik_usage() -> None:
+    """Refresh used/volume/expiry/active state for MikroTik client services.
+
+    The MikroTik panel itself enforces expiry and volume limits; this job only
+    mirrors that state back into the bot DB so the "My services" page, the
+    low-volume / near-expiry alerts (scan_service_alerts) and usage alert logic all
+    operate on fresh data instead of the values captured at purchase time.
+    """
+    async with SessionLocal() as session:
+        servers = {
+            s.id: s for s in (await session.execute(
+                select(Server).where(Server.is_active == True, Server.server_type == "mikrotik")
+            )).scalars().all()
+        }
+        if not servers:
+            return
+        services = (await session.execute(
+            select(ClientService).where(
+                ClientService.server_id.in_(list(servers.keys())),
+                or_(
+                    ClientService.client_username.is_(None),
+                    ~ClientService.client_username.like('deleted_%'),
+                ),
+            )
+        )).scalars().all()
+        changed = 0
+        for svc in services:
+            server = servers.get(svc.server_id)
+            if not server:
+                continue
+            try:
+                found = await MikroTikService().get_user(server, svc.xui_email or svc.client_username)
+            except Exception as exc:
+                logger.warning("MikroTik usage sync failed service_id=%s: %s", svc.id, exc)
+                continue
+            if not found:
+                # A real not-found response is different from a connection
+                # failure (which raises above). Start the same 72-hour renewal
+                # window used by X-UI so stale local OpenVPN records are cleaned
+                # automatically instead of remaining forever.
+                mark_service_disabled(svc, datetime.utcnow(), reason='missing_on_panel')
+                if getattr(svc, 'reseller_id', None):
+                    await drop_inactive_reservation(session, svc)
+                changed += 1
+                continue
+            try:
+                baseline = int(getattr(svc, 'traffic_baseline_bytes', 0) or 0)
+                effective_used = MikroTikService.logical_used_bytes(found, baseline, svc.used_bytes or 0)
+                await apply_reseller_usage_delta(session, svc, effective_used)
+                svc.total_bytes = MikroTikService.logical_total_bytes(found, baseline, svc.total_bytes or 0)
+                exp = found.get("expire_at")
+                if exp:
+                    svc.expires_at = datetime.fromisoformat(str(exp)[:10])
+                now = datetime.utcnow()
+                terminal_reason = local_terminal_reason(svc, now)
+                panel_active = MikroTikService().user_is_active(found, svc.is_active)
+                if panel_active and terminal_reason is None:
+                    mark_service_active(svc)
+                else:
+                    mark_service_disabled(
+                        svc,
+                        now,
+                        reason=terminal_reason or 'disabled_on_mikrotik_panel',
+                    )
+                    if getattr(svc, 'reseller_id', None):
+                        await drop_inactive_reservation(session, svc)
+                changed += 1
+            except Exception as exc:
+                logger.warning("MikroTik usage parse failed service_id=%s: %s", svc.id, exc)
+                continue
+        if changed:
+            await session.commit()
+            logger.info("MikroTik usage sync updated %s service(s)", changed)
+
+
+
+async def refresh_mikrotik_server(session, server: Server) -> tuple[bool, str]:
+    """Refresh MikroTik / Custom router status metadata from /api/routers."""
+    if not server or server.server_type != "mikrotik":
+        return True, ""
+    service = MikroTikService()
+    try:
+        routers = await service.routers(server)
+    except Exception as exc:
+        # A temporary connection/API failure is runtime health only. Never turn
+        # off the administratively enabled server because the next scheduler run
+        # would skip it forever.
+        meta = dict(server.meta or {})
+        meta.update({
+            "router_online": False,
+            "router_error": str(exc),
+            "last_router_sync_at": datetime.utcnow().isoformat(timespec="seconds"),
+        })
+        meta.setdefault("admin_enabled", bool(server.is_active))
+        server.meta = meta
+        return False, str(exc)
+    meta = dict(server.meta or {})
+    router_name = str(meta.get("router_name") or server.username or "").strip()
+    matched = None
+    for row in routers:
+        if str(row.get("name") or "").strip().lower() == router_name.lower():
+            matched = row
+            break
+    matched = matched or (routers[0] if routers else {})
+    if not matched:
+        meta.update({
+            "router_online": False,
+            "router_error": "No router was returned by /api/routers",
+            "routers_snapshot": routers,
+            "last_router_sync_at": datetime.utcnow().isoformat(timespec="seconds"),
+        })
+        meta.setdefault("admin_enabled", bool(server.is_active))
+        server.meta = meta
+        return False, "No router was returned by /api/routers"
+    if matched:
+        meta.update({
+            "custom_panel": True,
+            "custom_panel_name": "MikroTik / Custom",
+            "router_name": str(matched.get("name") or router_name).strip(),
+            "router_host": matched.get("host") or "",
+            "router_port": matched.get("port") or "",
+            "router_online": service.router_is_online(matched, True),
+            "router_identity": matched.get("identity") or "",
+            "router_version": matched.get("version") or "",
+            "router_uptime": matched.get("uptime") or "",
+            "router_secrets": int(matched.get("secrets") or 0),
+            "router_active": int(matched.get("active") or 0),
+            "router_error": matched.get("error") or "",
+            "routers_snapshot": routers,
+            "last_router_sync_at": datetime.utcnow().isoformat(timespec="seconds"),
+        })
+        online = service.router_is_online(matched, True)
+        meta["router_online"] = online
+        meta.setdefault("admin_enabled", bool(server.is_active))
+        if online:
+            meta["last_router_success_at"] = datetime.utcnow().isoformat(timespec="seconds")
+        server.username = str(matched.get("name") or router_name).strip()
+        # server.is_active is an administrator switch. Router reachability is
+        # stored separately in metadata and must never auto-disable the server.
+        server.meta = meta
+    return True, ""
+
+
+def _inbound_summary(row: dict) -> dict:
+    """Return a stable, UI-friendly inbound summary from a panel row."""
+    try:
+        iid = int(row.get("id"))
+    except Exception:
+        return {}
+    if iid <= 0:
+        return {}
+    return {
+        "id": iid,
+        "remark": row.get("remark") or row.get("tag") or row.get("name") or f"Inbound {iid}",
+        "protocol": row.get("protocol") or row.get("proto") or "",
+        "enable": bool(row.get("enable", row.get("enabled", True))),
+    }
+
+def _clean_inbound_ids(value) -> list[int]:
+    ids: list[int] = []
+    items = list(value) if isinstance(value, (list, tuple, set)) else ([] if value is None else [value])
+    for item in items:
+        if isinstance(item, dict):
+            item = item.get("id") or item.get("inbound_id") or item.get("inboundId")
+        try:
+            iid = int(item)
+        except Exception:
+            continue
+        if iid > 0 and iid not in ids:
+            ids.append(iid)
+    return ids
+
+async def refresh_server_inbounds(session, server: Server, *, force_plan_update: bool = True) -> tuple[bool, list[int], list[int], str]:
+    if not server or server.server_type not in {"xui", "pasarguard"}:
+        return True, [], [], ""
+    old_ids = _clean_inbound_ids((server.meta or {}).get("inbound_ids") or [])
+    probe = None
+    try:
+        if server.server_type == "pasarguard":
+            probe = await PasarGuardService().probe_server(server)
+            ok = bool(probe.get('ok'))
+            rows = list(probe.get('groups') or [])
+        else:
+            ok, rows = await XuiService().test_server(server)
+    except Exception as exc:
+        return False, old_ids, old_ids, str(exc)
+    if not ok:
+        if server.server_type == "pasarguard" and probe:
+            missing = ', '.join(str(x) for x in (probe.get('missing') or []))
+            return False, old_ids, old_ids, missing or "PasarGuard reseller permissions/group access are insufficient"
+        return False, old_ids, old_ids, "Login/List groups failed" if server.server_type == "pasarguard" else "Login/List inbounds failed"
+    if server.server_type == "pasarguard":
+        inbound_rows = [
+            {"id": int(r.get("id")), "remark": r.get("name") or f"Group {r.get('id')}", "protocol": "group", "enable": True}
+            for r in (rows or []) if isinstance(r, dict) and str(r.get("id") or "").isdigit()
+        ]
+    else:
+        inbound_rows = [_inbound_summary(r) for r in (rows or []) if isinstance(r, dict)]
+    inbound_rows = [r for r in inbound_rows if r.get("id")]
+    new_ids = _clean_inbound_ids([r.get("id") for r in inbound_rows])
+    active_new_ids = _clean_inbound_ids([
+        r.get("id") for r in inbound_rows if r.get("enable") is not False
+    ])
+    if not active_new_ids:
+        # Template-restricted PasarGuard roles can provision users without a
+        # directly selectable group because the allowed template owns the group
+        # configuration. Other PasarGuard roles must expose at least one usable
+        # group through API, role.allowed_group_ids or manual D Bot fallback.
+        if not (server.server_type == 'pasarguard' and probe and (probe.get('access') or {}).get('require_template')):
+            return False, old_ids, old_ids, "No active inbound/group was returned by panel"
+    meta = dict(server.meta or {})
+    if server.server_type == 'pasarguard' and probe:
+        meta.update(PasarGuardService().probe_meta(probe))
+    old_rows = meta.get("inbounds") or []
+    changed = old_ids != new_ids or old_rows != inbound_rows
+    if changed:
+        meta["inbound_ids"] = new_ids
+        meta["inbounds"] = inbound_rows
+        meta["last_inbound_sync_at"] = datetime.utcnow().isoformat(timespec="seconds")
+    if changed or (server.server_type == 'pasarguard' and probe):
+        server.meta = meta
+    scope = meta.get("scope")
+    # Always refresh public customer plans tied to this server when the current
+    # panel inbounds are known. This fixes plan edits where the server changes
+    # but stale inbound IDs remain attached to the plan.
+    if force_plan_update:
+        plans = (await session.execute(select(Plan).where(Plan.server_id == server.id))).scalars().all()
+        for plan in plans:
+            if server.server_type not in {"xui", "pasarguard"}:
+                continue
+            mode = str((plan.meta or {}).get('inbound_mode') or 'automatic').strip().lower()
+            # Automatic plans follow the live server list. Manual plans must keep
+            # their administrator-selected inbound IDs and must never be
+            # overwritten by a background server refresh.
+            if mode != 'manual':
+                plan.inbound_ids = active_new_ids
+    if scope in {"reseller", "all"}:
+        configs = (await session.execute(select(ResellerBuildConfig).where(ResellerBuildConfig.server_id == server.id))).scalars().all()
+        for cfg in configs:
+            cfg.inbound_ids = new_ids
+    return True, old_ids, new_ids, ""
+
+async def sync_all_servers() -> None:
+    """Refresh active server metadata without serially blocking on slow panels.
+
+    3x-ui v3.8.0 performs node/client fan-out concurrently. Mirror that model on
+    the D Bot side: each server gets its own short-lived database session and a
+    bounded number of panels are refreshed in parallel. One unreachable panel
+    therefore does not delay every other server or hold the main sync session.
+    """
+    async with SessionLocal() as session:
+        server_ids = list((await session.execute(
+            select(Server.id).where(Server.is_active == True)
+        )).scalars().all())
+
+    if not server_ids:
+        return
+
+    semaphore = asyncio.Semaphore(max(int(getattr(settings, 'SERVER_SYNC_CONCURRENCY', 4) or 4), 1))
+
+    async def _sync_one(server_id: int) -> tuple[int, str, bool, str]:
+        async with semaphore:
+            async with SessionLocal() as session:
+                server = await session.get(Server, server_id)
+                if not server or not server.is_active:
+                    return server_id, 'missing', False, ''
+                try:
+                    if server.server_type == 'xui':
+                        ok, old_ids, new_ids, err = await refresh_server_inbounds(session, server)
+                        if ok:
+                            meta = dict(server.meta or {})
+                            meta['sanaei_target_version'] = '3.8.0'
+                            meta['sanaei_api_profile'] = 'panel-api-v3'
+                            server.meta = meta
+                            await session.commit()
+                            if old_ids != new_ids:
+                                logger.info(
+                                    'Server inbound IDs refreshed server_id=%s old=%s new=%s',
+                                    server.id, old_ids, new_ids,
+                                )
+                            return server_id, 'xui', True, ''
+                        await session.rollback()
+                        return server_id, 'xui', False, err
+                    if server.server_type == 'mikrotik':
+                        ok, err = await refresh_mikrotik_server(session, server)
+                        await session.commit()
+                        return server_id, 'mikrotik', ok, err
+                    if server.server_type == 'pasarguard':
+                        ok, old_ids, new_ids, err = await refresh_server_inbounds(session, server)
+                        await session.commit()
+                        return server_id, 'pasarguard', ok, err
+                    return server_id, str(server.server_type or ''), True, ''
+                except Exception as exc:
+                    await session.rollback()
+                    return server_id, str(getattr(server, 'server_type', '') or ''), False, str(exc)
+
+    results = await asyncio.gather(*(_sync_one(server_id) for server_id in server_ids))
+    for server_id, server_type, ok, err in results:
+        if not ok:
+            logger.warning('Server sync failed server_id=%s type=%s: %s', server_id, server_type, err)
+
+
+async def sync_pasarguard_usage() -> None:
+    """Mirror PasarGuard usage/status/expiry into D Bot service rows."""
+    async with SessionLocal() as session:
+        servers = {
+            s.id: s for s in (await session.execute(
+                select(Server).where(Server.is_active == True, Server.server_type == "pasarguard")
+            )).scalars().all()
+        }
+        if not servers:
+            return
+        services = (await session.execute(
+            select(ClientService).where(ClientService.server_id.in_(list(servers.keys())))
+        )).scalars().all()
+        changed = 0
+        now = datetime.utcnow()
+        for svc in services:
+            server = servers.get(svc.server_id)
+            if not server:
+                continue
+            try:
+                remote = await PasarGuardService().get_user(server, svc.xui_email or svc.client_username)
+            except Exception as exc:
+                logger.warning("PasarGuard usage sync failed service_id=%s: %s", svc.id, exc)
+                continue
+            if not remote:
+                mark_service_disabled(svc, now, reason='missing_on_panel')
+                if getattr(svc, 'reseller_id', None):
+                    await drop_inactive_reservation(session, svc)
+                changed += 1
+                continue
+            used = int(remote.get('used_traffic') or remote.get('used_bytes') or 0)
+            total = int(remote.get('data_limit') or remote.get('total_bytes') or svc.total_bytes or 0)
+            await apply_reseller_usage_delta(session, svc, used)
+            svc.total_bytes = total
+            svc.sub_link = remote.get('subscription_url') or svc.sub_link
+            status = str(remote.get('status') or '').lower()
+            if status == 'active':
+                mark_service_active(svc)
+            else:
+                mark_service_disabled(svc, now, reason=status or 'panel_disabled')
+            exp = remote.get('expire')
+            if exp and exp != 0:
+                try:
+                    if isinstance(exp, (int, float)):
+                        svc.expires_at = datetime.utcfromtimestamp(float(exp))
+                    else:
+                        svc.expires_at = datetime.fromisoformat(str(exp).replace('Z', '+00:00')).replace(tzinfo=None)
+                except Exception:
+                    pass
+            changed += 1
+        if changed:
+            await session.commit()

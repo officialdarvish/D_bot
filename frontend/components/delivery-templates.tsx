@@ -1,0 +1,31 @@
+'use client';
+import {useEffect,useState} from 'react';
+import {Check,Copy,Eye,FileText,Plus,QrCode,Save,Trash2} from 'lucide-react';
+import {fetchJson,submitForm} from '@/lib/api';
+type Template={id:string;name:string;text:string};
+type Config={ok:boolean;active:string;templates:Template[];presets:Template[];fields:string[]};
+const endpoint='/admin/api/v2/delivery-templates';
+export function DeliveryTemplates({reloadKey,setAuthRequired,show}:{reloadKey:number;setAuthRequired:(v:boolean)=>void;show:(v:string,good?:boolean)=>void}){
+ const [config,setConfig]=useState<Config|null>(null),[error,setError]=useState(''),[selected,setSelected]=useState('simple'),[preview,setPreview]=useState(''),[busy,setBusy]=useState(false),[dirty,setDirty]=useState(false);
+ function fail(e:unknown){const message=e instanceof Error?e.message:String(e);if(message==='AUTH_REQUIRED')setAuthRequired(true);setError(message==='AUTH_REQUIRED'?'دوباره وارد حساب مدیریت شوید.':message)}
+ useEffect(()=>{let live=true;fetchJson<Config>(endpoint).then(d=>{if(live){setConfig(d);setSelected(d.active);setDirty(false);setError('')}}).catch(e=>{if(live)fail(e)});return()=>{live=false}},[reloadKey]);
+ const all=config?[...config.presets,...config.templates]:[];
+ const current=all.find(t=>t.id===selected);
+ const preset=config?.presets.some(t=>t.id===selected);
+ function change(next:Config){setConfig(next);setDirty(true);setPreview('');setError('')}
+ function edit(field:'name'|'text',value:string){if(!config||!current)return;change({...config,templates:config.templates.map(t=>t.id===selected?{...t,[field]:value}:t)})}
+ function add(copy=false){if(!config||config.templates.length>=30)return;const id=crypto.randomUUID();change({...config,templates:[...config.templates,{id,name:copy?`${current?.name||'قالب'} — کپی`:'قالب جدید',text:copy?current?.text||'':''}]});setSelected(id)}
+ async function save(){if(!config)return;setBusy(true);setError('');try{const d=await submitForm(endpoint,{active:config.active,templates_json:JSON.stringify(config.templates)});setConfig({...config,active:d.active,templates:d.templates});setDirty(false);show(d.message,true)}catch(e){fail(e)}finally{setBusy(false)}}
+ async function showPreview(){if(!current)return;setBusy(true);setError('');try{const d=await submitForm(endpoint+'/preview',{text:current.text});setPreview(d.preview)}catch(e){fail(e)}finally{setBusy(false)}}
+ function remove(){if(!config||preset||!current||!window.confirm('این قالب حذف شود؟'))return;change({...config,active:config.active===selected?'simple':config.active,templates:config.templates.filter(t=>t.id!==selected)});setSelected('simple')}
+ return <section className="panel delivery-templates" dir="rtl" data-no-i18n="true" aria-label="قالب‌های آماده تحویل سرویس">
+  <div className="panel-head"><div><h2><FileText size={20}/> قالب‌های آماده تحویل سرویس</h2><p className="muted">پیام تحویل سرویس برای کاربران و نماینده‌ها؛ همراه بارکد و دکمه شروع مجدد ربات.</p></div><span className="badge purple">{dirty?'تغییرات ذخیره نشده':'قالب تحویل'}</span></div>
+  {error&&<p className="delivery-template-error" role="alert">{error}</p>}
+  {!config?<p className="muted">در حال دریافت قالب‌ها…</p>:<>
+   <div className="delivery-template-controls"><label className="form-field"><span>قالب پیش‌فرض ارسال سرویس</span><select aria-label="قالب پیش‌فرض ارسال سرویس" disabled={busy} value={config.active} onChange={e=>change({...config,active:e.target.value})}>{all.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label><button className="btn primary" disabled={busy||!dirty} onClick={()=>void save()}><Save size={16}/>ذخیره قالب‌ها و انتخاب پیش‌فرض</button></div>
+   <div className="delivery-template-layout"><div className="delivery-template-list"><h3>قالب‌های موجود</h3>{all.map(t=><button type="button" disabled={busy} key={t.id} className={'delivery-template-choice '+(selected===t.id?'selected':'')} onClick={()=>{setSelected(t.id);setPreview('');setError('')}}><FileText size={17}/><span>{t.name}<small>{config.presets.some(p=>p.id===t.id)?'قالب آماده':'قالب اختصاصی'}</small></span>{config.active===t.id&&<Check size={16}/>}</button>)}<button type="button" className="btn" disabled={busy||config.templates.length>=30} onClick={()=>add()}><Plus size={16}/>افزودن قالب متنی</button></div>
+   {current&&<div className="delivery-template-editor"><label className="form-field"><span>نام قالب</span><input aria-label="نام قالب" value={current.name} readOnly={preset} maxLength={80} disabled={busy} onChange={e=>edit('name',e.target.value)}/></label><label className="form-field"><span>متن قالب</span><textarea aria-label="متن قالب" value={current.text} readOnly={preset} maxLength={3500} disabled={busy} rows={12} onChange={e=>edit('text',e.target.value)} placeholder="متن دلخواهتان را با متغیرهای زیر وارد کنید."/></label><p className="muted">{preset?'برای تغییر قالب آماده، از آن یک کپی قابل ویرایش بسازید.':'لینک ساب، در صورت جا افتادن از متن، خودکار به انتهای پیام اضافه می‌شود.'}</p><div className="delivery-template-actions"><button className="btn" disabled={busy} onClick={()=>void showPreview()}><Eye size={16}/>پیش‌نمایش نمونه</button><button className="btn" disabled={busy||config.templates.length>=30} onClick={()=>add(true)}><Copy size={16}/>کپی و ویرایش</button>{!preset&&<><button className="btn success" disabled={busy} onClick={()=>change({...config,active:selected})}><Check size={16}/>انتخاب برای ارسال</button><button className="btn danger" disabled={busy} onClick={remove}><Trash2 size={16}/>حذف قالب</button></>}</div><details className="delivery-template-help"><summary>متغیرهای قابل استفاده و راهنمای متن</summary><div className="delivery-template-fields">{config.fields.map(field=><code key={field} dir="ltr">{'{'+field+'}'}</code>)}</div><p className="muted">نام کاربری: username · نام سرویس: title · حجم با واحد یا نامحدود: traffic · مدت با واحد: duration · لینک ساب: sub_link. تگ‌های ساده HTML مانند b و code قابل استفاده‌اند.</p></details>
+   {preview&&<div className="delivery-template-preview"><h3>پیش‌نمایش با اطلاعات نمونه</h3><div className="delivery-template-qr"><QrCode size={52}/><small>بارکد لینک واقعی هنگام تحویل ساخته می‌شود</small></div><pre>{preview}</pre><div className="delivery-template-restart">🔄 شروع مجدد ربات</div></div>}</div>}
+   </div></>}
+ </section>
+}
