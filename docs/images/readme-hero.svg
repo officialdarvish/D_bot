@@ -1,0 +1,60 @@
+<svg width="1200" height="420" viewBox="0 0 1200 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="420" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F172A"/>
+      <stop offset="0.48" stop-color="#1E1B4B"/>
+      <stop offset="1" stop-color="#0B3B4A"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="178" y1="50" x2="1002" y2="390" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38BDF8" stop-opacity="0.55"/>
+      <stop offset="0.52" stop-color="#A855F7" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#22C55E" stop-opacity="0.45"/>
+    </linearGradient>
+    <filter id="blur" x="-100" y="-100" width="1400" height="620" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="50"/>
+    </filter>
+    <filter id="shadow" x="0" y="0" width="1200" height="420" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000000" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="420" rx="32" fill="url(#bg)"/>
+  <ellipse cx="290" cy="130" rx="240" ry="110" fill="#38BDF8" opacity="0.22" filter="url(#blur)"/>
+  <ellipse cx="900" cy="300" rx="280" ry="130" fill="#A855F7" opacity="0.22" filter="url(#blur)"/>
+  <ellipse cx="640" cy="215" rx="330" ry="120" fill="url(#glow)" opacity="0.35" filter="url(#blur)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="72" y="56" width="1056" height="308" rx="28" fill="#0B1220" fill-opacity="0.72" stroke="#334155"/>
+  </g>
+
+  <g transform="translate(104 92)">
+    <rect width="118" height="118" rx="30" fill="#111827" stroke="#38BDF8" stroke-opacity="0.45"/>
+    <path d="M36 32H64C84 32 96 44 96 60C96 78 82 90 63 90H36V32Z" fill="#38BDF8"/>
+    <path d="M52 48H63C72 48 78 53 78 61C78 70 72 75 62 75H52V48Z" fill="#0B1220"/>
+    <path d="M35 103L87 103" stroke="#A855F7" stroke-width="8" stroke-linecap="round"/>
+  </g>
+
+  <text x="252" y="128" fill="#F8FAFC" font-size="54" font-family="Inter, Segoe UI, Arial" font-weight="800">Darvish Bot</text>
+  <text x="254" y="172" fill="#CBD5E1" font-size="22" font-family="Inter, Segoe UI, Arial">Telegram VPN sales, reseller automation and web admin panel</text>
+  <text x="254" y="206" fill="#94A3B8" font-size="18" font-family="Inter, Segoe UI, Arial">FastAPI · Aiogram · Next.js · PostgreSQL · Redis · Docker</text>
+
+  <g font-family="Inter, Segoe UI, Arial" font-size="15" font-weight="700">
+    <rect x="254" y="245" width="156" height="44" rx="22" fill="#0EA5E9" fill-opacity="0.18" stroke="#38BDF8" stroke-opacity="0.6"/>
+    <text x="280" y="273" fill="#E0F2FE">3x-ui Ready</text>
+    <rect x="424" y="245" width="178" height="44" rx="22" fill="#8B5CF6" fill-opacity="0.18" stroke="#A78BFA" stroke-opacity="0.6"/>
+    <text x="450" y="273" fill="#EDE9FE">Reseller Panel</text>
+    <rect x="616" y="245" width="146" height="44" rx="22" fill="#22C55E" fill-opacity="0.18" stroke="#4ADE80" stroke-opacity="0.6"/>
+    <text x="643" y="273" fill="#DCFCE7">Wallet</text>
+    <rect x="776" y="245" width="166" height="44" rx="22" fill="#F97316" fill-opacity="0.18" stroke="#FB923C" stroke-opacity="0.6"/>
+    <text x="804" y="273" fill="#FFEDD5">Dockerized</text>
+  </g>
+
+  <g opacity="0.92">
+    <rect x="930" y="84" width="150" height="210" rx="24" fill="#020617" stroke="#334155"/>
+    <circle cx="1005" cy="118" r="7" fill="#22C55E"/>
+    <rect x="956" y="145" width="98" height="12" rx="6" fill="#334155"/>
+    <rect x="956" y="174" width="98" height="12" rx="6" fill="#1D4ED8"/>
+    <rect x="956" y="203" width="98" height="12" rx="6" fill="#7C3AED"/>
+    <rect x="956" y="232" width="98" height="12" rx="6" fill="#15803D"/>
+    <rect x="976" y="266" width="58" height="10" rx="5" fill="#475569"/>
+  </g>
+</svg>

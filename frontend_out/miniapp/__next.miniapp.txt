@@ -1,0 +1,5 @@
+1:"$Sreact.fragment"
+2:I[79520,["/_next/static/chunks/09tr5m7dwr067.js","/_next/static/chunks/1p21yw3n3oxnm.js","/_next/static/chunks/1z6x88ihszho0.js"],""]
+3:I[39756,["/_next/static/chunks/09tr5m7dwr067.js","/_next/static/chunks/1p21yw3n3oxnm.js"],"default"]
+4:I[37457,["/_next/static/chunks/09tr5m7dwr067.js","/_next/static/chunks/1p21yw3n3oxnm.js"],"default"]
+0:{"rsc":["$","$1","c",{"children":[[["$","script","script-0",{"src":"/_next/static/chunks/1z6x88ihszho0.js","async":true}]],[["$","$L2",null,{"src":"https://telegram.org/js/telegram-web-app.js","strategy":"beforeInteractive"}],["$","$L3",null,{"parallelRouterKey":"children","template":["$","$L4",null,{}]}]]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"VN285_LQFqKoi-5eyZDQ4"}

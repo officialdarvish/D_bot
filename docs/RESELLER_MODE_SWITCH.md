@@ -1,0 +1,17 @@
+# Reseller financial settings
+
+Resellers includes configuration-reseller accounts, access requests (including approved PAYG access awaiting purchase), and purchased PasarGuard dashboard panels. Each entry has its request status and a financial settings action. Pending access requests can be assigned an enabled Sanaei/X-UI or PasarGuard reseller server and either supported billing mode. The bot approval flow also offers PAYG configuration reselling independently of purchased PasarGuard dashboard access.
+
+Personal PAYG and prepaid-volume prices are in Toman per GiB (1024³ bytes). PAYG closes known usage at the previous rate before a tariff change. Personal volume prices apply to later package purchases in both the bot and Mini App; accounts without an override retain existing package pricing.
+
+The explicit conversion preview shows current settled wallet balance, selected price per GiB, number of existing configurations, converted volume, one-GiB allocations, and remaining sellable inventory. Previously unused prepaid inventory is retained. Conversion requires enough credit for all one-GiB allocations and resolution of pending recharge receipts. Stale balances/counts require a new preview.
+
+After confirmation, a durable operation freezes each existing configuration and sets its absolute traffic cap to one GiB. UUIDs, links, ownership, existing expiry, actual traffic counters and lifetime usage are retained. Configurations already above one GiB remain disabled and exhausted; usage history is never fabricated or erased. One GiB per configuration is deducted from converted inventory. A failed remote write leaves the operation pending, with its wallet unswapped, and can be resumed from financial settings without repeating completed financial changes.
+
+Manual pauses survive billing reconciliation, customer operations and restarts. The administrator loads the reseller's configurations in financial settings and renews them individually with a new volume and duration. A renewal grants the requested *additional usable volume* above actual measured usage, without resetting counters or changing identity. Prepaid allocation differences update inventory once, with an idempotency key.
+
+Configuration reselling uses the independent reseller wallet. Purchased PasarGuard dashboards retain their existing User wallet. All purchased dashboards sharing that wallet form one conversion family, identified in the preview; an unrelated configuration-reseller wallet is untouched. In volume mode, dedicated panel recharge receipts buy volume at the configured volume price. Panel observers reconcile direct dashboard edits and enforce allocations and calculated account-count caps. Synchronization is periodic (normally once per minute), not instantaneous upstream admission across several dashboards. Owner RBAC and verified sub-admin ownership remain required; provider failures are visible as pending operations or meter errors.
+
+Switching back to PAYG preserves unused prepaid inventory as dormant GB and establishes fresh usage baselines. It does not convert GB into cash or automatically activate configurations awaiting an administrator's manual renewal.
+
+No existing table columns are changed: profiles use Settings and durable operations use MiniAppOperation. Back up the deployment database and keep the previous code archive before installing. This release was tested locally with provider doubles and browser API fixtures; it has not been applied to a live panel.

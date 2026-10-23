@@ -1,0 +1,80 @@
+from aiogram.fsm.state import State, StatesGroup
+
+class BuyFlow(StatesGroup):
+    server_id = State()
+    category_id = State()
+    plan_id = State()
+    username = State()
+    password = State()
+    payment_method = State()
+    receipt = State()
+
+class TicketFlow(StatesGroup):
+    subject = State()
+    message = State()
+
+class QueryClient(StatesGroup):
+    server_id = State()
+    username = State()
+    password = State()
+
+class TicketReply(StatesGroup):
+    message = State()
+
+# Kept for compatibility with older Redis FSM state names during upgrades.
+# New ticket replies use TicketReply for both user and admin flows.
+class AdminTicketReply(StatesGroup):
+    ticket_id = State()
+    message = State()
+
+class WalletTopupFlow(StatesGroup):
+    wallet_type = State()
+    amount = State()
+    receipt = State()
+
+
+
+class ResellerCreateUser(StatesGroup):
+    username = State()
+    volume = State()
+    duration = State()
+    hwid_limit = State()
+
+class ResellerTopupFlow(StatesGroup):
+    package_id = State()
+    receipt = State()
+
+class DiscountInput(StatesGroup):
+    code = State()
+
+class RenewDiscountInput(StatesGroup):
+    code = State()
+
+class ResellerDiscountInput(StatesGroup):
+    code = State()
+
+
+class ResellerRenewUser(StatesGroup):
+    service_id = State()
+    volume = State()
+    duration = State()
+
+class ResellerAddVolume(StatesGroup):
+    service_id = State()
+    volume = State()
+
+class ResellerAddDays(StatesGroup):
+    service_id = State()
+    days = State()
+
+class PrivateMessageReply(StatesGroup):
+    message = State()
+
+
+class PasarGuardPanelPurchase(StatesGroup):
+    username = State()
+    password = State()
+    receipt = State()
+
+class PasarGuardPanelPasswordChange(StatesGroup):
+    new_password = State()

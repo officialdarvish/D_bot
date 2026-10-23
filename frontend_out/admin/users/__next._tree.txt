@@ -1,0 +1,4 @@
+:HL["/_next/static/chunks/0epat5dvga8lv.css","style"]
+:HL["/_next/static/chunks/07264hcwd240l.css","style"]
+:HL["https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css","style"]
+0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"admin","param":null,"prefetchHints":0,"slots":{"children":{"name":"users","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}},"staleTime":300,"buildId":"VN285_LQFqKoi-5eyZDQ4"}

@@ -1,0 +1,19 @@
+# Purchased-panel configuration creation and wallet cards
+
+The Panels page now creates PasarGuard configurations directly within the Mini App. The user selects a name, quota, duration, device limit and one of the groups visible to their purchased sub-admin. The backend checks Telegram identity, approved order ownership, the live sub-admin identity, server availability, mode-transition state, credit and user-count limits.
+
+Creation authenticates with the encrypted credentials of the purchased sub-admin, never the configured owner credential. Owner authentication metadata and cached group permissions are stripped. PasarGuard UserCreate accepts active/on_hold and rejects disabled. New configurations are created on_hold with on_hold_expire_duration and no absolute expire, then paused through UserModify with a finite expiry. Confirmed ownership and prepaid reservation (where applicable) precede activation. PAYG creation preserves actual-consumption billing; volume creation reserves its allocation once. Repeating the same operation key returns the previous result. An uncertain upstream failure is recorded with a safe error code and stage. Reconciliation looks up the fixed username and verifies ownership plus the operation marker before adopting an already-created configuration. A retry creates again only after a confirmed absence. Legacy review rows with no upstream user are retired so that the old invalid-create-status bug cannot permanently block new requests. Only a successfully completed configuration triggers subscription delivery to the purchaser's bot chat.
+
+Receipt upload now reuses the first uploaded photo: its caption is edited to include complete purchaser/order details and approval buttons. Other reviewers receive one copy with that caption and buttons. Reviewer/admin/owner recipient IDs are deduplicated. Repeating an already-uploaded receipt does not resend it. An explicit resend action remains supported.
+
+Wallet cards have Mastercard-style graphics, a chip, cardholder name and actual panel reference; they do not fabricate a bank account number. One of five palettes (red, black, green, purple, blue) is randomly assigned once per user and stored in Settings. Subsequent refreshes and purchased panels retain that user's palette.
+
+Vazirmatn regular and bold WOFF2 fonts are bundled locally, with their SIL Open Font License. The API serves `/fonts` directly. Headings use the page/section/subsection hierarchy H1/H2/H3; H4-H6 have consistent styles for future deeper sections rather than being used as substitutes for body text.
+
+Validation includes owned sub-admin authentication, group/credit checks, idempotent creation and volume reservation, timeout handling, rejection of an unexpected remote owner, single receipt photo delivery, persistent theme assignment, local-font serving and responsive browser checks of all five palettes and the complete creation form. Live PasarGuard credentials were not used during these checks.
+
+## Multiple groups and confirmation controls
+
+The creation form supports searchable multi-selection, select all and clear all, with selection preserved while filtering. All selected IDs are validated against the live sub-admin group list and sent in one create request. The panel form and Mini App administration controls share the same styled native checkbox component, including checked, focus, keyboard and disabled states. Pending requests restore their original fields and offer safe same-key continuation; failed, confirmed-absent requests can be edited and submitted afresh.
+
+The upstream contract was checked against https://github.com/PasarGuard/panel/blob/main/app/models/user.py and app/models/validators.py. Validation and permission failures now produce specific safe messages; full diagnostics retain the operation ID and phase and are forwarded through the existing backup-channel error reporter.
