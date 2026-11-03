@@ -1,0 +1,15 @@
+'use client';
+import {useCallback,useEffect,useRef,useState} from 'react';
+import {ArrowRight,Gift,RefreshCw} from 'lucide-react';
+type API=<T,>(path:string,body?:unknown)=>Promise<T>;
+type Operation={id:number;status:string;result:{message?:string;services?:any[]}};
+type Info={used:boolean;volume_gb:number;duration_days:string;server_count:number;operation:Operation|null};
+export function MiniAppTrial({api,onBack,onService,refreshKey=0}:{api:API;onBack:()=>void;onService:(s:any)=>void;refreshKey?:number}){
+ const [info,setInfo]=useState<Info|null>(null),[op,setOp]=useState<Operation|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ const key=useRef('');const running=op?.status==='queued'||op?.status==='processing';
+ const load=useCallback(async()=>{try{setError('');const result=await api<Info>('/trial');setInfo(result);setOp(result.operation);}catch(e){setError((e as Error).message)}},[api,refreshKey]);
+ useEffect(()=>{void load()},[load]);
+ useEffect(()=>{if(!running||!op)return;let live=true,inFlight=false;const timer=setInterval(async()=>{if(inFlight)return;inFlight=true;try{const result=await api<Operation>('/operations/'+op.id);if(live)setOp(result)}catch(e){if(live)setError((e as Error).message)}finally{inFlight=false}},2000);return()=>{live=false;clearInterval(timer)}},[api,op?.id,running]);
+ async function request(){if(busy||running)return;setBusy(true);setError('');if(!key.current)key.current=crypto.randomUUID();try{const result=await api<Operation>('/trial',{key:key.current});setOp(result);if(result.status==='failed')key.current='';}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
+ return <section className="ma-card ma-trial"><button className="ma-text" onClick={onBack}><ArrowRight size={18}/>بازگشت</button><h1><Gift size={24}/> دریافت اکانت تست</h1><p className="ma-muted">بدون پرداخت، کیفیت اتصال را بررسی کنید. سهمیه تست بین ربات و مینی‌اپ مشترک است.</p>{info&&<p>{info.volume_gb.toLocaleString('fa-IR')} گیگ · {info.duration_days} روز · {info.server_count.toLocaleString('fa-IR')} سرور</p>}{error&&<p role="alert" className="ma-error">{error}<button className="ma-text" onClick={()=>void load()}>بررسی دوباره وضعیت</button></p>}{running?<p role="status"><RefreshCw className="ma-spin" size={18}/>در حال ساخت اکانت تست… می‌توانید بعداً برای مشاهده نتیجه برگردید.</p>:<>{op?.result.message&&<p role="status">{op.result.message}</p>}{op?.result.services?.map(service=><button key={service.id} className="ma-secondary" onClick={()=>onService({...service,checkout_delivery:true})}><Gift size={18}/>{service.server} · {service.username} · دریافت کانفیگ</button>)}{info?.used&&op?.status!=='done'&&<p>شما قبلاً اکانت تست دریافت کرده‌اید. کانفیگ را در بخش اشتراک‌ها یا ربات مشاهده کنید.</p>}{info&&!info.used&&op?.status!=='done'&&<button className="ma-primary" disabled={busy||!info.server_count} onClick={()=>{if(op?.status==='failed')key.current='';void request()}}><Gift size={19}/>{busy?'در حال ثبت درخواست…':'دریافت اکانت تست رایگان'}</button>}{!info&&!error&&<p>در حال دریافت تنظیمات…</p>}</>}</section>
+}
