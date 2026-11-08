@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import logging
 import re
 import secrets
 import time
@@ -18,7 +19,7 @@ from functools import wraps
 from html import escape
 
 from aiogram import BaseMiddleware
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramServerError, TelegramRetryAfter
 from aiogram.types import CallbackQuery, Message, Chat, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.methods import SendMessage, EditMessageText, EditMessageCaption, EditMessageReplyMarkup, EditMessageMedia
 from aiogram.types import InputMediaPhoto, InputMediaDocument, InputMediaVideo, InputMediaAnimation, InputMediaAudio
@@ -30,6 +31,8 @@ MAX_HISTORY = 20
 _context = ContextVar('dbot_ui_context', default=None)
 _role = ContextVar('dbot_ui_role', default=None)
 _bypass = ContextVar('dbot_ui_internal_transport', default=False)
+logger = logging.getLogger(__name__)
+CALLBACK_ACK_TIMEOUT = 3
 _redis = None
 _memory = {}
 _locks = {}
@@ -307,9 +310,24 @@ async def _copied_input(bot,method):
     return cls(**common,**{kind:media['file_id']})
 
 
+async def _send_callback_answer(method, send):
+    """Acknowledgements are best-effort; never replay the business handler."""
+    try:
+        return await asyncio.wait_for(send(method), timeout=CALLBACK_ACK_TIMEOUT)
+    except (TelegramNetworkError, TelegramServerError, TelegramRetryAfter, TimeoutError) as exc:
+        logger.warning('Telegram callback acknowledgement unavailable (%s); continuing without replaying the action.', type(exc).__name__)
+        return False
+    except TelegramBadRequest as exc:
+        if 'query is too old' in str(exc).lower() or 'query id is invalid' in str(exc).lower():
+            return True
+        raise
+
+
 async def dispatch_ui_method(bot, method, send):
     """One interception point covers both helpers and direct Message.answer calls."""
-    if _bypass.get():return await send(method)
+    if _bypass.get():
+        if getattr(method,'__api_method__','')=='answerCallbackQuery':return await _send_callback_answer(method,send)
+        return await send(method)
     name=getattr(method,'__api_method__','')
     method=_empty_placeholder(method)
     copied=await _copied_input(bot,method)
@@ -328,10 +346,8 @@ async def dispatch_ui_method(bot, method, send):
             if notice and not notice.startswith(('⏳','در حال','شروع مجدد')):live.answer_notice=notice
             return True
         live.answered=True
-        try:return await send(method)
-        except TelegramBadRequest as exc:
-            if 'query is too old' in str(exc).lower() or 'query id is invalid' in str(exc).lower():return True
-            raise
+        return await _send_callback_answer(method,send)
+    if name=='answerCallbackQuery':return await _send_callback_answer(method,send)
     chat=getattr(method,'chat_id',None)
     if not isinstance(chat,int) or chat <= 0: return await send(method)
     ctx=current_ui()

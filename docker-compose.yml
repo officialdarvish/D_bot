@@ -27,7 +27,12 @@ services:
       retries: 10
 
   api:
-    build: .
+    build: &dbot_build
+      context: .
+      args:
+        XRAY_SOURCE: ${XRAY_SOURCE:-image}
+        XRAY_IMAGE: ${XRAY_IMAGE:-ghcr.io/xtls/xray-core:26.9.9@sha256:45338c4df61fda061c47ce62aafda6c5d7d59cbdefc33f2e335d8b0c748b748a}
+        XRAY_VERSION: ${XRAY_VERSION:-26.9.9}
     logging:
       driver: json-file
       options:
@@ -57,7 +62,7 @@ services:
       retries: 5
 
   bot:
-    build: .
+    build: *dbot_build
     logging:
       driver: json-file
       options:

@@ -1677,7 +1677,7 @@ async def delete_service_ask(callback: CallbackQuery):
     await edit_or_answer(callback, '⚠️ این کانفیگ هم از ربات و هم از پنل حذف می‌شود. مطمئن هستید؟', reply_markup=kb); await callback.answer()
 
 @router.callback_query(F.data.startswith('svc:delete_confirm:'))
-async def delete_service(callback: CallbackQuery):
+async def delete_service(callback: CallbackQuery, *, notification_bot=None):
     if callback.message:
         cancel_auto_refresh(callback.message.chat.id, callback.message.message_id)
     sid=int(callback.data.split(':')[-1])
@@ -1785,7 +1785,7 @@ async def delete_service(callback: CallbackQuery):
             await delete_local_service_records(session, svc)
         await session.commit()
     await notify_service_deletion_task_admin(
-        callback.message.bot,
+        notification_bot if notification_bot is not None else callback.message.bot,
         task_id=deletion_task_id,
         limit=1,
     )

@@ -40,3 +40,6 @@ uploads/
 Thumbs.db
 .vscode/
 .idea/
+
+# Explicit administrator-supplied official Xray archives for offline builds.
+!build/xray/**/*.zip

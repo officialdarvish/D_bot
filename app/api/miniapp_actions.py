@@ -357,7 +357,7 @@ async def process_operations():
                 elif kind=='public_delete':
                     from app.bot.handlers.public import my_services as public_flow
                     _,callback,quiet=native_event(real,user,'',f'svc:delete_confirm:{sid}')
-                    try:await public_flow.delete_service(callback)
+                    try:await public_flow.delete_service(callback,notification_bot=real)
                     except Exception:log.exception('Native public delete ended with error operation=%s',oid)
                     async with SessionLocal() as s:
                         from app.services.service_grace import visible_in_my_services

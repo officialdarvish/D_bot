@@ -1077,7 +1077,7 @@ update_app(){
     install_manager_self
   fi
 
-  $COMPOSE up -d --build
+  $COMPOSE up -d --build || { echo -e "${C_RED}Update build failed. Check the error above; update was not completed.${C_NC}"; return 1; }
 
   echo "Waiting for the API to become healthy..."
   if ! wait_for_api_health; then
@@ -1150,7 +1150,7 @@ control_menu(){
       3|restart) header; cd_app && $COMPOSE restart; echo -e "${C_GREEN}Done.${C_NC}"; pause ;;
       4|start) header; cd_app && $COMPOSE up -d; echo -e "${C_GREEN}Done.${C_NC}"; pause ;;
       5|stop) header; if confirm_action "Stop all D Bot services?"; then cd_app && $COMPOSE down; echo -e "${C_GREEN}Services stopped.${C_NC}"; fi; pause ;;
-      6|update) header; if confirm_action "Update, rebuild and restart D Bot?"; then update_app; echo -e "${C_GREEN}Update completed.${C_NC}"; fi; pause ;;
+      6|update) header; if confirm_action "Update, rebuild and restart D Bot?"; then if update_app; then echo -e "${C_GREEN}Update completed.${C_NC}"; else echo -e "${C_RED}Update failed; review the error above.${C_NC}"; fi; fi; pause ;;
       7|backup) header; backup_app; pause ;;
       8|info) show_setup_info; pause ;;
       9|edit) edit_setup_menu ;;

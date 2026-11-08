@@ -5,7 +5,8 @@ from datetime import datetime
 from typing import Any
 
 from app.core.config import settings
-from app.database.models import ClientService, Plan, Server, User
+from app.database.models import ClientService, Plan, Server, User, TestAccountUsage
+from sqlalchemy import select
 from app.utils.jalali import fa_date
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,11 @@ async def build_service_deletion_snapshot(
     total_bytes = int(getattr(svc, 'total_bytes', 0) or 0)
     used_bytes = int(getattr(svc, 'used_bytes', 0) or 0)
     remaining_bytes = max(total_bytes - used_bytes, 0)
+    is_test = False
+    if not getattr(svc, 'reseller_id', None):
+        is_test = bool(await session.scalar(select(TestAccountUsage.id).where(TestAccountUsage.service_id == svc.id).limit(1)))
+        if not is_test and not getattr(svc, 'plan_id', None):
+            is_test = any(str(value or '').lower().startswith('test_') for value in (svc.client_username, svc.xui_email))
 
     actor_id = getattr(actor, 'id', None) if actor is not None else None
     actor_username = getattr(actor, 'username', None) if actor is not None else None
@@ -130,6 +136,7 @@ async def build_service_deletion_snapshot(
         'disabled_at': _iso(getattr(svc, 'disabled_at', None)),
         'deleted_at': _iso(deleted_at or datetime.utcnow()),
         'is_reseller_service': bool(getattr(svc, 'reseller_id', None)),
+        'is_test_service': is_test,
     }
 
 
@@ -163,9 +170,10 @@ def admin_deletion_message(
     used = int(snapshot.get('used_bytes') or 0)
     remaining = int(snapshot.get('remaining_bytes') or max(total - used, 0))
     expires_at = _as_datetime(snapshot.get('expires_at'))
+    is_test = bool(snapshot.get('is_test_service'))
 
     return (
-        '🗑 گزارش حذف کانفیگ\n'
+        ('🧪 گزارش حذف اکانت تست\n' if is_test else '🗑 گزارش حذف کانفیگ\n') +
         '━━━━━━━━━━━━━━\n'
         f'📌 دلیل: {_simple_delete_reason(snapshot)}\n\n'
         '👤 مالک سرویس\n'
@@ -176,6 +184,7 @@ def admin_deletion_message(
         f'• حجم کل: {_compact_gb(total)} گیگ\n'
         f'• حجم مانده: {_compact_gb(remaining)} گیگ\n'
         f'• تاریخ انقضا: {fa_date(expires_at) if expires_at else "-"}'
+        + (f'\n• نام مالک: {snapshot.get("owner_full_name") or "-"}\n• سرور: {snapshot.get("server_name") or "-"}\n• وضعیت حذف: {_panel_status_label(panel_status)}' if is_test else '')
     )
 
 

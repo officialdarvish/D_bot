@@ -83,7 +83,7 @@ def _task_identifiers(
         'sub_link': svc.sub_link,
         'inbound_ids': list(svc.inbound_ids or []),
         'is_reseller_service': bool(getattr(svc, 'reseller_id', None)),
-        'is_test_service': bool(is_test),
+        'is_test_service': bool(is_test or (deletion_snapshot or {}).get('is_test_service')),
         'deletion_snapshot': dict(deletion_snapshot or {}),
     }
 
@@ -253,6 +253,7 @@ async def _task_admin_snapshot(session, task: ServiceDeletionTask) -> dict:
     identifiers = dict(task.identifiers or {})
     snapshot = dict(identifiers.get('deletion_snapshot') or {})
     if snapshot:
+        snapshot['is_test_service'] = bool(snapshot.get('is_test_service') or identifiers.get('is_test_service'))
         return snapshot
 
     # Backward-compatible fallback for deletion tasks created before detailed
