@@ -275,7 +275,6 @@ export function CustomSection({
 
   return (
     <div className="custom-center" data-no-i18n="true">
-      <CustomHomeSettings reloadKey={reloadKey} show={show} setAuthRequired={setAuthRequired}/>
       <section className="custom-hero">
         <div className="custom-hero-copy">
           <div className="custom-hero-icon"><SlidersHorizontal size={22} /></div>
@@ -289,6 +288,8 @@ export function CustomSection({
           <RotateCcw size={16} /> {t('Reset All')}
         </button>
       </section>
+
+      <CustomHomeSettings reloadKey={reloadKey} show={show} setAuthRequired={setAuthRequired}/>
 
       <DeliveryTemplates reloadKey={reloadKey} setAuthRequired={setAuthRequired} show={show} />
 

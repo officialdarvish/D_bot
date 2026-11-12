@@ -154,3 +154,28 @@ test('Editing custom plan preserves enabled mode and saved ranges',async()=>{
  await render(React.createElement(FormModal,{modal,onClose:()=>{},onSubmit:async()=>{},show:()=>{},onAuthRequired:()=>{}}));
  assert.equal(document.querySelector('.field-custom_enabled select').value,'yes');assert.equal(document.querySelector('.field-custom_min_gb input').value,'4');assert.equal(document.querySelector('.field-volume_gb'),null);assert.ok(document.querySelector('.field-hwid_limit'));
 });
+
+for(const language of ['en','fa'])test(`Custom home editor inserts variables, previews safely and saves (${language})`,async()=>{
+ const {BotHomeSettings}=require('../components/bot-home-settings.tsx');let saved=null;
+ global.fetch=async(url,opts)=>{assert.ok(String(url).endsWith('/admin/settings/home-message'));saved=opts.body.get('welcome_text');return response({ok:true})};
+ await render(React.createElement(BotHomeSettings,{map:{welcome_text:'Hello ',bot_name:'D BOT',support_username:'@help'},section:'home',show:()=>{},setAuthRequired:()=>{}}),language);
+ const editor=document.querySelector('.home-message-editor textarea');assert.ok(editor.id);assert.ok(document.querySelector(`label[for="${editor.id}"]`));assert.equal(editor.maxLength,4096);
+ const save=button(language==='fa'?'ذخیره پیام صفحه اصلی':'Save home message');assert.equal(save.disabled,true);
+ editor.setSelectionRange(6,6);await click('{bot_name}'+(language==='fa'?'نام ربات':'Bot name'));
+ assert.equal(editor.value,'Hello {bot_name}');assert.ok(document.querySelector('.home-message-bubble').textContent.includes('Hello D BOT'));
+ assert.equal(save.disabled,false);
+ await act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set.call(editor,'<b>Hi</b> {support_username}');editor.dispatchEvent(new window.Event('input',{bubbles:true}))});
+ assert.equal(document.querySelector('.home-message-bubble b'),null);assert.ok(document.querySelector('.home-message-bubble').textContent.includes('@help'));
+ await act(async()=>document.querySelector('.home-message-card form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));
+ assert.equal(saved,'<b>Hi</b> {support_username}');assert.equal(save.disabled,true);assert.ok(document.querySelector('.home-message-heading [role=status]').textContent.includes(language==='fa'?'ذخیره‌شده':'Saved'));
+ assert.equal(document.body.textContent.includes('Reseller panel sales button'),false);
+});
+test('Custom home editor retains unsaved draft when saving fails',async()=>{
+ const {BotHomeSettings}=require('../components/bot-home-settings.tsx');let notice='';
+ global.fetch=async()=>response({ok:false,message:'Cannot save'},500);
+ await render(React.createElement(BotHomeSettings,{map:{welcome_text:'Hello'},section:'home',show:m=>notice=m,setAuthRequired:()=>{}}));
+ const editor=document.querySelector('textarea');
+ await act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set.call(editor,'New home');editor.dispatchEvent(new window.Event('input',{bubbles:true}))});
+ await act(async()=>document.querySelector('form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));
+ assert.equal(editor.value,'New home');assert.ok(notice);assert.equal(button('Save home message').disabled,false);assert.equal(document.querySelector('.home-message-heading [role=status]').textContent,'Unsaved changes');
+});

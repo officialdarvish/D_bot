@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 7,
+  "build": 8,
   "channel": "main",
   "notes": {
-    "fa": "سوابق کاربران، فرم شرطی پلن، انتقال پیام خانه به Custom، شمارنده نصب، حفظ رسیدها و پاک‌سازی دوره‌ای دیسک",
-    "en": "User history, conditional plan forms, home message in Custom, installation counter, receipt preservation and periodic disk maintenance"
+    "fa": "اصلاح اندازه آیکون‌های System Status و بازطراحی پیام صفحه اصلی در Custom با پیش‌نمایش و درج متغیرها",
+    "en": "Fit System Status icons and redesign the Custom home-message editor with preview and variable insertion"
   }
 }
