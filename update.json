@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 8,
+  "build": 9,
   "channel": "main",
   "notes": {
-    "fa": "اصلاح اندازه آیکون‌های System Status و بازطراحی پیام صفحه اصلی در Custom با پیش‌نمایش و درج متغیرها",
-    "en": "Fit System Status icons and redesign the Custom home-message editor with preview and variable insertion"
+    "fa": "بازطراحی بخش Darvish Bridge مطابق وب‌پنل با فرم اتصال واکنش‌گرا، کلیدها و وب‌هوک مرتب و وضعیت ذخیره",
+    "en": "Redesign Darvish Bridge with responsive connection fields, credential states, webhook guidance and save feedback"
   }
 }
