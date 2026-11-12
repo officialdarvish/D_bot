@@ -100,3 +100,10 @@ Runtime improvements remove the duplicate Python history copy when Redis is heal
 The host worker retains old image tags before updating and rolls back without rebuilding. Recovery Compose data lives outside the web-writable queue. Failed jobs expose stage, exit code and recovery state; bounded command tails are saved locally even without journald. This fixes concrete source defects but does not establish the exact cause of the user's historical failure or the amount of RAM used by their bot. No live VPS, Docker/systemd/PostgreSQL rollback or actual 350-user load test was performed. See MEMORY_UPDATE_RECOVERY_FA.md and the new read-only `sudo dbot memory` command. Build metadata advances to 5; the v1.4.0 tag/assets remain unchanged.
 
 The final updater also marks source switching before checkout so a partial checkout triggers recovery. New-version health must match the target version/build; legacy health remains supported during rollback. Focused tests cover both contracts.
+
+
+## 1.4.0 build 6 — corrected dashboard layout
+
+The first four summary cards are restored to their pre-build-4 markup and responsive styles. Below them, System Status renders four resource tiles horizontally alongside Version on desktop. Revenue Overview occupies the next full-width section; Recent Orders follows it. Narrow screens preserve the section order, stack Status/Version and use two resource columns when needed. The obsolete horizontal-summary-strip CSS and former status-column wrapper were removed.
+
+Next.js production build with TypeScript and whitespace checks passed. This reversible layout-only correction does not alter backend behavior; backend tests were not rerun. No graphical browser/VPS visual validation was performed. update.json advances to build 6 and existing v1.4.0 release assets/tag remain unchanged.
