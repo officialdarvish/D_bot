@@ -3,7 +3,7 @@ on:
   fork:
   workflow_dispatch:
   schedule:
-    - cron: '21 * * * *'
+    - cron: '*/15 * * * *'
 permissions:
   contents: read
 jobs:

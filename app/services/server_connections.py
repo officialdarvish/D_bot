@@ -23,7 +23,7 @@ async def add_shared_connection(session,candidate):
         await session.execute(text('SELECT pg_advisory_xact_lock(:key)'),{'key':lock})
     rows=(await session.execute(select(Server).where(Server.server_type==candidate.server_type).order_by(Server.id))).scalars().all()
     for row in rows:
-        if identity(row)!=key:continue
+        if (row.meta or {}).get('connection_alias_of') or identity(row)!=key:continue
         if not hmac.compare_digest(decrypt_text(row.password_encrypted).encode(),decrypt_text(candidate.password_encrypted).encode()):
             raise ValueError('This panel connection already exists with different credentials; edit the existing server / این اتصال ثبت شده است؛ اطلاعات همان سرور را ویرایش کنید.')
         before=dict(row.meta or {});after=dict(candidate.meta or {})
@@ -32,6 +32,7 @@ async def add_shared_connection(session,candidate):
         if old_scope=='public' and new_scope in {'reseller','all'}:
             for field in ('reseller_billing_modes','reseller_payg_rate_irt'):
                 if field in after:before[field]=after[field]
+        if before.pop('deleted_from_panel',False):row.is_active=True
         row.meta=before
         return row
     session.add(candidate)

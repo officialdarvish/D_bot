@@ -138,3 +138,8 @@ Python / Aiogram / FastAPI و Next.js، با **PostgreSQL 16** برای داده
 <p align="center"><a href="https://nowpayments.io/donation/officialdarvish"><img src="https://img.shields.io/badge/Support_D_BOT-NOWPayments-7c3aed?style=for-the-badge" alt="Support D BOT on NOWPayments" /></a></p>
 
 Built with ❤️ by [Darvish](https://github.com/officialdarvish)
+
+
+## به‌روزرسانی پیش‌نویس راه‌اندازی و اتصال‌ها
+
+در این شاخه آپدیت وب با فایل نسخه، ویزارد قابل ادامه فارسی/انگلیسی، اتصال مشترک فروش عمومی/نمایندگی، مدیریت NX و پرداخت Darvish Bridge اضافه شده‌اند. وضعیت هنوز پیش‌نویس است و انتشار نهایی به تست زنده VPS، PostgreSQL و سرویس‌ها وابسته است. [وضعیت](docs/WEB_SETUP_UPDATE_STATUS_FA.md)، [NX](docs/NX_PANEL_FA.md)، [تنظیم بریج](docs/DARVISH_BRIDGE_CONNECTION_FA.md)، [سیاست مهاجرت](docs/SERVER_CONNECTION_MIGRATION_FA.md) و [نتیجه تست‌ها](docs/VALIDATION_WEB_SETUP.md) را ببینید.

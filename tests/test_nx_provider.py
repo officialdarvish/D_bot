@@ -121,3 +121,56 @@ def test_real_checkout_queue_provisions_nx_once(native,monkeypatch):
             svc=await session.get(ClientService,(await session.get(Order,oid)).service_id)
             assert svc.server_id==1 and svc.inbound_ids==[7] and svc.sub_link
     asyncio.run(verify())
+
+
+@pytest.mark.parametrize('override',[{'licensed':False},{'deviceLimit':1},{'expiry':1}])
+def test_nx_create_does_not_deliver_silently_restricted_or_unlicensed_user(monkeypatch,override):
+    svc=NxService()
+    async def request(s,method,path,**kwargs):
+        if method=='GET':return {'items':[],'total':0}
+        return user(**{**kwargs['json'],**override})
+    monkeypatch.setattr(svc,'_request',request)
+    plan=SimpleNamespace(volume_gb=1,duration_days=30,inbound_ids=[7],hwid_limit=2,is_unlimited=False)
+    with pytest.raises(NxCreateUnconfirmed):asyncio.run(svc.create_user_on_plan(server(),plan,'buyer'))
+
+
+def test_telegram_nx_registration_reuses_connection_and_publishes_catalog_type(client,monkeypatch):
+    from app.bot.handlers.admin import servers as admin
+    from app.database.models import Setting
+    from sqlalchemy import select,func
+    _,sessions=client
+    monkeypatch.setattr(admin,'SessionLocal',sessions)
+    monkeypatch.setattr(admin,'admin',lambda uid:True)
+    monkeypatch.setattr(admin,'edit_or_answer',AsyncMock())
+    monkeypatch.setattr(NxService,'probe_server',AsyncMock(return_value={'ok':True,'groups':[{'id':7,'name':'NX template'}],'templates':[],'access':{},'api_base':'/api/v1'}))
+    data={'server_type':'nx','name':'NX shared','panel_url':'https://nx.test/private','panel_path':'/','username':'api-token','password':'test-token','inbound_ids':[7]}
+    state=SimpleNamespace(get_data=AsyncMock(return_value=data),clear=AsyncMock())
+    callback=SimpleNamespace(from_user=SimpleNamespace(id=99),answer=AsyncMock())
+    async def scenario():
+        await admin.server_confirm(callback,state);await admin.server_confirm(callback,state)
+        async with sessions() as session:
+            rows=(await session.execute(select(Server).where(Server.server_type=='nx'))).scalars().all()
+            assert len(rows)==1 and rows[0].meta['inbound_ids']==[7]
+            assert rows[0].panel_url=='https://nx.test/private/'
+            assert (await session.get(Setting,'service_type_provider:nx')).value=='nx'
+    asyncio.run(scenario())
+
+
+def test_nx_reseller_profile_callback_only_delivers_to_its_owner(client,monkeypatch):
+    from app.bot.handlers.public import my_services as handlers
+    from app.database.models import ResellerAccount,ClientService
+    _,sessions=client
+    monkeypatch.setattr(handlers,'SessionLocal',sessions)
+    monkeypatch.setattr(NxService,'app_configs',AsyncMock(return_value=[{'name':'WG','type':'wireguard','file_name':'user.conf','content':'[Interface]\nPrivateKey=test'}]))
+    bot=SimpleNamespace(send_document=AsyncMock())
+    def callback(uid):return SimpleNamespace(data='svc:profile:2',from_user=SimpleNamespace(id=uid),answer=AsyncMock(),message=SimpleNamespace(answer=AsyncMock(),bot=bot))
+    async def scenario():
+        async with sessions() as session:
+            row=await session.get(Server,1);row.server_type='nx'
+            session.add(ResellerAccount(id=1,user_id=2,server_id=1))
+            svc=await session.get(ClientService,2);svc.reseller_id=1;await session.commit()
+        await handlers.send_openvpn_profile(callback(11))
+        bot.send_document.assert_not_awaited()
+        await handlers.send_openvpn_profile(callback(22))
+        assert bot.send_document.await_count==1 and bot.send_document.await_args.args[0]==22
+    asyncio.run(scenario())

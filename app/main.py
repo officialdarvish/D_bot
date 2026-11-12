@@ -320,6 +320,8 @@ async def main():
     from app.services.error_backup import install_error_backup
     install_error_backup()
     await create_tables()
+    from app.services.server_migration import upgrade_connections
+    await upgrade_connections()
     # Database must stay raw: nothing is inserted by default.
     redis = Redis.from_url(
         settings.REDIS_URL,

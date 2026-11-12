@@ -7,6 +7,9 @@ export type UiLanguage = 'en' | 'fa';
 const STORAGE_KEY = 'dbot_ui_language';
 
 const EN_FA: Record<string, string> = {
+  "NX Panel": "پنل NX",
+  "NX subscription base (optional; API subUrl takes priority)": "پایه اشتراک NX (اختیاری؛ آدرس صادرشده پنل اولویت دارد)",
+
   "Invalid Telegram numeric ID.": "آیدی عددی تلگرام معتبر نیست.",
   "Invalid prepaid GB amount.": "حجم واردشده معتبر نیست؛ عدد صفر یا مثبت وارد کنید.",
   "Invalid remaining days. Enter zero or a positive whole number.": "تعداد روز معتبر نیست؛ صفر یا یک عدد صحیح مثبت وارد کنید.",
@@ -1181,6 +1184,8 @@ export function UiLanguageProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === 'fa' || stored === 'en') {setDisplayLanguage(stored);setLanguageState(stored);}
+    const sync=(event:StorageEvent)=>{if(event.key===STORAGE_KEY&&(event.newValue==='fa'||event.newValue==='en')){setDisplayLanguage(event.newValue);setLanguageState(event.newValue)}};
+    window.addEventListener('storage',sync);return()=>window.removeEventListener('storage',sync);
   }, []);
 
   useEffect(() => {

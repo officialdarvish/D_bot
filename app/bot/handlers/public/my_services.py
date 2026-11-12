@@ -1650,6 +1650,12 @@ async def send_openvpn_profile(callback: CallbackQuery):
         svc = await session.get(ClientService, sid)
         ok_owner, _user = await _owned_public_service(session, svc, callback.from_user.id)
         server = await session.get(Server, svc.server_id) if svc else None
+        if not ok_owner and svc and server and server.server_type=='nx' and svc.reseller_id:
+            from app.database.models import ResellerAccount
+            from app.services.features import capabilities
+            actor=await session.scalar(select(User).where(User.telegram_id==callback.from_user.id))
+            account=await session.get(ResellerAccount,svc.reseller_id)
+            ok_owner=bool(actor and not actor.is_blocked and account and account.user_id==actor.id==svc.user_id and (await capabilities(session))['resellers'])
         if not ok_owner or not server:
             await callback.message.answer('این سرویس برای شما نیست یا پیدا نشد.', reply_markup=back_main_inline())
             return

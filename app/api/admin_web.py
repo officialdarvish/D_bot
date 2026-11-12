@@ -2425,6 +2425,7 @@ async def setup_wizard_save(
         'web_path': web_path.strip(),
     })
     if await db_setting('setup_progress_v1',''):
+        for key in feature_values:feature_values[key]=await db_setting(key,feature_values[key])
         current=await _setup_values()
         for key in ('force_join_enabled','channel_url','rules_enabled','rules_text','welcome_text','bot_name','support_username','admin_description'):values[key]=current[key]
     try:
@@ -3104,6 +3105,7 @@ async def servers(request: Request, _: str = Depends(_auth_user)):
     async with SessionLocal() as s:
         items=(await s.execute(select(Server).order_by(Server.id.desc()))).scalars().all()
         counts=dict((await s.execute(select(ClientService.server_id,func.count(ClientService.id)).group_by(ClientService.server_id))).all())
+    items=[x for x in items if not (x.meta or {}).get('connection_alias_of') and not (x.meta or {}).get('deleted_from_panel')]
     scope_select = select_field('scope','Show for',[('public','Public sales'),('reseller','Reseller'),('all','Public + Reseller')],'public')
     add_form='<form method="post" action="/admin/servers/add" class="formgrid"><div><label>Profile</label><select name="server_type"><option value="xui">Sanaei / 3x-ui</option><option value="pasarguard">PasarGuard</option><option value="nx">NX Panel</option><option value="mikrotik">MikroTik / Custom</option></select></div>'+scope_select+field('name','Server name')+field('display_name','Display name')+field('panel_url','Panel URL / Origin')+field('panel_path','Panel Web Path','text','/')+field('subscription_url','Subscription URL')+field('username','Username')+field('password','Password','password')+field('api_key','API Token Panel','password')+field('badge_label','Service badge text','text','')+field('badge_color','Service badge color','color','#2563eb')+field('badge_emoji','Bot circle emoji','text','')+field('l2tp_server','L2TP Server','text','vpn.example.com')+field('l2tp_ipsec_secret','L2TP Secret','text','CHANGE_ME_IPSEC_SECRET')+'<div class="full"><button class="btn primary">Save</button></div></form>'
     cards=[]
@@ -3502,6 +3504,8 @@ async def server_edit(request: Request, sid:int, name:str=Form(...), scope:str=F
                 if not probe['ok']:raise ValueError('No visible NX templates')
             except Exception as exc:return fail(request,str(exc),400)
             srv.meta={**(srv.meta or {}),**billing_policy,**PasarGuardService.probe_meta(probe),'scope':scope if scope in {'public','reseller','all'} else 'public','display_name':display_name or name,'badge_label':badge_label or 'NX','badge_color':badge_color or '#8b5cf6'}
+            from app.services.server_migration import sync_alias_connections
+            await sync_alias_connections(s,srv)
             await s.commit()
             return ok(request,'/admin/servers','NX updated')
         if server_type == 'mikrotik':
@@ -3511,6 +3515,8 @@ async def server_edit(request: Request, sid:int, name:str=Form(...), scope:str=F
             srv.name=name or srv.name; srv.panel_url=(panel_url or '').strip().rstrip('/'); srv.subscription_url=None; srv.username=router
             if api_key or password: srv.password_encrypted=encrypt_text(api_key or password)
             meta.update({'display_name':display_name or name or srv.name,'scope':scope if scope in ('public','reseller','all') else 'public','panel_base_url':srv.panel_url,'router_name':router,'auth_username':auth_username,'default_protocol':default_protocol or meta.get('default_protocol') or 'openvpn','openvpn_profile_id':int(openvpn_profile_id or 0),'l2tp_server':l2tp_server or meta.get('l2tp_server') or 'vpn.example.com','l2tp_ipsec_secret':l2tp_ipsec_secret or meta.get('l2tp_ipsec_secret') or 'CHANGE_ME_IPSEC_SECRET'}); meta.update(_server_badge_meta('mikrotik', badge_color, badge_label, badge_emoji, default_protocol)); srv.meta=meta
+            from app.services.server_migration import sync_alias_connections
+            await sync_alias_connections(s,srv)
             await s.commit()
             return ok(request, '/admin/servers', 'MikroTik server updated')
         if server_type == 'pasarguard':
@@ -3558,6 +3564,8 @@ async def server_edit(request: Request, sid:int, name:str=Form(...), scope:str=F
                 return fail(request, 'PasarGuard authenticated, but setup is incomplete: ' + missing, 400)
             meta.update(PasarGuardService().probe_meta(probe))
             srv.meta = meta
+            from app.services.server_migration import sync_alias_connections
+            await sync_alias_connections(s,srv)
             await s.commit()
             return ok(request, '/admin/servers', f'PasarGuard updated for role {meta.get("pasarguard_role_name") or "custom"}; {len(meta.get("inbound_ids") or [])} group(s) auto-detected')
         base_url, web_path, final_url = _normalize_panel_parts(panel_url, panel_path)
@@ -3577,6 +3585,8 @@ async def server_edit(request: Request, sid:int, name:str=Form(...), scope:str=F
         srv.meta=meta
         await s.flush()
         ok_sync, old_ids, new_ids, err = await refresh_server_inbounds(s,srv,force_plan_update=True)
+        from app.services.server_migration import sync_alias_connections
+        await sync_alias_connections(s,srv)
         await s.commit()
         if not ok_sync:
             logger.warning('Server updated but inbound sync failed: %s', err)
@@ -3669,21 +3679,11 @@ async def server_dup(request: Request, sid:int, _: str = Depends(_auth_user)):
 async def server_delete(request: Request, sid:int, _: str = Depends(_auth_user)):
     async with SessionLocal() as s:
         srv=await s.get(Server,sid)
-        if not srv: return fail(request, 'Server not found', 404)
-        # Keep existing users/services alive, but detach them from the deleted server record.
-        # This prevents foreign-key errors and removes the server from the admin database list.
-        await s.execute(update(ClientService).where(ClientService.server_id==sid).values(server_id=None))
-        await s.execute(update(Plan).where(Plan.server_id==sid).values(server_id=None, is_active=False))
-        await s.execute(update(ServerCategory).where(ServerCategory.server_id==sid).values(server_id=None))
-        await s.execute(update(PaymentCard).where(PaymentCard.server_id==sid).values(server_id=None))
-        await s.execute(update(ResellerAccount).where(ResellerAccount.server_id==sid).values(server_id=None))
-        await s.execute(update(ResellerBuildConfig).where(ResellerBuildConfig.server_id==sid).values(server_id=None, is_active=False))
-        package_ids = [row[0] for row in (await s.execute(select(ResellerPackage.id).where(ResellerPackage.server_id==sid))).all()]
-        if package_ids:
-            await s.execute(delete(ResellerTopupRequest).where(ResellerTopupRequest.package_id.in_(package_ids)))
-            await s.execute(delete(ResellerPackage).where(ResellerPackage.id.in_(package_ids)))
-        await s.delete(srv); await s.commit()
-    return ok(request, '/admin/servers', 'Server deleted and user services were kept.')
+        if not srv:return fail(request,'Server not found',404)
+        srv.is_active=False;srv.meta={**(srv.meta or {}),'deleted_from_panel':True}
+        from app.services.server_migration import sync_alias_connections
+        await sync_alias_connections(s,srv);await s.commit()
+    return ok(request,'/admin/servers','Server removed from lists; services, receipts and financial history preserved.')
 
 
 
@@ -6355,8 +6355,12 @@ async def api_v2_servers(_: str = Depends(_auth_user)):
         counts=dict((await s.execute(select(ClientService.server_id,func.count(ClientService.id)).group_by(ClientService.server_id))).all())
     data=[]
     for sv in items:
+        if (sv.meta or {}).get('connection_alias_of') or (sv.meta or {}).get('deleted_from_panel'):continue
         row=srv_json(sv); row['user_count']=int(counts.get(sv.id,0)); data.append(row)
-    return {'ok':True,'items':data}
+    from app.services.server_migration import REPORT_KEY
+    try:migration=json.loads(await db_setting(REPORT_KEY,'{}'))
+    except ValueError:migration={}
+    return {'ok':True,'items':data,'connection_migration':migration}
 
 @router.get('/admin/api/v2/server-groups')
 async def api_v2_server_groups(_: str = Depends(_auth_user)):
@@ -6608,6 +6612,8 @@ async def toggle_server(request: Request, sid: int, _: str = Depends(_auth_user)
             meta['admin_enabled'] = bool(server.is_active)
             meta['admin_status_changed_at'] = datetime.utcnow().isoformat(timespec='seconds')
             server.meta = meta
+        from app.services.server_migration import sync_alias_connections
+        await sync_alias_connections(s,server)
         await s.commit()
         status = 'activated' if server.is_active else 'deactivated'
     return ok(request, '/admin/servers', f'Server {status}')

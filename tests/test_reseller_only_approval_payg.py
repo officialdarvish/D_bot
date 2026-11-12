@@ -7,19 +7,19 @@ def src(path): return (ROOT/path).read_text()
 
 def test_reseller_only_list_and_no_default_placeholder():
     frontend = src('frontend/components/admin-dashboard.tsx')
-    assert "server.scope === 'reseller'" in frontend
+    assert "['reseller','all'].includes(server.scope||'')" in frontend
     fn = frontend.split('function resellerForm(',1)[1].split('function ',1)[0]
     assert 'Primary/default server' not in fn
     assert "resellerServers.map(server => ({ value: server.id" in fn
     backend = src('app/api/admin_web.py')
-    assert "(item.meta or {}).get('scope') != 'reseller'" in backend
+    assert "(item.meta or {}).get('scope') not in {'reseller','all'}" in backend
     assert 'obj.server_id = selected_ids[0]' in backend
 
 
 def test_bot_never_falls_back_to_unauthorized_default():
     bot = src('app/bot/handlers/public/reseller.py')
     fn = bot.split('async def resolve_reseller_build_target(',1)[1].split('async def ',1)[0]
-    assert "(server.meta or {}).get('scope') == 'reseller'" in fn
+    assert "(server.meta or {}).get('scope') in {'reseller','all'}" in fn
     assert 'Never silently choose a default' in fn
     assert 'server = next(' not in fn
 
@@ -46,4 +46,4 @@ def test_ownerless_sales_check_upstream_permissions_not_owner_label():
     assert "'read': {'scope': 1}" in adapter
     api = src('app/api/admin_web.py')
     assert 'await provider.require_provisioning_access(server)' in api
-    assert "(server.meta or {}).get('scope') != 'reseller'" in api
+    assert "(server.meta or {}).get('scope') not in {'reseller','all'}" in api

@@ -56,7 +56,7 @@ def test_explicit_combined_provider_works_even_if_pasarguard_has_own_service_typ
         has_dedicated_pasarguard_type=True,
     )
     assert result == 'v2ray'
-    assert provider_members_for_service_type(result) == {'xui', 'pasarguard'}
+    assert provider_members_for_service_type(result) == {'xui', 'pasarguard','nx'}
     assert 'PasarGuard' in service_provider_label(result)
 
 

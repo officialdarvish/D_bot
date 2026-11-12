@@ -89,7 +89,7 @@ class NxService:
             except Exception:pass
             raise NxCreateUnconfirmed(exc) from exc
         result=self.normalize(server,data)
-        if not result or result.get('name')!=username or result['data_limit']!=volume or set(result['inbound_ids'])!=set(ids):
+        if not result or result.get('name')!=username or result['data_limit']!=volume or result['expire']!=expiry or result['hwid_limit']!=payload['deviceLimit'] or result.get('licensed') is False or result.get('enable') is False or not result['sub_link'] or set(result['inbound_ids'])!=set(ids):
             raise NxCreateUnconfirmed(httpx.ReadError('NX create readback mismatch'))
         return result
 

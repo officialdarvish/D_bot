@@ -1654,7 +1654,10 @@ class PasarGuardService:
             if attempt:
                 await asyncio.sleep(0.25 * attempt)
             if not candidates:
-                candidates.append(await self.get_user(server, username))
+                try:candidates.append(await self.get_user(server, username))
+                except Exception as exc:
+                    last_error=RuntimeError('PasarGuard rotation readback unavailable')
+                    continue
             candidate = candidates.pop(0)
             try:
                 return self.verify_subscription_rotation(server, before, candidate)
@@ -1673,5 +1676,6 @@ class PasarGuardService:
             from app.services.nx_service import NxService
             return await NxService().reset_hwid_and_rotate(server,username)
         await self.clear_user_hwids(server, username)
-        # Reuse the verified mutation response; a second read can be stale.
+        # revoke_subscription already verifies identity, credentials and membership.
+        # Return its authoritative response without an additional stale network read.
         return await self.revoke_subscription(server, username)

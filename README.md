@@ -138,3 +138,8 @@ Star the repository, share D BOT, subscribe on YouTube, or [support development 
 <p align="center"><a href="https://nowpayments.io/donation/officialdarvish"><img src="https://img.shields.io/badge/Support_D_BOT-NOWPayments-7c3aed?style=for-the-badge" alt="Support D BOT on NOWPayments" /></a></p>
 
 Built with ❤️ by [Darvish](https://github.com/officialdarvish)
+
+
+## Draft setup and integrations update
+
+This branch adds manifest-based web updates, resumable bilingual setup, shared public/reseller connections, NX lifecycle/profiles and Darvish Bridge payments. It remains a draft pending live VPS/PostgreSQL and provider validation. See [status](docs/WEB_SETUP_UPDATE_STATUS_FA.md), [NX](docs/NX_PANEL_FA.md), [Bridge setup](docs/DARVISH_BRIDGE_CONNECTION_FA.md), [migration policy](docs/SERVER_CONNECTION_MIGRATION_FA.md) and [validation](docs/VALIDATION_WEB_SETUP.md).

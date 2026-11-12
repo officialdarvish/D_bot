@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d172a">
+  <meta name="color-scheme" content="dark">
+  <title>Darvish Bridge | پنل یکپارچه</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">◇</span><div><strong>Darvish Bridge</strong><small>سامانه واسطه‌گری و مدیریت سفارش</small></div></div>
+      <div class="top-actions"><span class="online"><i></i> پنل امن تلگرام</span><span id="profile" class="avatar">د</span></div>
+    </header>
+    <section id="notice" class="notice hidden" role="alert"></section>
+    <main>
+      <div id="auth-warning" class="auth-warning hidden"><div class="warning-icon">🔐</div><h2>ورود از طریق تلگرام</h2><p>این پنل تنها در مینی‌اپ ربات دارویش قابل استفاده است. لطفاً از دکمه «بازکردن پنل» در ربات استفاده کنید.</p><a href="https://telegram.org" target="_blank" rel="noopener">درباره تلگرام</a></div>
+      <div id="app" class="hidden">
+        <div class="intro"><div><span class="eyebrow" id="section-kicker">مدیریت یکپارچه</span><h1 id="greeting">داشبورد دارویش</h1><p id="subtitle">وضعیت سفارش‌ها و حساب‌ها، در یک نگاه</p></div><span class="pill">نسخه آزمایشی ۱٫۰</span></div>
+        <nav id="nav" class="tabs" aria-label="بخش‌های پنل"></nav>
+        <section id="content" class="content" aria-live="polite"></section>
+      </div>
+    </main>
+    <footer>Darvish Bridge · رابط فارسی و راست‌چین · تراکنش‌ها فقط بعد از بررسی واقعی تأیید می‌شوند.</footer>
+  </div>
+  <div id="modal" class="modal-backdrop hidden" role="dialog" aria-modal="true"><div class="modal-panel"><div class="modal-heading"><h2 id="modal-title">جزئیات</h2><button id="modal-close" class="icon-btn" aria-label="بستن">✕</button></div><div id="modal-body"></div></div></div>
+</body>
+</html>

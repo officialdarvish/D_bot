@@ -22,7 +22,7 @@ async def _sync_provider_usage(provider: str) -> None:
     from app.database.transaction_retry import run_snapshot_transaction
     async with SessionLocal() as session:
         ids = list((await session.execute(select(ClientService.id).join(Server, Server.id == ClientService.server_id)
-            .where(Server.is_active.is_(True), Server.server_type == provider)
+            .where(Server.is_active.is_(True), Server.server_type.in_(['pasarguard','nx']) if provider=='pasarguard' else Server.server_type == provider)
             .where(or_(ClientService.client_username.is_(None), ~ClientService.client_username.like('deleted_%')))
             .order_by(ClientService.reseller_id.asc(), ClientService.id.asc()))).scalars().all())
     for service_id in ids:

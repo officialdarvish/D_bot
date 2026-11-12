@@ -1,4 +1,6 @@
 'use client';
+import {ServerMigrationStatus} from '@/components/server-migration-status';
+import {BridgeSettings} from '@/components/bridge-settings';
 import {ModuleSettings} from '@/components/module-settings';
 import {SystemUpdate} from '@/components/system-update';
 import { ResellerActivityCard } from '@/components/reseller-activity-card';
@@ -308,7 +310,7 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
   useEffect(()=>{
     if (!window.location.pathname.includes('/setup/options/')) return;
     document.documentElement.classList.add('setup-embedded');
-    const changed=()=>window.parent.postMessage({type:'dbot-setup-dirty'},window.location.origin);
+    const changed=(event:Event)=>{const target=event.target as HTMLElement|null;if(target?.closest('.topbar,.filterbar')||target?.matches('input[type=search]'))return;window.parent.postMessage({type:'dbot-setup-dirty'},window.location.origin)};
     document.addEventListener('input',changed,true);document.addEventListener('change',changed,true);
     return ()=>{document.removeEventListener('input',changed,true);document.removeEventListener('change',changed,true);document.documentElement.classList.remove('setup-embedded')};
   },[]);
@@ -767,7 +769,7 @@ function OpenVPNProfilesSection({ reloadKey, setAuthRequired, query, openModal, 
 }
 
 function ServersSection({ query, reloadKey, setAuthRequired, openModal, runAction, show }: any) {
-  const api = useApi<ApiList<ServerItem>>('/admin/api/v2/servers', reloadKey, setAuthRequired);
+  const api = useApi<ApiList<ServerItem> & {connection_migration?:{merged:{canonical_id:number;alias_ids:number[]}[];conflicts:{server_ids:number[];reason:string}[]}}>('/admin/api/v2/servers', reloadKey, setAuthRequired);
   const [items, setItems] = useState<ServerItem[]>([]);
   const [refreshingId, setRefreshingId] = useState<number | null>(null);
   useEffect(() => { if (api.data?.items) setItems(api.data.items); }, [api.data]);
@@ -791,6 +793,7 @@ function ServersSection({ query, reloadKey, setAuthRequired, openModal, runActio
   if (api.loading) return <SkeletonGrid />;
   if (api.error || !api.data) return <EmptyState message={api.error || 'Servers could not be loaded.'} />;
   return <>
+    <ServerMigrationStatus report={api.data.connection_migration}/>
     <div className="filterbar">
       <button className="btn primary" onClick={() => openModal(serverForm())}><Plus size={16} /> Add Server</button>
       <span className="badge">{rows.length} servers</span>
@@ -1490,7 +1493,7 @@ function SettingsSection({ reloadKey, setAuthRequired, openModal, show }: any) {
   const loginUrl = map.web_login_url || (domain ? `${baseUrl}/${map.web_path || 'dbot'}/login` : '-');
 
   return <div className="section-grid settings-grid" data-no-i18n="true" dir={language === 'fa' ? 'rtl' : 'ltr'}>
-    <ModuleSettings/>
+    <ModuleSettings/><BridgeSettings/>
     <BotHomeSettings map={map} show={show} setAuthRequired={setAuthRequired} />
 
     <EntityCard
