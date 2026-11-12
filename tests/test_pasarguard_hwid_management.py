@@ -70,7 +70,7 @@ async def test_template_created_pasarguard_user_is_patched_to_plan_hwid_limit(mo
 
 def test_my_configs_source_enables_pasarguard_hwid_actions():
     source = open('app/bot/handlers/public/my_services.py', encoding='utf-8').read()
-    assert "server_type not in {'xui', 'pasarguard'}" in source
+    assert "server_type not in {'xui', 'pasarguard', 'nx'}" in source
     assert "PasarGuardService().get_user_hwids" in source
     assert "PasarGuardService().reset_hwid_and_rotate" in source
     assert "if is_xui or is_pasarguard" in source
@@ -84,5 +84,5 @@ def test_plan_source_syncs_hwid_policy_to_pasarguard_services():
 
 def test_telegram_admin_plan_editor_allows_pasarguard_hwid_limit():
     source = open('app/bot/handlers/admin/plans.py', encoding='utf-8').read()
-    assert "not in {'xui', 'pasarguard'}" in source
+    assert "not in {'xui', 'pasarguard', 'nx'}" in source
     assert 'schedule_pasarguard_plan_hwid_limit_sync(pid)' in source

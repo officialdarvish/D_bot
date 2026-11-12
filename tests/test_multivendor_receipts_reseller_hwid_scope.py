@@ -8,15 +8,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MultiVendorAndResellerRegressionTests(unittest.TestCase):
-    def test_only_explicit_reseller_scope_is_valid_for_resellers(self) -> None:
+    def test_public_and_reseller_shared_scope_is_explicit(self) -> None:
         reseller = (ROOT / 'app/bot/handlers/public/reseller.py').read_text('utf-8')
         admin = (ROOT / 'app/bot/handlers/admin/resellers.py').read_text('utf-8')
         api = (ROOT / 'app/api/admin_web.py').read_text('utf-8')
         frontend = (ROOT / 'frontend/components/admin-dashboard.tsx').read_text('utf-8')
-        self.assertIn("== 'reseller'", reseller)
-        self.assertIn("== 'reseller'", admin)
-        self.assertIn("(item.meta or {}).get('scope') != 'reseller'", api)
-        self.assertIn("server.scope === 'reseller'", frontend)
+        self.assertIn("in {'reseller','all'}", reseller)
+        self.assertIn("in {'reseller','all'}", admin)
+        self.assertIn("scope if scope in ('public','reseller','all')", api)
+        self.assertIn("['public','reseller','all']", frontend)
         self.assertIn("allowed_server_ids", reseller)
 
     def test_payment_card_has_vendor_reviewer_and_orders_snapshot_it(self) -> None:

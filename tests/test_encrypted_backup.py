@@ -254,6 +254,10 @@ def test_cli_archive_encrypts_database_env_and_project_without_bundled_key(tmp_p
     application, bins = tmp_path/'application', tmp_path/'bin'
     application.mkdir(); bins.mkdir()
     key = new_key()
+    from cryptography.fernet import Fernet
+    from app.core import security
+    fixture_fernet_key=Fernet.generate_key().decode()
+    monkeypatch.setattr(security,'fernet',Fernet(fixture_fernet_key.encode()))
     database_url='sqlite+aiosqlite:///'+str(tmp_path/'cli.db')
     async def seed_cli():
         engine=create_async_engine(database_url)
@@ -266,7 +270,7 @@ def test_cli_archive_encrypts_database_env_and_project_without_bundled_key(tmp_p
                 await session.commit()
         await engine.dispose()
     asyncio.run(seed_cli())
-    (application/'.env').write_text(f'BOT_TOKEN=123456:TEST_ONLY\nDATABASE_URL={database_url}\nBACKUP_ENCRYPTION_KEY={key}\nBACKUP_ENCRYPTION_KEY_FILE={tmp_path/'private'/'backup.key'}\nPOSTGRES_USER=dbot\n')
+    (application/'.env').write_text(f'BOT_TOKEN=123456:TEST_ONLY\nFERNET_KEY={fixture_fernet_key}\nDATABASE_URL={database_url}\nBACKUP_ENCRYPTION_KEY={key}\nBACKUP_ENCRYPTION_KEY_FILE={tmp_path/'private'/'backup.key'}\nPOSTGRES_USER=dbot\n')
     (application/'code.py').write_text('print("demo")\n')
     docker = bins/'docker'
     # The actual control script, actual Python CLI and actual crypto run. Only

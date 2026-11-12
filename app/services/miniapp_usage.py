@@ -19,7 +19,7 @@ async def read_usage(server, service):
         total = traffic.get('total')
         if total is None:total = client.get('totalGB')
         if total is None:total = service.total_bytes
-    elif server.server_type == 'pasarguard':
+    elif server.server_type in {'pasarguard','nx'}:
         remote = await PasarGuardService().get_user(server, name)
         if not remote:return None
         used = remote.get('used_traffic', remote.get('used_bytes'))

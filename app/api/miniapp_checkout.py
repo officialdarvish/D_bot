@@ -26,11 +26,14 @@ class QuoteInput(BaseModel):
     username:str=Field(min_length=1,max_length=32)
     password:str=Field(default='',max_length=128)
     discount_code:str=Field(default='',max_length=64)
+    volume_gb:int|None=Field(default=None,gt=0,le=1000000)
+    duration_days:int|None=Field(default=None,gt=0,le=3650)
 
 class CheckoutInput(QuoteInput):
     key:uuid.UUID
     method:str
     expected_amount_irt:int=Field(ge=0)
+    expected_bridge_minor:int|None=Field(default=None,gt=0)
 
 async def validate_purchase(s,user,body,*,lock_discount=False):
     from app.bot.handlers.public.buy import normalize_service_username,get_service_username_error,valid_mikrotik_password
@@ -38,6 +41,9 @@ async def validate_purchase(s,user,body,*,lock_discount=False):
     row=next((r for r in rows if r[0].id==body.plan_id),None)
     if not row:raise HTTPException(404,'این تعرفه دیگر قابل خرید نیست.')
     plan,server,_=row
+    from app.services.custom_tariff import selected_plan
+    try:plan=selected_plan(plan,body.volume_gb,body.duration_days)
+    except ValueError as exc:raise HTTPException(422,str(exc))
     username=normalize_service_username(body.username)
     if body.service_id:
         from app.api.miniapp import owned_service
@@ -84,8 +90,11 @@ async def quote_checkout(body:QuoteInput,user=Depends(customer)):
     async with SessionLocal() as s:
         plan,server,name,quote,amount,discount,card,code=await validate_purchase(s,user,body)
         balance=int((await s.get(User,user.id)).wallet_balance or 0)
+        from app.services import darvish_bridge as bridge
+        try:bridge_quote=await bridge.quote(s,amount) if user.telegram_id not in settings.admin_ids else None
+        except Exception:bridge_quote=None
     return dict(amount_irt=amount,base_amount_irt=quote.amount_irt,username=name,plan_title=plan.title,
-        balance=balance,methods=['admin_free'] if user.telegram_id in settings.admin_ids else ['wallet']+(['card'] if card else []),pricing=quote.as_meta())
+        balance=balance,methods=['admin_free'] if user.telegram_id in settings.admin_ids else ['wallet']+(['card'] if card else [])+(['bridge'] if bridge_quote else []),pricing=quote.as_meta(),bridge=bridge.public_quote(bridge_quote))
 
 async def order_view(s,order):
     plan=await s.get(Plan,order.plan_id) if order.plan_id else None
@@ -94,14 +103,17 @@ async def order_view(s,order):
     server=await s.get(Server,service.server_id) if service else None
     return dict(id=order.id,plan_id=order.plan_id,provider=(order.pricing_meta or {}).get('miniapp_provider','xui'),status=order.status,amount_irt=order.amount_irt,username=(service.client_username if service and service.user_id==order.user_id else meta.get('miniapp_username','')),
         title=plan.title if plan else '',method=meta.get('miniapp_method') or ('wallet' if (order.payment_method or '').startswith('wallet') else 'card'),renewal_service_id=meta.get('miniapp_renewal'),
-        receipt_uploaded=bool(order.receipt_file_id),card=meta.get('miniapp_card') if order.status=='waiting_receipt' else None,
+        bridge={'url':meta.get('bridge_url'),'invoice_id':meta.get('bridge_invoice_id'),'display':meta.get('bridge_display')} if meta.get('miniapp_method')=='bridge' else None,receipt_uploaded=bool(order.receipt_file_id),card=meta.get('miniapp_card') if order.status=='waiting_receipt' else None,
         created_at=order.created_at.isoformat()+'Z',rejection_reason=order.rejection_reason,
         service=service_data(service,plan,server) if service and service.user_id==order.user_id else None, key=order.checkout_key)
 
 @router.post('/checkout')
 async def checkout(body:CheckoutInput,user=Depends(customer)):
     await require_button('my_services' if body.service_id else 'buy')
-    if body.method not in {'wallet','card','admin_free'}:raise HTTPException(422,'روش پرداخت معتبر نیست.')
+    return await create_checkout(body,user)
+
+async def create_checkout(body,user):
+    if body.method not in {'wallet','card','admin_free','bridge'}:raise HTTPException(422,'روش پرداخت معتبر نیست.')
     if body.method=='admin_free' and user.telegram_id not in settings.admin_ids:raise HTTPException(403,'ساخت رایگان فقط برای مدیر اصلی ربات مجاز است.')
     if user.telegram_id in settings.admin_ids and body.method!='admin_free':raise HTTPException(409,'برای حساب مدیر، گزینه ساخت رایگان را انتخاب کنید.')
     async with SessionLocal() as s:
@@ -110,21 +122,40 @@ async def checkout(body:CheckoutInput,user=Depends(customer)):
         previous=await s.scalar(select(Order).where(Order.checkout_key==str(body.key)))
         if previous:
             if previous.user_id!=user.id:raise HTTPException(409,'شناسهٔ عملیات معتبر نیست.')
-            if previous.plan_id!=body.plan_id or (previous.pricing_meta or {}).get('miniapp_renewal')!=body.service_id or ((previous.pricing_meta or {}).get('miniapp_method') or ('wallet' if (previous.payment_method or '').startswith('wallet:') else 'card'))!=body.method or (previous.pricing_meta or {}).get('miniapp_username','').lower()!=body.username.strip().lower():
+            if ((previous.pricing_meta or {}).get('custom_selection') or {}).get('parent_id',previous.plan_id)!=body.plan_id or (previous.pricing_meta or {}).get('miniapp_renewal')!=body.service_id or ((previous.pricing_meta or {}).get('miniapp_method') or ('wallet' if (previous.payment_method or '').startswith('wallet:') else 'card'))!=body.method or (previous.pricing_meta or {}).get('miniapp_username','').lower()!=body.username.strip().lower():
                 raise HTTPException(409,'این عملیات قبلاً ثبت شده است؛ سفارش قبلی را پیگیری یا خرید جدید را انتخاب کنید.')
+            selected=(previous.pricing_meta or {}).get('custom_selection')
+            if selected and (body.volume_gb!=selected['volume_gb'] or body.duration_days!=selected['duration_days']):raise HTTPException(409,'Selection changed; start a new checkout')
+            if body.method=='bridge' and previous.status=='waiting_bridge':
+                try:
+                    from app.services.darvish_bridge import ensure_invoice
+                    await ensure_invoice(s,previous)
+                except Exception:pass
             return await order_view(s,previous)
-        count=await s.scalar(select(func.count(Order.id)).where(Order.user_id==user.id,Order.checkout_key.is_not(None),Order.status.in_(['waiting_receipt','miniapp_queued','processing'])))
+        count=await s.scalar(select(func.count(Order.id)).where(Order.user_id==user.id,Order.checkout_key.is_not(None),Order.status.in_(['waiting_receipt','waiting_bridge','miniapp_queued','processing'])))
         if count>=10:raise HTTPException(409,'ابتدا سفارش‌های باز قبلی را تکمیل یا لغو کنید.')
         plan,server,name,quote,amount,discount,card,code=await validate_purchase(s,user,body,lock_discount=True)
         if amount!=body.expected_amount_irt:raise HTTPException(409,'قیمت تغییر کرده است؛ مبلغ جدید را دوباره بررسی کنید.')
         if body.method=='wallet' and int(locked.wallet_balance or 0)<amount:raise HTTPException(409,'موجودی کیف پول کافی نیست؛ کارت به کارت را انتخاب کنید.')
         if body.method=='card' and not card:raise HTTPException(409,'کارت پرداخت فعالی برای این تعرفه ثبت نشده است.')
-        meta={**quote.as_meta(),'final_amount_irt':amount,'discount_code':code,'miniapp_username':name,'miniapp_source':True,'miniapp_provider':server.server_type,'miniapp_method':body.method,'miniapp_renewal':body.service_id}
+        bridge_quote=None
+        if body.method=='bridge':
+            from app.services import darvish_bridge as bridge
+            try:bridge_quote=await bridge.quote(s,amount)
+            except Exception:raise HTTPException(503,'قیمت درویش بریج در دسترس نیست؛ دوباره تلاش کنید.')
+            if not bridge_quote:raise HTTPException(409,'Darvish Bridge is disabled')
+            if bridge_quote['amount_minor']!=body.expected_bridge_minor:raise HTTPException(409,'Bridge price changed; request a new quote')
+
+        from app.services.custom_tariff import snapshot
+        selection=(plan.meta or {}).get('custom_selection')
+        if selection:plan=await snapshot(s,plan,user.id)
+        meta={**({'custom_selection':selection} if selection else {}),**quote.as_meta(),'final_amount_irt':amount,'discount_code':code,'miniapp_username':name,'miniapp_source':True,'miniapp_provider':server.server_type,'miniapp_method':body.method,'miniapp_renewal':body.service_id}
+        if bridge_quote:meta.update(bridge.pending_meta(bridge_quote,plan.title))
         if not body.service_id and server.server_type=='mikrotik':meta['miniapp_password']=encrypt_text(body.password)
         if body.method in {'wallet','admin_free'}:meta['miniapp_submitted_at']=datetime.utcnow().isoformat()
         if body.method=='card':meta['miniapp_card']={'number':card.card_number,'owner':card.owner_name}
         order=Order(user_id=user.id,plan_id=plan.id,amount_irt=amount,service_id=body.service_id,payment_method=(f'renew:{body.service_id}' if body.service_id else f'{body.method}:{name}')+(f':discount:{code}' if code else ''),
-            status='miniapp_queued' if body.method in {'wallet','admin_free'} else 'waiting_receipt',checkout_key=str(body.key),pricing_meta=meta,
+            status='miniapp_queued' if body.method in {'wallet','admin_free'} else 'waiting_bridge' if body.method=='bridge' else 'waiting_receipt',checkout_key=str(body.key),pricing_meta=meta,
             payment_card_id=card.id if body.method=='card' else None,
             receipt_reviewer_telegram_id=card.reviewer_telegram_id if body.method=='card' and card.reviewer_telegram_id else None)
         s.add(order);await s.flush()
@@ -133,6 +164,9 @@ async def checkout(body:CheckoutInput,user=Depends(customer)):
             locked.wallet_balance=int(locked.wallet_balance or 0)-amount
             s.add(WalletTransaction(user_id=user.id,amount_irt=-amount,tx_type='purchase',description=f'Mini App purchase #{order.id}'))
         await s.commit()
+        if body.method=='bridge':
+            try:await bridge.ensure_invoice(s,order)
+            except Exception:log.warning('Bridge invoice creation pending order=%s',order.id)
         return await order_view(s,order)
 
 async def owned_order(s,user,oid,*,lock=False):
@@ -145,8 +179,8 @@ def submitted_order_clause():
     return and_(Order.status.notin_(['cancelled','canceled']), or_(
         and_(Order.receipt_file_id.is_not(None),Order.receipt_file_id!=''),
         Order.status.in_(['paid','approved']),
-        and_(Order.checkout_key.is_not(None),Order.status.in_(['miniapp_queued','processing','failed']),
-             or_(Order.payment_method.like('wallet:%'),Order.pricing_meta['miniapp_method'].as_string().in_(['wallet','admin_free']))),
+        and_(Order.checkout_key.is_not(None),Order.status.in_(['waiting_bridge','miniapp_queued','processing','failed']),
+             or_(Order.payment_method.like('wallet:%'),Order.pricing_meta['miniapp_method'].as_string().in_(['wallet','admin_free','bridge']))),
     ))
 
 
@@ -162,6 +196,17 @@ async def latest_order(user=Depends(customer)):
     async with SessionLocal() as s:
         order=await s.scalar(select(Order).where(Order.user_id==user.id,submitted_order_clause()).order_by(Order.id.desc()).limit(1))
         return {'order':await order_view(s,order) if order else None}
+
+@router.post('/checkout/orders/{oid}/bridge-invoice')
+async def retry_bridge_invoice(oid:int,user=Depends(customer)):
+    from app.services.darvish_bridge import ensure_invoice
+    async with SessionLocal() as s:
+        order=await owned_order(s,user,oid,lock=True)
+        if (order.pricing_meta or {}).get('miniapp_method')!='bridge':raise HTTPException(404)
+        try:await ensure_invoice(s,order)
+        except Exception:raise HTTPException(503,'Bridge invoice unavailable; retry this order later')
+        return await order_view(s,order)
+
 
 @router.post('/orders/{oid}/resend')
 async def resend_order(oid:int,user=Depends(customer)):
@@ -283,7 +328,7 @@ async def process_wallet_queue():
                 mid=None
                 if aid:
                     try:
-                        label='🛠 ساخت رایگان مدیر در مینی‌اپ' if (order.pricing_meta or {}).get('miniapp_method')=='admin_free' else '💳 خرید از کیف پول در مینی‌اپ'
+                        label='🛠 ساخت رایگان مدیر در مینی‌اپ' if (order.pricing_meta or {}).get('miniapp_method')=='admin_free' else '🌉 پرداخت درویش بریج' if (order.pricing_meta or {}).get('miniapp_method')=='bridge' else '💳 خرید از کیف پول در مینی‌اپ'
                         notice=await bot.send_message(aid,f'{label} · سفارش #{oid}\nساخت کانفیگ در حال انجام است.')
                         mid=notice.message_id
                     except Exception:pass
@@ -294,7 +339,7 @@ async def recover_stalled_wallet_orders():
     """An interrupted remote mutation needs owner review, never blind re-provisioning."""
     from aiogram.types import InlineKeyboardMarkup,InlineKeyboardButton
     async with SessionLocal() as s:
-        ids=(await s.execute(select(Order.id).where(Order.checkout_key.is_not(None),Order.status=='processing',(Order.payment_method.like('wallet:%') | Order.pricing_meta['miniapp_method'].as_string().in_(['wallet','admin_free']))))).scalars().all()
+        ids=(await s.execute(select(Order.id).where(Order.checkout_key.is_not(None),Order.status=='processing',(Order.payment_method.like('wallet:%') | Order.pricing_meta['miniapp_method'].as_string().in_(['wallet','admin_free','bridge']))))).scalars().all()
     for oid in ids:
         async with SessionLocal() as s:
             order=await s.get(Order,oid,with_for_update=True)
@@ -321,5 +366,7 @@ async def worker_loop():
             await process_operations()
             await recover_stalled_wallet_orders()
             await process_wallet_queue()
+            from app.services.darvish_bridge import report_deliveries
+            async with SessionLocal() as s:await report_deliveries(s)
         except Exception:log.exception('Native checkout queue failed')
         await asyncio.sleep(5)

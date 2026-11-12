@@ -153,6 +153,9 @@ async def report_bot_error(bot: Any, exc: BaseException, context: str = '', even
     except Exception:
         logger.error('Bot error | context=%s | %r', context, exc)
 
+    from app.services.network_errors import telegram_timeout
+    if telegram_timeout(exc,context):return
+
     try:
         from app.core.config import settings
         admin_ids = list(dict.fromkeys(settings.owner_ids or settings.admin_ids or []))

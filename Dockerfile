@@ -45,17 +45,21 @@ COPY build/xray/ /tmp/dbot-xray-local/
 RUN --mount=type=cache,id=dbot-xray-archives,target=/var/cache/dbot-xray,sharing=locked \
     XRAY_VERSION="${XRAY_VERSION}" TARGETARCH="${TARGETARCH}" sh /tmp/install-xray.sh
 
+FROM runtime-base AS xray-disabled
+RUN mkdir -p /usr/local/bin && touch /usr/local/bin/xray && chmod 0444 /usr/local/bin/xray
+
 FROM xray-${XRAY_SOURCE} AS xray-source
 
 FROM runtime-base AS runtime
 # Independent of Python requirements and application source: reuse Docker's Xray layers.
 COPY --from=xray-source /usr/local/bin/xray /usr/local/bin/xray
-RUN /usr/local/bin/xray version
+RUN if [ -x /usr/local/bin/xray ]; then /usr/local/bin/xray version; fi
 
 COPY requirements.txt ./
 RUN pip install --upgrade pip \
     && pip install -r requirements.txt
 
+COPY VERSION update.json ./
 COPY app ./app
 COPY scripts ./scripts
 # Stop incomplete source deployments before an image with broken bot buttons is released.

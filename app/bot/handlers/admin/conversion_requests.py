@@ -74,7 +74,7 @@ async def panel_state(server, username):
     if not server or not username: return 'اطلاعات سرور یا نام کانفیگ در دسترس نیست'
     try:
         async with asyncio.timeout(12):
-            if server.server_type == 'pasarguard':
+            if server.server_type in {'pasarguard','nx'}:
                 found = await PasarGuardService().get_user(server, username)
             elif server.server_type == 'xui':
                 found = await XuiService().find_client_any(server, username, exhaustive=True)

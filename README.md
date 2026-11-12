@@ -4,7 +4,7 @@
 <p align="center"><a href="README.md">🇬🇧 English</a> · <a href="README_FA.md">🇮🇷 فارسی</a></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.3.0-7c3aed?style=flat-square" alt="Version 1.3.0" />
+  <img src="https://img.shields.io/badge/version-1.4.0-7c3aed?style=flat-square" alt="Version 1.4.0" />
   <img src="https://img.shields.io/badge/Mini_App-Telegram-26A5E4?style=flat-square&logo=telegram&logoColor=white" alt="Telegram Mini App" />
   <img src="https://img.shields.io/badge/Database-PostgreSQL_16-4169E1?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL 16" />
   <img src="https://img.shields.io/badge/Deploy-Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker deployment" />
@@ -138,3 +138,8 @@ Star the repository, share D BOT, subscribe on YouTube, or [support development 
 <p align="center"><a href="https://nowpayments.io/donation/officialdarvish"><img src="https://img.shields.io/badge/Support_D_BOT-NOWPayments-7c3aed?style=for-the-badge" alt="Support D BOT on NOWPayments" /></a></p>
 
 Built with ❤️ by [Darvish](https://github.com/officialdarvish)
+
+
+## Version 1.4.0 — setup and integrations
+
+This branch adds manifest-based web updates, resumable bilingual setup, shared public/reseller connections, NX lifecycle/profiles and Darvish Bridge payments. Published as 1.4.0 at the maintainer’s request; live VPS/PostgreSQL and provider validation remains outstanding. See [status](docs/WEB_SETUP_UPDATE_STATUS_FA.md), [NX](docs/NX_PANEL_FA.md), [Bridge setup](docs/DARVISH_BRIDGE_CONNECTION_FA.md), [migration policy](docs/SERVER_CONNECTION_MIGRATION_FA.md) and [validation](docs/VALIDATION_WEB_SETUP.md).

@@ -320,6 +320,8 @@ async def main():
     from app.services.error_backup import install_error_backup
     install_error_backup()
     await create_tables()
+    from app.services.server_migration import upgrade_connections
+    await upgrade_connections()
     # Database must stay raw: nothing is inserted by default.
     redis = Redis.from_url(
         settings.REDIS_URL,
@@ -351,6 +353,10 @@ async def main():
     from app.bot.handlers import user_content
     from app.bot.handlers.public import convert as conversion_handler
     from app.bot.handlers.public import reseller_join
+    from app.bot.module_gate import ModuleGate
+    for module,routers in [('resellers',[reseller.router,reseller_join.router,reseller_wallet.router,public_panel_sale.router]),('trials',[test_account.router])]:
+        for item in routers:
+            item.message.outer_middleware(ModuleGate(module));item.callback_query.outer_middleware(ModuleGate(module))
     for r in [
         user_content.router, reseller_wallet.router, conversion_handler.router, start.router,
         admin_panel.router, servers.router, categories.router, plans.router, wallet.router, admin_settings.router, admin_resellers.router, admin_panel_sale.router, pending_receipts.router, conversion_requests.router, service_list_removal.router,

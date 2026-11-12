@@ -280,7 +280,7 @@ async def service_username_exists(session, server, username: str) -> bool:
             return bool(await MikroTikService().get_user(server, username))
         except Exception as exc:
             raise RuntimeError('Could not verify username on OpenVPN/MikroTik panel; please retry.') from exc
-    if server.server_type == 'pasarguard':
+    if server.server_type in {'pasarguard','nx'}:
         try:
             return bool(await PasarGuardService().get_user(server, username))
         except Exception as exc:
@@ -341,7 +341,7 @@ async def resolve_service_username(session, server, requested: str, *, force_dup
     username limit accepted by the bot and supported panels.
     """
     requested = normalize_service_username(requested)
-    is_pasarguard = getattr(server, 'server_type', None) == 'pasarguard'
+    is_pasarguard = getattr(server, 'server_type', None) in {'pasarguard','nx'}
     if is_pasarguard and len(requested) >= 3:
         error = pasarguard_username_error(requested)
         if error:raise ValueError(error)
@@ -349,7 +349,7 @@ async def resolve_service_username(session, server, requested: str, *, force_dup
         raise ValueError(USERNAME_FORMAT_ERROR_TEXT)
     # Already-paid orders created by older versions may contain one/two-letter
     # names. Allocate a valid unique name without charging or creating twice.
-    if getattr(server, 'server_type', None) == 'pasarguard' and len(requested) < 3:
+    if getattr(server, 'server_type', None) in {'pasarguard','nx'} and len(requested) < 3:
         force_duplicate = True
     if not force_duplicate and not await service_username_exists(session, server, requested):
         return requested, False
@@ -364,7 +364,7 @@ async def resolve_service_username(session, server, requested: str, *, force_dup
 
 
 async def get_service_username_error(session, server, username: str) -> str | None:
-    is_pasarguard = getattr(server, 'server_type', None) == 'pasarguard'
+    is_pasarguard = getattr(server, 'server_type', None) in {'pasarguard','nx'}
     if is_pasarguard:
         error = pasarguard_username_error(username)
         if error:return error
@@ -673,11 +673,21 @@ def _order_pricing_meta(data: dict, plan, final_amount: int, discount_code: str 
     return meta
 
 
+async def payment_state(state):
+    data=await state.get_data()
+    try:
+        from app.services.darvish_bridge import config
+        async with SessionLocal() as session:enabled=bool((await config(session)).get('enabled'))
+    except Exception:enabled=False
+    return {**data,'bridge_enabled':enabled}
+
+
 def payment_methods_keyboard(data: dict, *, include_discount: bool = True) -> InlineKeyboardMarkup:
     rows = []
     if include_discount:
         rows.append([InlineKeyboardButton(text='🏷 اعمال کد تخفیف', callback_data='pay:discount')])
     rows.append([InlineKeyboardButton(text='کیف پول', callback_data='pay:wallet'), InlineKeyboardButton(text='کارت به کارت', callback_data='pay:card')])
+    if data.get('bridge_enabled'):rows.append([InlineKeyboardButton(text='🌉 Darvish Bridge',callback_data='pay:bridge')])
     plan_id = data.get('plan_id') or 0
     rows.append([back_button(f'buy:plan:{plan_id}')])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -702,7 +712,7 @@ async def show_buy_payment_methods_callback(callback: CallbackQuery, state: FSMC
     await edit_or_answer(
         callback,
         _payment_intro_text(data, plan, prefix=text),
-        reply_markup=payment_methods_keyboard(data, include_discount=include_discount),
+        reply_markup=payment_methods_keyboard(await payment_state(state), include_discount=include_discount),
     )
     await safe_callback_answer(callback)
 
@@ -888,6 +898,12 @@ async def buy_plan(callback: CallbackQuery, state: FSMContext):
     await state.update_data(plan_id=pid, server_id=server.id, category_id=plan.category_id or data.get('category_id'))
     selected_group = data.get('selected_category_group')
     back_cb = category_group_callback(selected_group) if selected_group is not None else (f'buy:cat:{getattr(plan, "category_id", data.get("category_id", 0))}' if (getattr(plan, 'category_id', None) or data.get('category_id')) else f'buy:type:{data.get("kind", "v2ray")}')
+    policy=(plan.meta or {}).get('custom_tariff')
+    if policy:
+        await state.set_state(BuyFlow.custom_selection)
+        await edit_or_answer(callback,f"حجم و مدت را با یک فاصله بفرستید؛ نمونه: 20 30\nحجم: {policy['min_gb']} تا {policy['max_gb']} گیگ\nمدت: {policy['min_days']} تا {policy['max_days']} روز",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(back_cb)]]))
+        await safe_callback_answer(callback)
+        return
     await state.set_state(BuyFlow.username)
     if getattr(server, 'server_type', '') == 'mikrotik':
         prompt = MIKROTIK_USERNAME_PROMPT
@@ -898,6 +914,25 @@ async def buy_plan(callback: CallbackQuery, state: FSMContext):
      'Testnemone1\n'
      'name1')
     await edit_or_answer(callback, prompt, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(back_cb)]])); await safe_callback_answer(callback)
+
+@router.message(BuyFlow.custom_selection)
+async def buy_custom_selection(message: Message,state: FSMContext):
+    from app.services.custom_tariff import selected_plan,snapshot
+    data=await state.get_data()
+    try:
+        parts=(message.text or '').split()
+        if len(parts)!=2:raise ValueError('حجم و روز را به‌صورت 20 30 وارد کنید.')
+        async with SessionLocal() as session:
+            plan=await session.get(Plan,data['plan_id'])
+            if not plan or not plan.is_active or not (plan.meta or {}).get('custom_tariff'):raise ValueError('پلن دیگر در دسترس نیست.')
+            user=await session.scalar(select(User).where(User.telegram_id==message.from_user.id))
+            concrete=await snapshot(session,selected_plan(plan,*parts),user.id)
+            await session.commit()
+        await state.update_data(plan_id=concrete.id,custom_parent_id=plan.id)
+        await state.set_state(BuyFlow.username)
+        await ui_message(message,f'پلن انتخاب‌شده: {concrete.title}\nمبلغ: {concrete.price_irt:,} تومان\nنام کانفیگ را وارد کنید:')
+    except (ValueError,TypeError) as exc:await ui_message(message,str(exc))
+
 
 @router.message(BuyFlow.username)
 async def buy_username(message: Message, state: FSMContext):
@@ -939,7 +974,7 @@ async def buy_username(message: Message, state: FSMContext):
     await state.set_state(BuyFlow.payment_method)
     data = await state.get_data()
     auto_note = f'\n\nℹ️ نام درخواستی تکراری بود و <code>{username}</code> به‌صورت خودکار جایگزین شد.' if username_was_changed else ''
-    await ui_message(message, _payment_intro_text(data, plan) + auto_note, reply_markup=payment_methods_keyboard(data))
+    await ui_message(message, _payment_intro_text(data, plan) + auto_note, reply_markup=payment_methods_keyboard(await payment_state(state)))
 
 @router.message(BuyFlow.password)
 async def buy_mikrotik_password(message: Message, state: FSMContext):
@@ -960,7 +995,7 @@ async def buy_mikrotik_password(message: Message, state: FSMContext):
     data = await state.get_data()
     async with SessionLocal() as session:
         plan = await session.get(Plan, int(data.get('plan_id') or 0))
-    await ui_message(message, _payment_intro_text(data, plan) if plan else 'روش پرداخت را انتخاب کنید:', reply_markup=payment_methods_keyboard(data))
+    await ui_message(message, _payment_intro_text(data, plan) if plan else 'روش پرداخت را انتخاب کنید:', reply_markup=payment_methods_keyboard(await payment_state(state)))
 
 @router.callback_query(F.data == 'pay:discount')
 async def buy_discount_start(callback: CallbackQuery, state: FSMContext):
@@ -1010,7 +1045,7 @@ async def buy_discount_apply(message: Message, state: FSMContext):
     data = await state.get_data()
     quote = _pricing_snapshot(data, plan)
     pricing_extra = (f'\n💵 قیمت پایه: ${quote.price_usd}\n💱 نرخ لحظه‌ای والکس: {int(quote.usd_rate_tmn or 0):,} تومان' if quote.currency == 'USD' else '')
-    await ui_message(message, f'✅ کد تخفیف اعمال شد.\n\nمبلغ قبلی: {quote.amount_irt:,} تومان{pricing_extra}\nمبلغ جدید: {final:,} تومان\n\nحالا روش پرداخت را انتخاب کنید:', reply_markup=payment_methods_keyboard(data, include_discount=False))
+    await ui_message(message, f'✅ کد تخفیف اعمال شد.\n\nمبلغ قبلی: {quote.amount_irt:,} تومان{pricing_extra}\nمبلغ جدید: {final:,} تومان\n\nحالا روش پرداخت را انتخاب کنید:', reply_markup=payment_methods_keyboard(await payment_state(state), include_discount=False))
 
 def is_duplicate_service_username_error(exc: BaseException) -> bool:
     tokens = (
@@ -1058,7 +1093,7 @@ async def build_service(session, user, server, plan, username, password: str | N
         created=await MikroTikService().create_user_on_plan(server, plan, username, password=password)
         service.sub_link=None
         service.xui_uuid=str(created.get('password') or password or '')
-    elif server.server_type == 'pasarguard':
+    elif server.server_type in {'pasarguard','nx'}:
         provider = PasarGuardService()
         for attempt in range(8):
             try:
@@ -1409,7 +1444,7 @@ async def process_approved_order_background(
                             previous_used_bytes=service.used_bytes,
                         )
                         service.traffic_baseline_bytes = int(renew_result.get('_traffic_baseline_bytes') or 0)
-                    if server.server_type == 'pasarguard':
+                    if server.server_type in {'pasarguard','nx'}:
                         renewed = await PasarGuardService().renew_user_on_plan(server, plan, service.xui_email or service.client_username)
                         if renewed.get('sub_link'):service.sub_link=renewed['sub_link']
                         if renewed.get('uuid'):service.xui_uuid=str(renewed['uuid'])
@@ -1417,6 +1452,8 @@ async def process_approved_order_background(
                     service.plan_id = plan.id
                     service.total_bytes = 0 if bool(getattr(plan,'is_unlimited',False)) else plan.volume_gb * 1024**3
                     service.used_bytes = 0
+                    if server.server_type=='nx':
+                        service.total_bytes=int(renewed['data_limit']);service.used_bytes=int(renewed['used_traffic'])
                     if server.server_type != 'mikrotik':
                         service.traffic_baseline_bytes = 0
                     service.expires_at = datetime.utcnow() + timedelta(days=plan.duration_days) if plan.duration_days else None
@@ -1449,7 +1486,8 @@ async def process_approved_order_background(
                 raise
 
         await edit_admin_receipt_keyboard(bot, admin_receipt_chat_id, admin_receipt_message_id, approved_only_keyboard('✅ رسید تایید شد.', order_id=order_id))
-        await notify_paid_order(bot, order_id, event='✅ رسید تأیید شد و خرید/تمدید انجام شد')
+        if not order.receipt_file_id and (order.pricing_meta or {}).get('miniapp_method')!='bridge':
+            await notify_paid_order(bot,order_id,event='✅ خرید/تمدید انجام شد')
 
         if is_renewal_order and not order.checkout_key:
             await send_renewal_confirmation(
@@ -1481,6 +1519,10 @@ async def process_approved_order_background(
                 l2tp_ipsec_secret=server_meta_value.get('l2tp_ipsec_secret'),
             )
 
+        async with SessionLocal() as delivered_session:
+            delivered_order=await delivered_session.get(Order,order_id)
+            delivered_order.pricing_meta={**(delivered_order.pricing_meta or {}),'buyer_delivery_done':True}
+            await delivered_session.commit()
 
         admin_text = (
             ('✅ رسید تایید شد و پیام تایید تمدید برای خریدار ارسال شد.\n\n' if is_renewal_order else '✅ رسید تایید شد و سرویس فقط برای خریدار ارسال شد.\n\n')
@@ -1488,8 +1530,6 @@ async def process_approved_order_background(
             f'📦 پلن: {plan_title}\n'
             f'🔐 کانفیگ: {service_username}'
         )
-        if commission_amount:
-            admin_text += f'\n🎁 پورسانت معرف: {commission_amount:,} تومان'
         await send_admin_notice(bot, admin_chat_id, admin_text)
         if admin_chat_id and admin_chat_id != buyer_chat_id:
             await send_home(bot, admin_chat_id, True)
@@ -1597,7 +1637,6 @@ async def approve_order_cb(callback: CallbackQuery):
         admin_receipt_message_id,
         processing_only_keyboard(f'⏳ {operation_name} در حال انجام...'),
     )
-    await send_admin_notice(bot, admin_chat_id, f'✅ رسید سفارش #{oid} تایید شد. {operation_name} در پس‌زمینه شروع شد.')
 
     asyncio.create_task(process_approved_order_background(
         oid,
@@ -1894,7 +1933,7 @@ async def _render_local_query_service(session, server: Server, local: ClientServ
     total = int(local.total_bytes or 0)
     active = bool(local.is_active)
     uuid = local.xui_uuid or None
-    if server.server_type == 'pasarguard':
+    if server.server_type in {'pasarguard','nx'}:
         try:
             pg_user = await PasarGuardService().get_user(server, local.client_username or username)
         except Exception:
@@ -1973,7 +2012,7 @@ async def _process_query_lookup(message: Message, state: FSMContext, password: s
                         break
                     continue
 
-                if server.server_type == 'pasarguard':
+                if server.server_type in {'pasarguard','nx'}:
                     try:
                         pg_user = await PasarGuardService().get_user(server, username)
                     except Exception:
@@ -2134,3 +2173,52 @@ async def query_back_to_username(callback: CallbackQuery, state: FSMContext):
 @router.message(QueryClient.password)
 async def query_password(message: Message, state: FSMContext):
     await _process_query_lookup(message, state, password=(message.text or '').strip())
+
+
+async def _bridge_purchase_input(session,user_id,state):
+    import uuid
+    from app.api.miniapp_checkout import QuoteInput
+    data=await state.get_data()
+    user=await session.scalar(select(User).where(User.telegram_id==user_id))
+    plan=await session.get(Plan,int(data.get('plan_id') or 0))
+    if not user or not plan:raise ValueError('خرید را دوباره از انتخاب پلن شروع کنید.')
+    selected=(plan.meta or {}).get('custom_selection') or {}
+    if selected and (plan.meta or {}).get('custom_owner_id')!=user.id:raise ValueError('این پلن متعلق به شما نیست.')
+    body=QuoteInput(plan_id=selected.get('parent_id',plan.id),username=data.get('username') or '',password=data.get('mt_password') or data.get('password') or '',discount_code=data.get('discount_code') or '',volume_gb=selected.get('volume_gb'),duration_days=selected.get('duration_days'))
+    return user,body
+
+
+@router.callback_query(F.data=='pay:bridge')
+async def bridge_payment_quote(callback:CallbackQuery,state:FSMContext):
+    from app.api.miniapp_checkout import validate_purchase
+    from app.services import darvish_bridge as bridge
+    import uuid
+    try:
+        async with SessionLocal() as session:
+            user,body=await _bridge_purchase_input(session,callback.from_user.id,state)
+            plan,server,name,pricing,amount,discount,card,code=await validate_purchase(session,user,body)
+            quote=await bridge.quote(session,amount)
+            if not quote:raise ValueError('روش پرداخت درویش بریج غیرفعال است.')
+        await state.update_data(bridge_checkout_input=body.model_dump(),bridge_amount=amount,bridge_minor=quote['amount_minor'],bridge_key=str(uuid.uuid4()))
+        await edit_or_answer(callback,'🌉 Darvish Bridge\n\nمبلغ دقیق پرداخت: '+quote['display']+'\nپس از تأیید رسید در بریج، سرویس خودکار برای شما ارسال می‌شود.',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='تأیید و ساخت فاکتور',callback_data='pay:bridge_confirm')],[InlineKeyboardButton(text='بازگشت',callback_data='pay:back_methods')]]))
+    except Exception as exc:
+        await edit_or_answer(callback,str(getattr(exc,'detail',None) or exc),reply_markup=back_main_inline())
+    await safe_callback_answer(callback)
+
+
+@router.callback_query(F.data=='pay:bridge_confirm')
+async def bridge_payment_confirm(callback:CallbackQuery,state:FSMContext):
+    from app.api.miniapp_checkout import CheckoutInput,create_checkout
+    from app.services.darvish_bridge import ensure_invoice
+    try:
+        data=await state.get_data()
+        if not data.get('bridge_checkout_input'):raise ValueError('ابتدا مبلغ پرداخت را بررسی کنید.')
+        async with SessionLocal() as session:user=await session.scalar(select(User).where(User.telegram_id==callback.from_user.id))
+        if not user:raise ValueError('ابتدا /start را بزنید.')
+        result=await create_checkout(CheckoutInput(**data['bridge_checkout_input'],key=data['bridge_key'],method='bridge',expected_amount_irt=data['bridge_amount'],expected_bridge_minor=data['bridge_minor']),user)
+        link=(result.get('bridge') or {}).get('url')
+        if not link:raise ValueError('ساخت فاکتور هنوز کامل نشده است؛ با همین دکمه دوباره تلاش کنید. دوباره پرداخت نکنید.')
+        await edit_or_answer(callback,'🌉 فاکتور درویش بریج آماده شد.\nمبلغ: '+result['bridge']['display']+'\nپس از تأیید واریز، سرویس فقط برای خریدار ارسال می‌شود.',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='پرداخت و ارسال رسید',url=link)],[back_button('restart:start')]]))
+    except Exception as exc:
+        await callback.message.answer(str(getattr(exc,'detail',None) or exc))
+    await safe_callback_answer(callback)

@@ -126,9 +126,10 @@ def invalidate_button_settings_cache() -> None:
 async def _load_button_settings(names: list[str] | None = None) -> dict[str, str]:
     global _BUTTON_SETTINGS_CACHE, _BUTTON_SETTINGS_CACHE_UNTIL
     requested = names or list(BUTTON_DEFAULTS)
+    feature_keys=['feature_'+name for name in ('resellers','trials','tutorials','wallet')]
     now = time.monotonic()
     if _BUTTON_SETTINGS_CACHE_UNTIL > now:
-        keys = {key for name in requested for key in (button_text_key(name), button_enabled_key(name))}
+        keys = {key for name in requested for key in (button_text_key(name), button_enabled_key(name))} | set(feature_keys)
         return {key: value for key, value in _BUTTON_SETTINGS_CACHE.items() if key in keys}
 
     async with _BUTTON_SETTINGS_CACHE_LOCK:
@@ -140,11 +141,11 @@ async def _load_button_settings(names: list[str] | None = None) -> dict[str, str
                 for key in (button_text_key(name), button_enabled_key(name))
             ]
             async with SessionLocal() as session:
-                rows = (await session.execute(select(Setting).where(Setting.key.in_(all_keys)))).scalars().all()
+                rows = (await session.execute(select(Setting).where(Setting.key.in_(all_keys+feature_keys)))).scalars().all()
             _BUTTON_SETTINGS_CACHE = {row.key: str(row.value or '') for row in rows}
             _BUTTON_SETTINGS_CACHE_UNTIL = time.monotonic() + _BUTTON_SETTINGS_CACHE_TTL_SECONDS
 
-    keys = {key for name in requested for key in (button_text_key(name), button_enabled_key(name))}
+    keys = {key for name in requested for key in (button_text_key(name), button_enabled_key(name))} | set(feature_keys)
     return {key: value for key, value in _BUTTON_SETTINGS_CACHE.items() if key in keys}
 
 
@@ -159,6 +160,8 @@ def _button_value(values: dict[str, str], name: str) -> tuple[str, bool]:
         enabled = enabled and _button_value(values, 'reseller_menu')[1]
     if name == 'panel_sales':
         enabled = enabled and _button_value(values, 'reseller_request')[1]
+    feature={'reseller_request':'resellers','reseller_menu':'resellers','panel_sales':'resellers','test_account':'trials','tutorials':'tutorials','account':'wallet','wallet_topup':'wallet'}.get(name)
+    if feature:enabled=enabled and values.get('feature_'+feature,'1')=='1'
     return text[:64], enabled
 
 

@@ -457,7 +457,7 @@ async def reseller_username_exists(session, server: Server | None, username: str
             return bool(await MikroTikService().get_user(server, username))
         except Exception:
             return False
-    if server.server_type == 'pasarguard':
+    if server.server_type in {'pasarguard','nx'}:
         try:
             return bool(await PasarGuardService().get_user(server, username))
         except Exception as exc:
@@ -504,7 +504,7 @@ async def allocate_reseller_duplicate_username(session, server: Server | None, u
         number = await _next_reseller_duplicate_number()
         suffix = str(number).zfill(4)
         max_base = max(1, 32 - len(suffix) - 1)
-        base = base_source[:max_base].rstrip('_.@-' if getattr(server, 'server_type', None) == 'pasarguard' else '_') or 'user'
+        base = base_source[:max_base].rstrip('_.@-' if getattr(server, 'server_type', None) in {'pasarguard','nx'} else '_') or 'user'
         candidate = f'{base}_{suffix}'
         if not await reseller_username_exists(session, server, candidate):
             return candidate
@@ -513,12 +513,12 @@ async def allocate_reseller_duplicate_username(session, server: Server | None, u
 
 async def resolve_reseller_username(session, server: Server | None, username: str) -> tuple[str, bool]:
     username = normalize_reseller_username(username)
-    if getattr(server, 'server_type', None) == 'pasarguard' and len(username) >= 3:
+    if getattr(server, 'server_type', None) in {'pasarguard','nx'} and len(username) >= 3:
         error = pasarguard_username_error(username)
         if error:raise ValueError(error)
     elif not valid_reseller_username(username):
         raise ValueError(RESELLER_USERNAME_FORMAT_ERROR_TEXT)
-    if getattr(server, 'server_type', None) == 'pasarguard' and len(username) < 3:
+    if getattr(server, 'server_type', None) in {'pasarguard','nx'} and len(username) < 3:
         return await allocate_reseller_duplicate_username(session, server, username), True
     if not await reseller_username_exists(session, server, username):
         return username, False
@@ -535,7 +535,7 @@ def is_reseller_duplicate_username_error(exc: BaseException) -> bool:
 
 
 async def get_reseller_username_error(session, server: Server | None, username: str) -> str | None:
-    if getattr(server, 'server_type', None) == 'pasarguard':
+    if getattr(server, 'server_type', None) in {'pasarguard','nx'}:
         error = pasarguard_username_error(username)
         if error:return error
         if await reseller_username_exists(session, server, username):
@@ -614,7 +614,7 @@ async def resolve_reseller_build_target(session, reseller: ResellerAccount, sele
     settings are never used for reseller-created users.
     """
     def is_reseller_server(server: Server | None) -> bool:
-        return bool(server and (server.meta or {}).get('scope') == 'reseller')
+        return bool(server and (server.meta or {}).get('scope') in {'reseller','all'})
 
     allowed = [int(x) for x in (getattr(reseller, 'allowed_server_ids', None) or []) if str(x).isdigit() and int(x) > 0]
     if allowed:
@@ -622,7 +622,7 @@ async def resolve_reseller_build_target(session, reseller: ResellerAccount, sele
         if chosen not in allowed:
             return None, []
         server = await session.get(Server, chosen)
-        if not server or not server.is_active or not is_reseller_server(server) or server.server_type not in {'xui', 'pasarguard', 'mikrotik'}:
+        if not server or not server.is_active or not is_reseller_server(server) or server.server_type not in {'xui', 'pasarguard', 'nx', 'mikrotik'}:
             return None, []
         # An explicit allowlist still requires reseller-only scope at provisioning time.
     else:
@@ -642,7 +642,7 @@ async def resolve_reseller_build_target(session, reseller: ResellerAccount, sele
         return None, []
 
     mode, manual_ids = reseller_server_policy(reseller, server)
-    if server.server_type == 'pasarguard':
+    if server.server_type in {'pasarguard','nx'}:
         meta = server.meta or {}
         rows = meta.get('inbounds') or []
         groups = normalize_inbound_ids([
@@ -702,7 +702,7 @@ async def sync_reseller_service_from_panel(session, svc) -> bool | None:
         except Exception as e:
             logger.warning('Failed to sync reseller MikroTik service %s: %s', getattr(svc, 'id', None), e)
             return None
-    if server.server_type == 'pasarguard':
+    if server.server_type in {'pasarguard','nx'}:
         try:
             found = await PasarGuardService().get_user(server, svc.xui_email or svc.client_username)
             if not found:
@@ -1174,7 +1174,7 @@ async def reseller_create_start(callback: CallbackQuery, state: FSMContext):
                 if default_server:
                     allowed = [default_server.id]
             servers = (await session.execute(select(Server).where(Server.id.in_(allowed), Server.is_active.is_(True)))).scalars().all() if allowed else []
-            servers = [srv for srv in servers if (srv.meta or {}).get('scope') == 'reseller' and server_allows(fresh_reseller, srv)]
+            servers = [srv for srv in servers if (srv.meta or {}).get('scope') in {'reseller','all'} and server_allows(fresh_reseller, srv)]
             # Legacy account fallback still uses only its default assigned server.
             if servers:
                 await state.update_data(reseller_server_options=[server.id for server in servers])
@@ -1184,7 +1184,7 @@ async def reseller_create_start(callback: CallbackQuery, state: FSMContext):
     if not servers:
         await edit_or_answer(callback, 'سروری برای این نماینده تنظیم نشده است. از مدیریت درخواست کنید سرور انتخاب کند.', reply_markup=reseller_back_kb())
     elif len(servers) > 1:
-        rows = [[InlineKeyboardButton(text=f'🖥 {sv.name} ({"Sanaei" if sv.server_type == "xui" else "PasarGuard" if sv.server_type == "pasarguard" else "OpenVPN"})', callback_data=f'reseller:buildserver:{sv.id}')] for sv in servers]
+        rows = [[InlineKeyboardButton(text=f'🖥 {sv.name} ({"Sanaei" if sv.server_type == "xui" else "PasarGuard" if sv.server_type == "pasarguard" else "NX" if sv.server_type == "nx" else "OpenVPN"})', callback_data=f'reseller:buildserver:{sv.id}')] for sv in servers]
         rows.append([back_button('menu:reseller')])
         await edit_or_answer(callback, '🖥 سرور ساخت کانفیگ را انتخاب کنید:', reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     else:
@@ -1230,7 +1230,7 @@ async def reseller_create_username(message: Message, state: FSMContext):
             return
         server, inbounds = await resolve_reseller_build_target(session, reseller, target_id)
         inbound_mode = reseller_server_policy(reseller, server)[0]
-        if not server or (server.server_type in {'xui', 'pasarguard'} and inbound_mode == 'manual' and not inbounds):
+        if not server or (server.server_type in {'xui', 'pasarguard', 'nx'} and inbound_mode == 'manual' and not inbounds):
             await ui_message(message, 'سرور نمایندگی یا تنظیمات ساخت یوزر آماده نیست. در حالت Manual باید حداقل یک Inbound برای همین نماینده انتخاب شده باشد.', reply_markup=await reseller_menu_for(message.from_user.id))
             await state.clear()
             return
@@ -1366,7 +1366,7 @@ async def reseller_create_hwid_limit(message: Message, state: FSMContext):
             await ui_message(message, 'دسترسی نمایندگی فعال نیست.', reply_markup=back_main_inline()); await state.clear(); return
         server, inbounds = await resolve_reseller_build_target(session, reseller, target_id)
         reseller_mode = reseller_server_policy(reseller, server)[0] if server else 'automatic'
-        if not server or (server.server_type in {'xui', 'pasarguard'} and reseller_mode == 'manual' and not inbounds):
+        if not server or (server.server_type in {'xui', 'pasarguard', 'nx'} and reseller_mode == 'manual' and not inbounds):
             await ui_message(message, 'سرور نمایندگی یا تنظیمات ساخت یوزر آماده نیست. در حالت دستی X-UI باید Inbound ID معتبر ثبت شود و برای MikroTik باید Router/API آماده باشد.', reply_markup=await reseller_menu_for(message.from_user.id)); await state.clear(); return
         # Keep scalar IDs/values before rollback/commit. Do not access ORM objects inside
         # the exception logger, because async SQLAlchemy may try a lazy DB load there and
@@ -1397,7 +1397,7 @@ async def reseller_create_hwid_limit(message: Message, state: FSMContext):
                 raise RuntimeError('This server was removed from the reseller allowed server list. Start again.')
             # Re-read the per-reseller inbound policy after locking the account so
             # an admin edit made while this flow was open takes effect immediately.
-            if server.server_type in {'xui', 'pasarguard'}:
+            if server.server_type in {'xui', 'pasarguard', 'nx'}:
                 reseller_mode, manual_inbounds = reseller_server_policy(reseller, server)
                 if reseller_mode == 'manual' and not manual_inbounds:
                     raise RuntimeError('Manual reseller inbound/group mode has no selections. Edit the reseller and choose the correct server options.')
@@ -1439,7 +1439,7 @@ async def reseller_create_hwid_limit(message: Message, state: FSMContext):
                     if server.server_type == 'mikrotik':
                         _Plan = type('MikroTikResellerPlan', (), {'volume_gb': volume, 'duration_days': days, 'inbound_ids': []})
                         result = await asyncio.wait_for(MikroTikService().create_user_on_plan(server, _Plan, username), timeout=60)
-                    elif server.server_type == 'pasarguard':
+                    elif server.server_type in {'pasarguard','nx'}:
                         _Plan = type('PasarGuardResellerPlan', (), {
                             'volume_gb': volume, 'duration_days': days, 'inbound_ids': inbounds, 'hwid_limit': hwid_limit,'enforce_group_ids':reseller_mode=='manual',
                         })
@@ -1829,7 +1829,7 @@ async def reseller_add_volume_apply(message: Message, state: FSMContext):
                         await MikroTikService().enable_user(server, svc.xui_email or svc.client_username)
                     except Exception:
                         pass
-                elif server.server_type == 'pasarguard':
+                elif server.server_type in {'pasarguard','nx'}:
                     await PasarGuardService().update_user(
                         server, svc.xui_email or svc.client_username,
                         data_limit_bytes=new_total, status='active',
@@ -1980,7 +1980,7 @@ async def reseller_add_days_apply(message: Message, state: FSMContext):
                         await MikroTikService().enable_user(server, svc.xui_email or svc.client_username)
                     except Exception:
                         pass
-                elif server.server_type == 'pasarguard':
+                elif server.server_type in {'pasarguard','nx'}:
                     await PasarGuardService().update_user(
                         server, svc.xui_email or svc.client_username,
                         expire_at=new_expires_at, status='active',
@@ -2317,7 +2317,7 @@ async def reseller_renew_duration(message: Message, state: FSMContext):
                         previous_used_bytes=old_used_bytes,
                     )
                     renew_baseline_bytes = int(renew_result.get('_traffic_baseline_bytes') or 0)
-                elif server.server_type == 'pasarguard':
+                elif server.server_type in {'pasarguard','nx'}:
                     _,group_ids=await resolve_reseller_build_target(session,reseller,server.id)
                     if not group_ids:raise RuntimeError('No valid PasarGuard group is configured for this reseller.')
                     _Plan = type('PasarGuardResellerRenewPlan', (), {
@@ -2482,7 +2482,7 @@ async def reseller_delete_user(callback: CallbackQuery):
                     panel_already_missing = True
                 else:
                     panel_delete_queued = True
-        elif server and server.server_type == 'pasarguard':
+        elif server and server.server_type in {'pasarguard','nx'}:
             try:
                 await PasarGuardService().delete_user(server, svc.xui_email or svc.client_username)
             except Exception as e:
@@ -2521,7 +2521,7 @@ async def reseller_delete_user(callback: CallbackQuery):
         else:
             panel_status = (
                 'already_missing' if panel_already_missing else
-                'deleted' if server and server.server_type in ('xui', 'pasarguard', 'mikrotik', 'openvpn', 'l2tp') else
+                'deleted' if server and server.server_type in ('xui', 'pasarguard', 'nx', 'mikrotik', 'openvpn', 'l2tp') else
                 'local_deleted'
             )
             deletion_task = await record_completed_service_deletion(
@@ -2611,7 +2611,7 @@ async def reseller_revoke(callback: CallbackQuery):
                 svc.xui_uuid = str(new.get('password') or svc.xui_uuid or '')
                 svc.sub_link = None
             else:
-                if server.server_type == 'pasarguard':
+                if server.server_type in {'pasarguard','nx'}:
                     new = await PasarGuardService().revoke_subscription(server, svc.xui_email or svc.client_username)
                 else:
                     new = await XuiService().revoke_and_new_link(server, svc.xui_email or svc.client_username)

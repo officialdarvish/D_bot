@@ -13,7 +13,7 @@ READY = 'retry_ready'
 async def destination_absent(server, username):
     # Repair lookups may swallow list failures. Never use a best-effort None as
     # evidence that an ambiguous create did not commit.
-    if server.server_type == 'pasarguard':
+    if server.server_type in {'pasarguard','nx'}:
         try:
             await PasarGuardService()._request(server, 'GET', f'/api/user/by-username/{username}')
         except RuntimeError as exc:
@@ -26,7 +26,7 @@ async def destination_absent(server, username):
 
 
 async def source_state(server, username):
-    if server.server_type == 'pasarguard':
+    if server.server_type in {'pasarguard','nx'}:
         return await PasarGuardService().get_user(server, username)
     if server.server_type == 'xui':
         return await XuiService().find_client_any(server, username, exhaustive=True)

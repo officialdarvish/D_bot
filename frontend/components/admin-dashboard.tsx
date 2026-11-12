@@ -1,4 +1,8 @@
 'use client';
+import {ServerMigrationStatus} from '@/components/server-migration-status';
+import {BridgeSettings} from '@/components/bridge-settings';
+import {ModuleSettings} from '@/components/module-settings';
+import {SystemUpdate} from '@/components/system-update';
 import { ResellerActivityCard } from '@/components/reseller-activity-card';
 import { ResourceIcon } from '@/components/resource-icon';
 import { TutorialSettings } from '@/components/tutorial-settings';
@@ -110,7 +114,7 @@ type ResourceMetric = { title: string; value: string; detail: string; percent: n
 type UserItem = { id: number; telegram_id: number; username?: string; full_name?: string; wallet_total: number; purchases: number; referral_code?: string; joined_at?: string; is_blocked?: boolean; is_reseller?: boolean };
 type ServerItem = { reseller_billing_modes?: string[]; reseller_payg_rate_irt?: number; id: number; name: string; display_name?: string; server_type: string; server_type_label?: string; panel_url: string; panel_base_url?: string; panel_path?: string; subscription_url?: string; username: string; auth_username?: string; scope?: string; inbound_ids?: unknown[]; inbounds?: { id: number; remark?: string; protocol?: string; enable?: boolean }[]; client_groups?: { name: string; client_count?: number | null }[]; last_inbound_sync_at?: string; is_active: boolean; user_count?: number; router_name?: string; router_host?: string; router_port?: string | number; router_online?: boolean; router_identity?: string; router_version?: string; router_uptime?: string; router_secrets?: number; router_active?: number; router_error?: string; last_router_sync_at?: string; default_protocol?: string; openvpn_profile_id?: number; l2tp_server?: string; l2tp_ipsec_secret?: string; badge_color?: string; badge_emoji?: string; badge_label?: string; pasarguard_role_name?: string; pasarguard_restricted?: boolean; pasarguard_group_source?: string; pasarguard_group_ids?: number[]; pasarguard_require_template?: boolean; pasarguard_capabilities?: Record<string, any>; pasarguard_limits?: Record<string, any>; pasarguard_warnings?: string[] };
 type CategoryItem = { service_type_key?: string; service_type_name?: string; id: number; name: string; server_id?: number | null; server_ids?: number[]; server_names?: string[]; is_active?: boolean; bot_visibility?: { status: string; detail: string; providers: string[]; provider_labels: string[]; active_public_server_ids: number[]; inactive_public_server_ids: number[] } };
-type PlanItem = { id: number; title: string; volume_gb: number; duration_days: number; price_irt: number; pricing_currency?: 'IRT' | 'USD'; price_usd?: string; category_id?: number; server_id?: number; inbound_ids?: unknown[]; inbound_mode?: 'automatic' | 'manual'; group_name?: string; hwid_limit?: number; happ_encrypted_sub?: boolean; is_active: boolean; is_unlimited?: boolean };
+type PlanItem = { custom_tariff?:Record<string,number|boolean>; id: number; title: string; volume_gb: number; duration_days: number; price_irt: number; pricing_currency?: 'IRT' | 'USD'; price_usd?: string; category_id?: number; server_id?: number; inbound_ids?: unknown[]; inbound_mode?: 'automatic' | 'manual'; group_name?: string; hwid_limit?: number; happ_encrypted_sub?: boolean; is_active: boolean; is_unlimited?: boolean };
 type ServerGroupsApi = { ok: boolean; items: { server_id: number; groups: { name: string; client_count?: number | null }[]; error?: string }[] };
 type ResellerPackage = { inbound_mode?:'automatic'|'manual';inbound_ids?:number[];id: number; title: string; server_id?: number; volume_gb: number; price_irt: number; pricing_currency?: 'IRT' | 'USD'; price_usd?: string; reseller_validity_days: number; is_active: boolean };
 type PaymentItem = { id: number; server_type: string; server_id?: number; card_number: string; owner_name: string; reviewer_telegram_id?: number | null; is_active: boolean };
@@ -121,7 +125,7 @@ type ResellerActivityItem = { id: number; action: string; action_label?: string;
 type ResellerServicesApi = { ok: boolean; reseller: ResellerItem; items: ResellerServiceItem[]; activities?: ResellerActivityItem[]; total: number; activity_total?: number };
 type OrderItem = { id: number; user?: UserItem | null; plan?: PlanItem | null; amount_irt: number; status: string; payment_method?: string; rejection_reason?: string | null; rejected_by?: number | null; rejected_at?: string | null; receipt_file_id?: string | null; created_at?: string };
 type SettingItem = { key: string; value: string; is_active?: boolean };
-type ServiceTypeItem = { badge_color?: string; badge_emoji?: string; key: string; value: string; is_active: boolean; server_type?: 'xui' | 'pasarguard' | 'mikrotik' | 'v2ray'; server_type_mode?: 'auto' | 'manual' };
+type ServiceTypeItem = { badge_color?: string; badge_emoji?: string; key: string; value: string; is_active: boolean; server_type?: 'xui' | 'pasarguard' | 'nx' | 'mikrotik' | 'v2ray'; server_type_mode?: 'auto' | 'manual' };
 type BackupSettings = { ok: boolean; settings: Record<string, string>; status: { configured: boolean; last_test_status?: string; last_test_message?: string; last_backup_status?: string; last_backup_message?: string; last_backup_at?: string; admin_ok?: boolean; last_sales_report_status?: string; last_sales_report_message?: string; last_sales_report_at?: string; last_sales_report_period_start?: string; last_sales_report_period_end?: string } };
 type BackupFormState = { destination: string; sender_mode: string; secondary_bot_token: string; chat_id: string; interval_minutes: string; include_database: string; include_files: string };
 type BackupTestState = { status: 'idle' | 'ok' | 'bad'; message: string; adminOk?: boolean };
@@ -303,6 +307,13 @@ function useToast() {
 }
 
 export function AdminDashboard({ initialSection }: { initialSection: SectionKey }) {
+  useEffect(()=>{
+    if (!window.location.pathname.includes('/setup/options/')) return;
+    document.documentElement.classList.add('setup-embedded');
+    const changed=(event:Event)=>{const target=event.target as HTMLElement|null;if(target?.closest('.topbar,.filterbar')||target?.matches('input[type=search]'))return;window.parent.postMessage({type:'dbot-setup-dirty'},window.location.origin)};
+    document.addEventListener('input',changed,true);document.addEventListener('change',changed,true);
+    return ()=>{document.removeEventListener('input',changed,true);document.removeEventListener('change',changed,true);document.documentElement.classList.remove('setup-embedded')};
+  },[]);
   useUiLanguage(); // Keep locale-sensitive display values in sync without remounting forms.
   const [section, setSection] = useState<SectionKey>(initialSection);
   const [sidebarHovered, setSidebarHovered] = useState(false);
@@ -324,6 +335,8 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileAvatar, setProfileAvatar] = useState<string>('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [features,setFeatures]=useState<Record<string,boolean>>({});
+  useEffect(()=>{void fetchJson<{features:Record<string,boolean>}>('/admin/api/v2/capabilities').then(r=>setFeatures(r.features)).catch(()=>{})},[reloadKey]);
   const [authRequired, setAuthRequired] = useState(false);
   const { toast, show } = useToast();
 
@@ -352,6 +365,7 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
     };
   }, [mobileOpen]);
 
+  useEffect(()=>{if((section==='openvpn-profiles'&&features.openvpn===false)||(['resellers','pasarguard-panel-sales'].includes(section)&&features.resellers===false))setSection('dashboard')},[section,features]);
   const title = sectionTitles[section];
 
   function openSection(item: { key: SectionKey; href: string }, event?: any) {
@@ -456,7 +470,7 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
           {navGroups.map((group) => (
             <div className="nav-section" key={group.label}>
               <div className="nav-section-title">{group.label}</div>
-              {group.items.map((item) => {
+              {group.items.filter(item=>!(item.key==='openvpn-profiles'&&features.openvpn===false)&&!(['resellers','pasarguard-panel-sales'].includes(item.key)&&features.resellers===false)).map((item) => {
                 const Icon = item.icon;
                 return (
                   <a key={item.key} className={`nav-link ${section === item.key ? 'active' : ''}`} title={item.title} aria-label={item.title} aria-current={section === item.key ? 'page' : undefined} href={item.href} onClick={(event) => openSection(item, event)}>
@@ -467,7 +481,7 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
             </div>
           ))}
         </nav>
-        <div className="sidebar-footer">
+        <div className="sidebar-footer"><SystemUpdate/>
           <div className="sidebar-language-row" title="Language">
             <Languages size={19} aria-hidden="true" />
             <span className="sidebar-language-label">Language</span>
@@ -755,7 +769,7 @@ function OpenVPNProfilesSection({ reloadKey, setAuthRequired, query, openModal, 
 }
 
 function ServersSection({ query, reloadKey, setAuthRequired, openModal, runAction, show }: any) {
-  const api = useApi<ApiList<ServerItem>>('/admin/api/v2/servers', reloadKey, setAuthRequired);
+  const api = useApi<ApiList<ServerItem> & {connection_migration?:{merged:{canonical_id:number;alias_ids:number[]}[];conflicts:{server_ids:number[];reason:string}[]}}>('/admin/api/v2/servers', reloadKey, setAuthRequired);
   const [items, setItems] = useState<ServerItem[]>([]);
   const [refreshingId, setRefreshingId] = useState<number | null>(null);
   useEffect(() => { if (api.data?.items) setItems(api.data.items); }, [api.data]);
@@ -779,6 +793,7 @@ function ServersSection({ query, reloadKey, setAuthRequired, openModal, runActio
   if (api.loading) return <SkeletonGrid />;
   if (api.error || !api.data) return <EmptyState message={api.error || 'Servers could not be loaded.'} />;
   return <>
+    <ServerMigrationStatus report={api.data.connection_migration}/>
     <div className="filterbar">
       <button className="btn primary" onClick={() => openModal(serverForm())}><Plus size={16} /> Add Server</button>
       <span className="badge">{rows.length} servers</span>
@@ -1478,6 +1493,7 @@ function SettingsSection({ reloadKey, setAuthRequired, openModal, show }: any) {
   const loginUrl = map.web_login_url || (domain ? `${baseUrl}/${map.web_path || 'dbot'}/login` : '-');
 
   return <div className="section-grid settings-grid" data-no-i18n="true" dir={language === 'fa' ? 'rtl' : 'ltr'}>
+    <ModuleSettings/><BridgeSettings/>
     <BotHomeSettings map={map} show={show} setAuthRequired={setAuthRequired} />
 
     <EntityCard
@@ -1928,7 +1944,7 @@ function ServiceTypesSection({ reloadKey, setAuthRequired, openModal, runAction,
     setDragKey('');
     saveOrder(next);
   }
-  return <><div className="filterbar"><button className="btn primary" onClick={() => openModal(serviceTypeForm())}><Plus size={16} /> Add Service Type</button><span className="badge">{serviceTypes.length} custom types</span>{savingOrder && <span className="badge yellow">Saving order...</span>}</div><div className="plan-order-note"><ListChecks size={16} /> Select V2Ray (Sanaei + PasarGuard) to show categories from both panels in one Telegram menu. Single-provider modes remain available; every plan is created on its own server.</div><div className="section-grid">{serviceTypes.length ? serviceTypes.map((s) => { const providerLabel = s.server_type === 'pasarguard' ? 'PasarGuard' : s.server_type === 'v2ray' ? 'V2Ray (Sanaei + PasarGuard)' : s.server_type === 'mikrotik' ? 'MikroTik / OpenVPN' : 'X-UI / 3x-ui'; return <div key={s.key} className={`drag-card ${dragKey === s.key ? 'dragging' : ''}`} draggable onDragStart={() => setDragKey(s.key)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropOn(s.key)} onDragEnd={() => setDragKey('')}><EntityCard title={s.value} icon={<ListChecks style={{ color: s.badge_color }} />} badge={s.is_active ? 'Active' : 'Inactive'} badgeClass={s.is_active ? 'green' : 'red'} badgeColor={s.is_active ? s.badge_color : undefined} kvs={[["Value", s.value], ['Backend provider', s.server_type_mode === 'manual' ? providerLabel : `Auto → ${providerLabel}`], ['Display order', serviceTypes.findIndex((x) => x.key === s.key) + 1]]} actions={<><span className="drag-handle"><ListChecks size={15} /> Drag</span><button className="btn" onClick={() => openModal(serviceTypeForm(s))}>Edit</button><button className={s.is_active ? 'btn danger' : 'btn success'} onClick={() => runAction(`/admin/service-types/toggle?key=${encodeURIComponent(s.key)}`, s.is_active ? 'Service type deactivated' : 'Service type activated')}>{s.is_active ? 'Deactivate' : 'Activate'}</button><button className="btn danger" onClick={() => runAction(`/admin/service-types/delete?key=${encodeURIComponent(s.key)}`, 'Service type deleted')}>Delete</button></>} /></div>; }) : <EmptyState message="No custom service type found. Add V2Ray, OpenVPN, or any other service from here." />}</div></>;
+  return <><div className="filterbar"><button className="btn primary" onClick={() => openModal(serviceTypeForm())}><Plus size={16} /> Add Service Type</button><span className="badge">{serviceTypes.length} custom types</span>{savingOrder && <span className="badge yellow">Saving order...</span>}</div><div className="plan-order-note"><ListChecks size={16} /> Select V2Ray (Sanaei + PasarGuard) to show categories from both panels in one Telegram menu. Single-provider modes remain available; every plan is created on its own server.</div><div className="section-grid">{serviceTypes.length ? serviceTypes.map((s) => { const providerLabel = s.server_type === 'nx' ? 'NX Panel' : s.server_type === 'pasarguard' ? 'PasarGuard' : s.server_type === 'v2ray' ? 'V2Ray (Sanaei + PasarGuard)' : s.server_type === 'mikrotik' ? 'MikroTik / OpenVPN' : 'X-UI / 3x-ui'; return <div key={s.key} className={`drag-card ${dragKey === s.key ? 'dragging' : ''}`} draggable onDragStart={() => setDragKey(s.key)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropOn(s.key)} onDragEnd={() => setDragKey('')}><EntityCard title={s.value} icon={<ListChecks style={{ color: s.badge_color }} />} badge={s.is_active ? 'Active' : 'Inactive'} badgeClass={s.is_active ? 'green' : 'red'} badgeColor={s.is_active ? s.badge_color : undefined} kvs={[["Value", s.value], ['Backend provider', s.server_type_mode === 'manual' ? providerLabel : `Auto → ${providerLabel}`], ['Display order', serviceTypes.findIndex((x) => x.key === s.key) + 1]]} actions={<><span className="drag-handle"><ListChecks size={15} /> Drag</span><button className="btn" onClick={() => openModal(serviceTypeForm(s))}>Edit</button><button className={s.is_active ? 'btn danger' : 'btn success'} onClick={() => runAction(`/admin/service-types/toggle?key=${encodeURIComponent(s.key)}`, s.is_active ? 'Service type deactivated' : 'Service type activated')}>{s.is_active ? 'Deactivate' : 'Activate'}</button><button className="btn danger" onClick={() => runAction(`/admin/service-types/delete?key=${encodeURIComponent(s.key)}`, 'Service type deleted')}>Delete</button></>} /></div>; }) : <EmptyState message="No custom service type found. Add V2Ray, OpenVPN, or any other service from here." />}</div></>;
 }
 
 function EntityCard({ title, icon, badge, badgeClass = 'purple', badgeColor, kvs, actions, headingLevel = 2 }: { title: string; icon: React.ReactNode; badge?: string; badgeClass?: string; badgeColor?: string; kvs: [string, any][]; actions?: React.ReactNode; headingLevel?: 2 | 3 }) {
@@ -2079,17 +2095,17 @@ function filterItems<T>(items: T[], query: string, keys: string[]) {
 }
 function serverOptions(items: ServerItem[]) { return [{ value: 0, label: 'Select server' }, ...items.map((s) => ({ value: s.id, label: `${s.display_name || s.name} (${s.server_type === 'mikrotik' ? 'MikroTik / Custom' : (s.server_type === 'pasarguard' ? 'PasarGuard' : s.server_type)})` }))]; }
 function categoryOptions(items: CategoryItem[]) { return [{ value: 0, label: 'Select category' }, ...items.map((c) => ({ value: c.id, label: `${c.name}${c.server_names?.length ? ` (${c.server_names.join(', ')})` : (c.server_id ? ` (Server #${c.server_id})` : '')}` }))]; }
-function commonScopeOptions() { return [{ value: 'public', label: 'Public sales' }, { value: 'reseller', label: 'Reseller sales' }]; }
+function commonScopeOptions() { return [{ value: 'public', label: 'Public sales' }, { value: 'reseller', label: 'Reseller sales' }, {value:'all',label:'Public + Reseller'}]; }
 
 function serverForm(s?: ServerItem): ModalForm {
   const isCustom = s?.server_type === 'mikrotik';
-  const isPasarGuard = s?.server_type === 'pasarguard';
+  const isPasarGuard = ['pasarguard','nx'].includes(s?.server_type||'');
   const defaults = s ? {
     ...s,
     reseller_billing_modes: s.reseller_billing_modes || ['volume'],
     reseller_payg_rate_irt: s.reseller_payg_rate_irt || 0,
-    server_type: isCustom ? 'mikrotik' : (isPasarGuard ? 'pasarguard' : 'xui'),
-    scope: s.scope === 'reseller' ? 'reseller' : 'public',
+    server_type: isCustom ? 'mikrotik' : (isPasarGuard ? s!.server_type : 'xui'),
+    scope: ['public','reseller','all'].includes(s.scope||'') ? s.scope : 'public',
     panel_url: isCustom ? (s.panel_base_url || s.panel_url || '') : (s.panel_base_url || s.panel_url || ''),
     panel_path: (isCustom || isPasarGuard) ? '/' : (s.panel_path || '/'),
     subscription_url: isCustom ? '' : (s.subscription_url || ''),
@@ -2128,10 +2144,10 @@ function serverForm(s?: ServerItem): ModalForm {
     action: s ? `/admin/servers/${s.id}/edit` : '/admin/servers/add',
     defaults,
     fields: [
-      { name: 'server_type', label: 'Profile', type: 'select', options: [{ value: 'xui', label: 'Sanaei / 3x-ui' }, { value: 'pasarguard', label: 'PasarGuard' }, { value: 'mikrotik', label: 'MikroTik / Custom' }] },
+      { name: 'server_type', label: 'Profile', type: 'select', options: [{ value: 'xui', label: 'Sanaei / 3x-ui' }, { value: 'pasarguard', label: 'PasarGuard' }, {value:'nx',label:'NX Panel'}, { value: 'mikrotik', label: 'MikroTik / Custom' }] },
       { name: 'scope', label: 'Show this server for', type: 'select', options: commonScopeOptions() },
-      { name:'reseller_billing_modes',label:'Allowed reseller financial systems',type:'checkbox-group',required:true,options:[{value:'volume',label:'Volume purchase'},{value:'payg',label:'Pay As You Go'}],full:true,showWhen:{name:'scope',value:'reseller'}},
-      { name:'reseller_payg_rate_irt',label:'PAYG price per GB (Toman)',type:'number',min:0,full:true,showWhenAll:[{name:'scope',value:'reseller'},{name:'__payg_enabled',value:'yes'}]},
+      { name:'reseller_billing_modes',label:'Allowed reseller financial systems',type:'checkbox-group',required:true,options:[{value:'volume',label:'Volume purchase'},{value:'payg',label:'Pay As You Go'}],full:true,showWhen:{name:'scope',values:['reseller','all']}},
+      { name:'reseller_payg_rate_irt',label:'PAYG price per GB (Toman)',type:'number',min:0,full:true,showWhenAll:[{name:'scope',values:['reseller','all']},{name:'__payg_enabled',value:'yes'}]},
       { name: 'name', label: 'Server name shown to users', required: true, placeholder: 'Germany / DE / OpenVPN Germany' },
       { name: 'display_name', label: 'Display name', placeholder: 'Optional bot/admin display name' },
       { name: 'badge_label', label: 'Service badge text shown to users', placeholder: 'V2Ray or MikroTik / OpenVPN' },
@@ -2141,10 +2157,11 @@ function serverForm(s?: ServerItem): ModalForm {
       { name: 'panel_path', label: 'Panel Web Path', placeholder: '/secretpath/', showWhen: { name: 'server_type', value: 'xui' } },
       { name: 'subscription_url', label: 'Subscription URL (public subscription base)', full: true, placeholder: 'https://sub.example.com/sub/', showWhen: { name: 'server_type', value: 'xui' } },
       { name: 'subscription_url', label: 'Subscription URL (PasarGuard public subscription base)', required: true, full: true, placeholder: 'https://sub.example.com/sub/', showWhen: { name: 'server_type', value: 'pasarguard' } },
+      {name:'subscription_url',label:'NX subscription base (optional; API subUrl takes priority)',full:true,showWhen:{name:'server_type',value:'nx'}},
       { name: 'username', label: 'Username', required: false },
       { name: 'password', label: s ? 'New password / login password' : 'Password / login password', type: 'password', required: false },
       { name: 'api_key', label: 'API Token Panel', type: 'password', full: true, placeholder: 'Optional panel API token/key. Supported by 3x-ui and MikroTik.', showWhen:{name:'server_type',values:['xui','mikrotik']} },
-      { name: 'api_key', label: 'API Token Panel', type: 'password', full: true, placeholder: 'Strongly recommended for faster requests and better performance.', showWhen:{name:'server_type',value:'pasarguard'} },
+      { name: 'api_key', label: 'API Token Panel', type: 'password', full: true, placeholder: 'Strongly recommended for faster requests and better performance.', showWhen:{name:'server_type',values:['pasarguard','nx']} },
       { name: 'l2tp_server', label: 'L2TP server shown in guides', placeholder: 'vpn.example.com', showWhen: { name: 'server_type', value: 'mikrotik' } },
       { name: 'l2tp_ipsec_secret', label: 'L2TP Secret shown in guides', placeholder: 'CHANGE_ME_IPSEC_SECRET', showWhen: { name: 'server_type', value: 'mikrotik' } },
       { name: 'detected_routers', label: 'Detected routers', full: true, placeholder: 'Auto-filled after Test & Auto Fill', showWhen: { name: 'server_type', value: 'mikrotik' } }
@@ -2199,23 +2216,30 @@ function planForm(catOptions: any[], servers: ServerItem[], p?: PlanItem): Modal
   return {
     title: p ? 'Edit Public Plan' : 'Add Plan',
     action: p ? `/admin/plans/${p.id}/edit` : '/admin/plans/add',
-    defaults: p ? { ...p, plan_kind: 'public', pricing_currency: p.pricing_currency || 'IRT', price_usd: p.price_usd || '', inbound_mode: inboundMode, group_name: p.group_name || '', hwid_limit: Number(p.hwid_limit || 0), happ_encrypted_sub: p.happ_encrypted_sub ? 'yes' : 'no' } : { plan_kind: 'public', pricing_currency: 'IRT', price_irt: 0, price_usd: '', category_id: 0, server_id: 0, reseller_validity_days: 365, inbound_mode: 'automatic', inbound_ids: [], group_name: '', hwid_limit: 0, happ_encrypted_sub: 'no' },
+    defaults: p ? { ...p,...Object.fromEntries(Object.entries(p.custom_tariff||{}).map(([k,v])=>['custom_'+k,k==='enabled'?(v?'yes':'no'):v])), plan_kind: 'public', pricing_currency: p.pricing_currency || 'IRT', price_usd: p.price_usd || '', inbound_mode: inboundMode, group_name: p.group_name || '', hwid_limit: Number(p.hwid_limit || 0), happ_encrypted_sub: p.happ_encrypted_sub ? 'yes' : 'no' } : { plan_kind: 'public', pricing_currency: 'IRT', price_irt: 0, price_usd: '', category_id: 0, server_id: 0, reseller_validity_days: 365, inbound_mode: 'automatic', inbound_ids: [], group_name: '', hwid_limit: 0, happ_encrypted_sub: 'no' },
     fields: [
       { name: 'plan_kind', label: 'Plan is for', type: 'select', options: [{ value: 'public', label: 'Public' }, { value: 'reseller', label: 'Resellers' }], hidden: !!p },
       { name: 'title', label: 'Plan title', required: true },
       { name: 'pricing_currency', label: 'Pricing currency', type: 'select', options: [{ value: 'IRT', label: 'Toman — fixed price' }, { value: 'USD', label: 'USD — live Wallex rate at checkout' }], required: true },
       { name: 'price_irt', label: 'Price (Toman)', type: 'number', required: true, min: 0, showWhen: { name: 'pricing_currency', value: 'IRT' } },
       { name: 'price_usd', label: 'Price (USD)', type: 'number', required: true, min: 0.01, step: 0.01, placeholder: 'Example: 4.99', showWhen: { name: 'pricing_currency', value: 'USD' } },
+      {name:'custom_enabled',label:'Custom volume and days',type:'select',options:[{value:'no',label:'No'},{value:'yes',label:'Yes'}]},
+      {name:'custom_min_gb',label:'Minimum GB',type:'number',min:1,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
+      {name:'custom_max_gb',label:'Maximum GB',type:'number',min:1,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
+      {name:'custom_min_days',label:'Minimum days',type:'number',min:1,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
+      {name:'custom_max_days',label:'Maximum days',type:'number',min:1,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
+      {name:'custom_price_gb',label:'Price per GB (Toman)',type:'number',min:0,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
+      {name:'custom_price_day',label:'Price per day (Toman)',type:'number',min:0,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
       { name: 'volume_gb', label: 'Volume GB', type: 'number', required: true },
       { name: 'duration_days', label: 'Duration days', type: 'number', required: true, showWhen: { name: 'plan_kind', value: 'public' } },
       { name: 'reseller_validity_days', label: 'Reseller validity days', type: 'number', required: true, showWhen: { name: 'plan_kind', value: 'reseller' } },
       { name: 'category_id', label: 'Select category', type: 'select', options: catOptions, required: true, showWhen: { name: 'plan_kind', value: 'public' } },
       { name: 'server_id', label: 'Select server', type: 'select', options: serverOptionsList, required: true },
-      { name: 'hwid_limit', label: 'HWID device limit (0 = unlimited)', type: 'number', required: true, min: 0, step: 1, placeholder: 'Example: 1 device', showWhenAll: [{ name: 'plan_kind', value: 'public' }, { name: '__selected_server_type', values: ['xui','pasarguard'] }] },
+      { name: 'hwid_limit', label: 'HWID device limit (0 = unlimited)', type: 'number', required: true, min: 0, step: 1, placeholder: 'Example: 1 device', showWhenAll: [{ name: 'plan_kind', value: 'public' }, { name: '__selected_server_type', values: ['xui','pasarguard','nx'] }] },
       { name: 'happ_encrypted_sub', label: 'Send Happ Encrypted Link (normal sales only)', type: 'select', options: [{value: 'no', label: 'No — normal subscription'}, {value: 'yes', label: 'Yes — Happ encrypted link'}], required: true, full: true, showWhenAll: [{name: 'plan_kind', value: 'public'}, {name: '__selected_server_type', value: 'xui'}] },
       { name: 'group_name', label: 'Sanaei client group', type: 'select', optionsBy: { name: 'server_id', map: groupOptionsByServer }, full: true, showWhenAll: [{ name: 'plan_kind', value: 'public' }, { name: '__selected_server_type', value: 'xui' }] },
-      { name: 'inbound_mode', label: 'Inbound / group selection mode', type: 'select', options: [{ value: 'automatic', label: 'Automatic — use all active inbounds / groups' }, { value: 'manual', label: 'Manual — choose specific inbounds / groups' }], required: true, full: true, showWhenAll: [{ name: '__selected_server_type', values: ['xui','pasarguard'] }] },
-      { name: 'inbound_ids', label: 'Inbounds / PasarGuard groups included in this plan', type: 'multiselect', optionsBy: { name: 'server_id', map: inboundOptionsByServer }, required: true, full: true, showWhenAll: [{ name: '__selected_server_type', values: ['xui','pasarguard'] }, { name: 'inbound_mode', value: 'manual' }] }
+      { name: 'inbound_mode', label: 'Inbound / group selection mode', type: 'select', options: [{ value: 'automatic', label: 'Automatic — use all active inbounds / groups' }, { value: 'manual', label: 'Manual — choose specific inbounds / groups' }], required: true, full: true, showWhenAll: [{ name: '__selected_server_type', values: ['xui','pasarguard','nx'] }] },
+      { name: 'inbound_ids', label: 'Inbounds / PasarGuard groups included in this plan', type: 'multiselect', optionsBy: { name: 'server_id', map: inboundOptionsByServer }, required: true, full: true, showWhenAll: [{ name: '__selected_server_type', values: ['xui','pasarguard','nx'] }, { name: 'inbound_mode', value: 'manual' }] }
     ]
   };
 }
@@ -2228,7 +2252,7 @@ function resellerPlanForm(categories: any[], servers: ServerItem[], p?: Reseller
 
 function paymentForm(servers: ServerItem[], p?: PaymentItem): ModalForm {
   const publicOptions = serverOptions(servers.filter(s => (s.scope || 'public') !== 'reseller'));
-  const resellerOptions = [{ value: 0, label: 'All reseller servers — fallback' }, ...serverOptions(servers.filter(s => s.scope === 'reseller')).slice(1)];
+  const resellerOptions = [{ value: 0, label: 'All reseller servers — fallback' }, ...serverOptions(servers.filter(s => ['reseller','all'].includes(s.scope||''))).slice(1)];
   return { title: p ? 'Edit Payment' : 'Add Payment', action: p ? `/admin/payments/${p.id}/edit` : '/admin/payments/add', defaults: p ? { ...p, reviewer_telegram_id: p.reviewer_telegram_id || 0, show_for: ['reseller','panel_reseller'].includes(p.server_type) ? p.server_type : 'public' } : { show_for: 'public', server_id: 0, reviewer_telegram_id: 0 }, fields: [
     { name: 'card_number', label: 'Card / account number', required: true },
     { name: 'owner_name', label: 'Owner name', required: true },
@@ -2286,7 +2310,7 @@ function resellerForm(r?: ResellerItem, servers: ServerItem[] = []): ModalForm {
     if(options&&policy.group_name&&!options.some(o=>o.value===policy.group_name))options.push({value:policy.group_name,label:policy.group_name+' (current)'});
   }
   const serverLabels=Object.fromEntries(servers.map(server=>[String(server.id),server.display_name||server.name]));
-  const resellerServers = servers.filter((server) => server.scope === 'reseller' && (server.is_active || (r?.allowed_server_ids || []).includes(server.id)));
+  const resellerServers = servers.filter((server) => ['reseller','all'].includes(server.scope||'') && (server.is_active || (r?.allowed_server_ids || []).includes(server.id)));
   const defaults = r ? { total_gb: r.total_bytes / 1024 ** 3, expires_at: expiryDate, allowed_server_ids: r.allowed_server_ids?.length ? r.allowed_server_ids : r.server_id ? [r.server_id] : [], server_id: r.server_id || 0, inbound_mode: r.inbound_mode || 'automatic', inbound_ids: r.inbound_ids || [], inbound_policies_json: JSON.stringify(Object.keys(savedPolicies).length ? savedPolicies : r.server_id && r.inbound_mode === 'manual' ? { [String(r.server_id)]: { mode: 'manual', inbound_ids: r.inbound_ids || [] } } : {}), group_name: r.group_name || '' } : { total_gb: 0, days: 30, allowed_server_ids: [], inbound_policies_json: '{}' };
   return {
     title: r ? 'Edit Reseller' : 'Add Reseller',
@@ -2315,7 +2339,7 @@ function resellerForm(r?: ResellerItem, servers: ServerItem[] = []): ModalForm {
     ]
   };
 }
-function serviceTypeForm(s?: ServiceTypeItem): ModalForm { return { title: s ? 'Edit Service Type' : 'Add Service Type', action: s ? '/admin/service-types/edit' : '/admin/service-types/add', defaults: s ? { key: s.key, name: s.value, badge_color: s.badge_color || '#2563eb', server_type: s.server_type_mode === 'manual' ? (s.server_type || 'xui') : 'auto' } : { server_type: 'auto', badge_color: '#2563eb' }, fields: [...(s ? [{ name: 'key', label: 'Key', type: 'text' as const, hidden: true }] : []), { name: 'name', label: 'Service name', required: true, full: true }, { name: 'badge_color', label: 'Service badge color', type: 'color', full: true }, { name: 'server_type', label: 'Backend provider', type: 'select', required: true, full: true, options: [{ value: 'auto', label: 'Auto detect — compatible with existing types' }, { value: 'v2ray', label: 'V2Ray — Sanaei / 3x-ui + PasarGuard' }, { value: 'xui', label: 'X-UI / 3x-ui / Sanaei (legacy mode)' }, { value: 'pasarguard', label: 'PasarGuard' }, { value: 'mikrotik', label: 'MikroTik / OpenVPN / L2TP' }] }] }; }
+function serviceTypeForm(s?: ServiceTypeItem): ModalForm { return { title: s ? 'Edit Service Type' : 'Add Service Type', action: s ? '/admin/service-types/edit' : '/admin/service-types/add', defaults: s ? { key: s.key, name: s.value, badge_color: s.badge_color || '#2563eb', server_type: s.server_type_mode === 'manual' ? (s.server_type || 'xui') : 'auto' } : { server_type: 'auto', badge_color: '#2563eb' }, fields: [...(s ? [{ name: 'key', label: 'Key', type: 'text' as const, hidden: true }] : []), { name: 'name', label: 'Service name', required: true, full: true }, { name: 'badge_color', label: 'Service badge color', type: 'color', full: true }, { name: 'server_type', label: 'Backend provider', type: 'select', required: true, full: true, options: [{ value: 'auto', label: 'Auto detect — compatible with existing types' }, { value: 'v2ray', label: 'V2Ray — Sanaei / 3x-ui + PasarGuard' }, { value: 'xui', label: 'X-UI / 3x-ui / Sanaei (legacy mode)' }, { value: 'pasarguard', label: 'PasarGuard' }, {value:'nx',label:'NX Panel'}, { value: 'mikrotik', label: 'MikroTik / OpenVPN / L2TP' }] }] }; }
 function settingsWebsiteForm(map: Record<string, string>, language: 'en' | 'fa' = 'en'): ModalForm {
   const s = (en: string, fa: string) => language === 'fa' ? fa : en;
   return {

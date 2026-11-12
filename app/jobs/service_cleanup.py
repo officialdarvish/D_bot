@@ -355,7 +355,7 @@ async def _delete_task_from_panel(session, task: ServiceDeletionTask) -> tuple[b
                 identifiers.get('xui_uuid'),
                 identifiers.get('sub_link'),
             )
-        elif server_type == 'pasarguard':
+        elif server_type in {'pasarguard','nx'}:
             username = identifiers.get('xui_email') or identifiers.get('client_username') or task.username
             if not username:
                 return False, 'No PasarGuard username was stored for deletion.'
@@ -847,7 +847,7 @@ async def reconcile_expired_service_list(*, scan_limit: int | None = None) -> di
                             stats['missing_on_panel'] += 1
                             stats['still_inactive'] += 1
                             stats['updated'] += int(previous != 'missing_on_panel')
-                    elif server_type == 'pasarguard':
+                    elif server_type in {'pasarguard','nx'}:
                         try:
                             found = await PasarGuardService().get_user(server, svc.xui_email or svc.client_username)
                         except Exception as exc:

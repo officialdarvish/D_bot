@@ -67,7 +67,7 @@ async def _read_panel_user(session, server, name):
             if found and found.get('usage_known', True):
                 return found
         return await XuiService().find_client_any(server, name)
-    if server.server_type == 'pasarguard':
+    if server.server_type in {'pasarguard','nx'}:
         return await PasarGuardService().get_user(server, name)
     if server.server_type == 'mikrotik':
         return await MikroTikService().get_user(server, name)
@@ -83,7 +83,7 @@ async def refresh_panel_snapshot(session, svc, *, server=None):
     from app.database.models import Server
     service_id, server_id = svc.id, svc.server_id
     server = server or (await session.get(Server, server_id) if server_id else None)
-    if not server or server.server_type not in ('xui', 'pasarguard', 'mikrotik'):
+    if not server or server.server_type not in ('xui', 'pasarguard', 'nx', 'mikrotik'):
         return None
     kind = server.server_type
     name = svc.xui_email or svc.client_username
@@ -114,7 +114,7 @@ async def refresh_panel_snapshot(session, svc, *, server=None):
             if total is None:
                 total = remote.get('totalGB', remote.get('total', svc.total_bytes))
             enabled = str(remote.get('enable', svc.is_active)).lower() not in ('false', '0', 'disabled')
-        elif kind == 'pasarguard':
+        elif kind in {'pasarguard','nx'}:
             remote = found
             used = int(remote.get('used_traffic', remote.get('used_bytes', 0)) or 0)
             total = remote.get('data_limit', remote.get('total_bytes', svc.total_bytes))
@@ -142,7 +142,7 @@ async def refresh_panel_snapshot(session, svc, *, server=None):
     if kind != 'xui' or found.get('total_known', True):
         svc.total_bytes = total
     reset_volume_alerts(svc)
-    if kind == 'pasarguard':
+    if kind in {'pasarguard','nx'}:
         svc.sub_link = remote.get('subscription_url') or svc.sub_link
     reason = local_terminal_reason(svc)
     if enabled and reason is None:

@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: darvish
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      POSTGRES_DB: darvish
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U darvish -d darvish"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://darvish:${DB_PASSWORD}@db:5432/darvish
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${BRIDGE_API_PORT:-8095}:8000"
+    restart: unless-stopped
+  bot:
+    build: .
+    command: ["python", "-m", "app.bot"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://darvish:${DB_PASSWORD}@db:5432/darvish
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  dbdata:

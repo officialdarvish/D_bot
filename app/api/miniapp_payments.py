@@ -46,7 +46,7 @@ async def funding_quote(s,user,body):
         from app.services.reseller_billing import server_allows
         target_id=body.server_id or account.server_id
         server=await s.get(Server,target_id) if target_id else None
-        if not server or not server.is_active or target_id not in reseller_package_server_ids(account) or not server_allows(account,server) or (server.meta or {}).get('scope')!='reseller' or package.server_id!=target_id:
+        if not server or not server.is_active or target_id not in reseller_package_server_ids(account) or not server_allows(account,server) or (server.meta or {}).get('scope') not in {'reseller','all'} or package.server_id!=target_id:
             raise HTTPException(403,'بسته حجمی متعلق به سرور انتخاب‌شده و مجاز نمایندگی نیست.')
         from app.services.reseller_management import quote_package
         try:quote=await quote_package(s,account,package)

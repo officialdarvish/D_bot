@@ -30,7 +30,7 @@ def policy(server):
 def validate_policy(modes,rate,provider):
     if isinstance(modes,str):modes=[x.strip() for x in modes.split(',') if x.strip()]
     if not modes or any(x not in MODES for x in modes):raise ValueError('Select Volume, PAYG or both.')
-    if 'payg' in modes and provider not in {'xui','pasarguard'}:raise ValueError('PAYG requires X-UI or PasarGuard traffic counters.')
+    if 'payg' in modes and provider not in {'xui','pasarguard','nx'}:raise ValueError('PAYG requires X-UI or PasarGuard traffic counters.')
     if 'payg' in modes and not 1<=int(rate)<=10**9:raise ValueError('Enter a positive PAYG price per GB in Toman.')
     return {'reseller_billing_modes':list(dict.fromkeys(modes)),'reseller_payg_rate_irt':max(0,int(rate))}
 
@@ -151,7 +151,7 @@ async def set_remote(server,svc,enabled):
     if server.server_type=='xui':
         from app.services.xui_service import XuiService
         await XuiService().set_client_enabled(server,svc.xui_email or svc.client_username,enabled)
-    elif server.server_type=='pasarguard':
+    elif server.server_type in {'pasarguard','nx'}:
         from app.services.pasarguard_service import PasarGuardService
         await PasarGuardService().set_enabled(server,svc.xui_email or svc.client_username,enabled)
     else:raise ValueError('Unsupported PAYG provider')

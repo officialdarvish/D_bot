@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "version": "1.4.0",
+  "build": 1,
+  "channel": "main",
+  "notes": {
+    "fa": "ویزارد دوزبانه قابل ادامه، پشتیبانی NX، پرداخت Darvish Bridge، سرور مشترک و اصلاح رسیدها",
+    "en": "Resumable bilingual setup, NX support, Darvish Bridge payments, shared servers and receipt fixes"
+  }
+}

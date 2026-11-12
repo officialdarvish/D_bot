@@ -49,5 +49,5 @@ def test_web_admin_supports_server_and_per_server_inbound_multiselect():
 def test_telegram_quick_picker_writes_new_multi_server_setting():
     source = text('app/bot/handlers/admin/settings.py')
     assert "test_account_targets_json" in source
-    assert "s.server_type in {'xui', 'pasarguard', 'mikrotik'}" in source
+    assert "s.server_type in {'xui', 'pasarguard', 'nx', 'mikrotik'}" in source
     assert 'Web Admin → Test Account' in source

@@ -524,6 +524,9 @@ class PasarGuardService:
         Older reseller panels may only expose ``/api/groups``; use it as a
         compatibility fallback when the lightweight route does not exist.
         """
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().list_groups(server)
         last_error: RuntimeError | None = None
         for path, params in (
             ('/api/groups/simple', {'all': 'true'}),
@@ -594,6 +597,9 @@ class PasarGuardService:
         requires templates, automatically select the template that matches a D
         Bot plan. No Template ID is entered while adding a server.
         """
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().list_templates(server)
         last_error: RuntimeError | None = None
         for path, params in (
             ('/api/user_templates', {'limit': 500}),
@@ -655,6 +661,9 @@ class PasarGuardService:
         templates, or a previously auto-synced cache. Manual IDs are not part of
         server setup anymore.
         """
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().probe_server(server)
         profile = await self.get_admin_profile(server)
         api_base = self._resolved_api_base(server)
         access = self.summarize_access(profile)
@@ -894,6 +903,9 @@ class PasarGuardService:
         }
 
     async def test_server(self, server: Server) -> tuple[bool, list[dict]]:
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().test_server(server)
         try:
             probe = await self.probe_server(server)
             return bool(probe.get('ok')), list(probe.get('groups') or [])
@@ -1021,6 +1033,9 @@ class PasarGuardService:
         return ''
 
     async def current_subscription_link(self, server: Server, username: str, *responses: dict | None) -> str:
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().current_subscription_link(server,username,*responses)
         try:
             # This refresh is optional when an opaque panel-issued URL is
             # already present; a slow GET must not hold delivery for 40 seconds.
@@ -1143,6 +1158,9 @@ class PasarGuardService:
             raise PasarGuardCreateUnconfirmed(exc.__cause__ if isinstance(exc.__cause__, httpx.HTTPError) else httpx.ReadTimeout('')) from exc
 
     async def create_user_on_plan(self, server: Server, plan: Plan, username: str) -> dict:
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().create_user_on_plan(server,plan,username)
         validate_pasarguard_username_length(username)
         error = pasarguard_username_error(username, max_length=128)
         if error:
@@ -1225,6 +1243,9 @@ class PasarGuardService:
         }
 
     async def get_user(self, server: Server, username: str) -> dict | None:
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().get_user(server,username)
         try:
             data = await self._request(server, 'GET', f'/api/user/by-username/{username}')
         except RuntimeError as exc:
@@ -1257,6 +1278,9 @@ class PasarGuardService:
 
     async def get_user_hwids(self, server: Server, username: str) -> dict:
         """Return PasarGuard HWID/device state using the current ID-based API."""
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().get_user_hwids(server,username)
         user = await self.get_user(server, username)
         if not user:
             raise RuntimeError('PasarGuard user not found')
@@ -1288,6 +1312,9 @@ class PasarGuardService:
 
     async def clear_user_hwids(self, server: Server, username: str) -> dict:
         """Reset every registered HWID for a PasarGuard user."""
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().clear_user_hwids(server,username)
         user = await self.get_user(server, username)
         if not user:
             raise RuntimeError('PasarGuard user not found')
@@ -1346,6 +1373,9 @@ class PasarGuardService:
         raise RuntimeError('PasarGuard renewal activation was not confirmed; check users.update permission and the account disable switch')
 
     async def renew_user_on_plan(self, server: Server, plan: Plan, username: str) -> dict:
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().renew_user_on_plan(server,plan,username)
         template_id = self._effective_template_id(server, plan)
         if template_id:
             data = await self._request(
@@ -1449,6 +1479,9 @@ class PasarGuardService:
         hwid_limit: int | None = None,
         status: str | None = 'active',
     ) -> dict:
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().update_user(server,username,data_limit_bytes=data_limit_bytes,expire_at=expire_at,expire_days=expire_days,group_ids=group_ids,hwid_limit=hwid_limit,status=status)
         payload: dict[str, Any] = {}
         if status is not None:
             payload['status'] = status
@@ -1498,7 +1531,7 @@ class PasarGuardService:
         targets = []
         for service in services:
             server = servers.get(int(getattr(service, 'server_id', 0) or 0))
-            if not server or str(getattr(server, 'server_type', '') or '').lower() != 'pasarguard':
+            if not server or str(getattr(server, 'server_type', '') or '').lower() not in {'pasarguard','nx'}:
                 continue
             username = str(getattr(service, 'client_username', '') or getattr(service, 'xui_email', '') or '').strip()
             if username:
@@ -1525,6 +1558,9 @@ class PasarGuardService:
         return result
 
     async def add_volume(self, server: Server, username: str, add_bytes: int) -> dict:
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().add_volume(server,username,add_bytes)
         current = await self.get_user(server, username)
         if not current:
             raise RuntimeError('PasarGuard user not found')
@@ -1532,6 +1568,9 @@ class PasarGuardService:
         return await self.update_user(server, username, data_limit_bytes=current_total + max(int(add_bytes), 0))
 
     async def add_days(self, server: Server, username: str, days: int) -> dict:
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().add_days(server,username,days)
         current = await self.get_user(server, username)
         if not current:
             raise RuntimeError('PasarGuard user not found')
@@ -1557,6 +1596,9 @@ class PasarGuardService:
         return await self.update_user(server, username, expire_at=base + timedelta(days=max(int(days), 0)))
 
     async def set_enabled(self, server: Server, username: str, enabled: bool) -> dict:
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().set_enabled(server,username,enabled)
         data = await self._request(
             server,
             'PUT',
@@ -1566,6 +1608,9 @@ class PasarGuardService:
         return data if isinstance(data, dict) else {}
 
     async def delete_user(self, server: Server, username: str) -> None:
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().delete_user(server,username)
         await self._request(server, 'DELETE', f'/api/user/by-username/{username}')
 
     def verify_subscription_rotation(self, server: Server, before: dict, after: dict) -> dict:
@@ -1590,6 +1635,9 @@ class PasarGuardService:
         return {**after, 'sub_link': link, 'subscription_url': link, 'uuid': str(credential or '')}
 
     async def revoke_subscription(self, server: Server, username: str) -> dict:
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().revoke_subscription(server,username)
         before = await self.get_user(server, username)
         if not before:
             raise RuntimeError('PasarGuard user not found')
@@ -1606,7 +1654,10 @@ class PasarGuardService:
             if attempt:
                 await asyncio.sleep(0.25 * attempt)
             if not candidates:
-                candidates.append(await self.get_user(server, username))
+                try:candidates.append(await self.get_user(server, username))
+                except Exception as exc:
+                    last_error=RuntimeError('PasarGuard rotation readback unavailable')
+                    continue
             candidate = candidates.pop(0)
             try:
                 return self.verify_subscription_rotation(server, before, candidate)
@@ -1621,6 +1672,10 @@ class PasarGuardService:
         PasarGuard's integer database user ID is intentionally preserved. Protocol
         UUIDs live in proxy_settings; never delete/recreate a subscriber to rotate.
         """
+        if getattr(server,'server_type',None)=='nx':
+            from app.services.nx_service import NxService
+            return await NxService().reset_hwid_and_rotate(server,username)
         await self.clear_user_hwids(server, username)
-        # Reuse the verified mutation response; a second read can be stale.
+        # revoke_subscription already verifies identity, credentials and membership.
+        # Return its authoritative response without an additional stale network read.
         return await self.revoke_subscription(server, username)

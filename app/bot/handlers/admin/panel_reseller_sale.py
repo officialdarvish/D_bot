@@ -70,7 +70,7 @@ async def panel_sale_servers(callback: CallbackQuery):
     if not _owner(callback): return
     async with SessionLocal() as session:
         servers = (await session.execute(select(Server).where(Server.is_active.is_(True), Server.server_type == 'pasarguard').order_by(Server.id))).scalars().all()
-        servers = [srv for srv in servers if (srv.meta or {}).get('scope') == 'reseller']
+        servers = [srv for srv in servers if (srv.meta or {}).get('scope') in {'reseller','all'}]
     if not servers:
         await edit_or_answer(callback, 'پنل PasarGuard فعال در لیست سرورها وجود ندارد.', reply_markup=_kb(('🔙 برگشت', 'pgadmin:settings')))
     else:
@@ -84,7 +84,7 @@ async def panel_sale_set_server(callback: CallbackQuery):
     sid = int(callback.data.rsplit(':',1)[-1])
     async with SessionLocal() as session:
         server = await session.get(Server, sid)
-        if not server or not server.is_active or server.server_type != 'pasarguard' or (server.meta or {}).get('scope') != 'reseller':
+        if not server or not server.is_active or server.server_type != 'pasarguard' or (server.meta or {}).get('scope') not in {'reseller','all'}:
             await callback.answer('پنل معتبر نیست.', show_alert=True); return
     try:
         await PanelResellerProvisioner().require_provisioning_access(server)
@@ -235,7 +235,7 @@ async def panel_sale_approve(callback: CallbackQuery):
         if not order or order.status != 'pending':
             await callback.answer('این سفارش قابل تأیید مجدد نیست.', show_alert=True); return
         server = await session.get(Server, order.server_id)
-        if not server or not server.is_active or server.server_type != 'pasarguard' or (server.meta or {}).get('scope') != 'reseller':
+        if not server or not server.is_active or server.server_type != 'pasarguard' or (server.meta or {}).get('scope') not in {'reseller','all'}:
             await callback.answer('پنل در دسترس نیست.', show_alert=True); return
         order.status = 'processing'
         await session.commit()

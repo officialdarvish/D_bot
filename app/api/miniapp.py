@@ -7,7 +7,7 @@ from datetime import datetime
 
 import qrcode
 from aiogram import Bot
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -39,7 +39,7 @@ async def telegram_bot():
         await runtime.close()
 
 
-async def customer(response: Response, x_telegram_init_data: str = Header(default='')):
+async def customer(request: Request, response: Response, x_telegram_init_data: str = Header(default='')):
     response.headers['Cache-Control'] = 'no-store, private'
     try:
         identity = validate_init_data(x_telegram_init_data, settings.BOT_TOKEN)
@@ -68,6 +68,10 @@ async def customer(response: Response, x_telegram_init_data: str = Header(defaul
             raise HTTPException(503, 'بررسی عضویت انجام نشد؛ دوباره تلاش کنید.')
         if not ok:
             raise HTTPException(403, 'ابتدا عضویت کانال را در ربات تایید کنید.')
+    from app.services.features import require_feature
+    async with SessionLocal() as session:
+        if any(x in request.url.path for x in ('/reseller','/panels','/panel-sales')):await require_feature('resellers',session)
+        if '/trial' in request.url.path:await require_feature('trials',session)
     return user
 
 
@@ -156,7 +160,7 @@ async def panel_snapshot(session,user):
 
 @router.get('/session')
 async def snapshot(user=Depends(customer)):
-    names = ('buy', 'my_services', 'wallet_topup', 'account', 'tickets', 'convert', 'test_account', 'reseller_request', 'panel_sales')
+    names = ('buy', 'my_services', 'wallet_topup', 'account', 'tickets', 'convert', 'test_account', 'reseller_request', 'panel_sales', 'tutorials', 'rules')
     button_values = {name: await get_user_button(name) for name in names}
     buttons = {name: value[1] for name, value in button_values.items()}
     buttons['test_account']=trial_enabled(buttons['test_account'], await get_setting_value('test_account_button_visible','1'), await get_setting_value('test_account_enabled','1'))
@@ -165,6 +169,9 @@ async def snapshot(user=Depends(customer)):
         config = await read_config(session)
         existing_reseller=await session.scalar(select(ResellerAccount.id).where(ResellerAccount.user_id==user.id))
         existing_panel=await session.scalar(select(PasarGuardPanelOrder.id).where(PasarGuardPanelOrder.user_id==user.id,PasarGuardPanelOrder.status.in_(['approved','delivery_pending'])).limit(1))
+        if not config['reseller_enabled']:buttons['reseller_request']=buttons['panel_sales']=False
+        buttons['tutorials']=buttons['tutorials'] and config['features']['tutorials']
+        buttons['test_account']=buttons['test_account'] and config['features']['trials']
         buttons['reseller_request']=buttons['reseller_request'] and config['reseller_requests'] and not existing_reseller and not existing_panel
         for flag, option in [('buy','show_buy'),('my_services','show_services'),('account','show_wallet'),('wallet_topup','show_wallet')]:
             buttons[flag] = buttons[flag] and config[option]
@@ -393,3 +400,57 @@ async def purchased_panel_snapshot(user=Depends(customer)):
         config=await read_config(session)
         if not config['reseller_enabled']:return {'panels':[]}
         return {'panels':await panel_snapshot(session,user)}
+
+
+@router.get('/content')
+async def customer_content(user=Depends(customer)):
+    from app.services.user_content import load_apps
+    from app.services.features import capabilities
+    from app.database.models import Setting
+    async with SessionLocal() as session:
+        features=await capabilities(session)
+        apps=await load_apps(session) if features['tutorials'] and (await get_user_button('tutorials'))[1] else []
+        rules=await session.get(Setting,'rules_text')
+    from app.services.tutorial_video import url
+    return {'tutorials':[{**{k:r.get(k,'') for k in ('id','platform','name','download_url','text')},'video_url':url(r['id'],user.id) if r.get('video_file_id') else ''} for r in apps if r.get('enabled',True)],'rules':rules.value if rules and (await get_user_button('rules'))[1] else ''}
+
+
+@router.get('/tutorial-video/{app_id}')
+async def tutorial_video(app_id: str, uid: int, expires: int, token: str):
+    from app.services.tutorial_video import validate
+    from app.services.user_content import load_apps,MAX_TUTORIAL_VIDEO_BYTES
+    from app.services.features import capabilities
+    from fastapi.responses import StreamingResponse
+    if not validate(app_id,uid,expires,token):raise HTTPException(403,'Media URL expired')
+    async with SessionLocal() as session:
+        user=await session.get(User,uid)
+        if not user or user.is_blocked or not (await read_config(session))['enabled'] or not (await capabilities(session))['tutorials'] or not (await get_user_button('tutorials'))[1]:raise HTTPException(403)
+        app=next((r for r in await load_apps(session) if r['id']==app_id and r.get('enabled',True)),None)
+    if not app or not app.get('video_file_id'):raise HTTPException(404)
+    async with telegram_bot() as bot:
+        file=await bot.get_file(app['video_file_id'])
+        if not file.file_size or file.file_size>MAX_TUTORIAL_VIDEO_BYTES:raise HTTPException(413)
+        output=io.BytesIO()
+        await bot.download_file(file.file_path,destination=output)
+    if output.getbuffer().nbytes>MAX_TUTORIAL_VIDEO_BYTES:raise HTTPException(413)
+    output.seek(0)
+    return StreamingResponse(output,media_type='video/mp4',headers={'Cache-Control':'no-store, private','Referrer-Policy':'no-referrer','Content-Length':str(output.getbuffer().nbytes)})
+
+
+@router.get('/services/{sid}/nx-configs')
+async def nx_configs(sid: int, user=Depends(customer)):
+    from app.services.nx_service import NxService
+    async with SessionLocal() as session:
+        svc=await session.get(ClientService,sid)
+        if not svc:raise HTTPException(404)
+        if svc.reseller_id:
+            from app.services.features import require_feature
+            await require_feature('resellers',session)
+            account=await session.get(ResellerAccount,svc.reseller_id)
+            if not account or account.user_id!=user.id:raise HTTPException(404)
+        elif svc.user_id!=user.id:raise HTTPException(404)
+        server=await session.get(Server,svc.server_id)
+        if not server or server.server_type!='nx':raise HTTPException(404)
+        try:files=await NxService().app_configs(server,svc.xui_email or svc.client_username)
+        except Exception:raise HTTPException(409,'دریافت فایل اتصال از NX ممکن نشد؛ دوباره تلاش کنید.')
+    return {'files':files}

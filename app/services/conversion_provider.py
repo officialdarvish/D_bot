@@ -44,7 +44,7 @@ async def live_source(server, service):
         if enabled_flag is not None and str(enabled_flag).strip().lower() in ('false', '0', 'no'):
             raise ValueError('Source client is disabled on panel.')
         return total, used, expiry
-    if server.server_type == 'pasarguard':
+    if server.server_type in {'pasarguard','nx'}:
         found = await PasarGuardService().get_user(server, username)
         if not found:
             raise ValueError('Source client not found on PasarGuard panel.')
@@ -123,7 +123,7 @@ async def set_enabled(server, username: str, enabled: bool):
         write = provider.set_client_enabled
         read = provider.find_client_any
         label = 'Sanaei'
-    elif server.server_type == 'pasarguard':
+    elif server.server_type in {'pasarguard','nx'}:
         provider = PasarGuardService()
         write = provider.set_enabled
         read = provider.get_user
@@ -143,7 +143,7 @@ async def set_enabled(server, username: str, enabled: bool):
 
 
 async def set_exact_quota_and_expiry(server, username: str, quota_bytes: int, expires_at: datetime):
-    if server.server_type == 'pasarguard':
+    if server.server_type in {'pasarguard','nx'}:
         provider=PasarGuardService()
         write_error=None
         try:
@@ -201,7 +201,7 @@ async def create_converted(server, target_plan, username: str, target_bytes: int
     )
     if server.server_type == 'xui':
         created = await XuiService().create_client_on_plan(server, surrogate, username)
-    elif server.server_type == 'pasarguard':
+    elif server.server_type in {'pasarguard','nx'}:
         created = await PasarGuardService().create_user_on_plan(server, target_plan, username)
     else:
         raise ValueError('Unsupported target provider')
@@ -213,5 +213,5 @@ async def delete_converted_source(server, service):
     username = service.xui_email or service.client_username
     if server.server_type == 'xui':
         await XuiService().delete_client(server, service.xui_email, service.client_username, service.xui_uuid, service.sub_link)
-    elif server.server_type == 'pasarguard':
+    elif server.server_type in {'pasarguard','nx'}:
         await PasarGuardService().delete_user(server, username)

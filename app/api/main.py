@@ -217,6 +217,8 @@ async def api_service_types(_: str = Depends(_auth_user)):
 
 app.include_router(custom_texts_router, dependencies=[Depends(_auth_user)])
 app.include_router(admin_web_router)
+from app.api.darvish_bridge import router as darvish_bridge_router
+app.include_router(darvish_bridge_router)
 from app.api.miniapp import router as miniapp_router
 app.include_router(miniapp_router)
 from app.api.miniapp_admin import router as miniapp_admin_router
@@ -446,6 +448,8 @@ async def startup():
             await safe_upgrade(conn, sql)
     # Database must stay fully raw. No default settings, servers, plans, cards, or users are seeded.
 
+    from app.services.server_migration import upgrade_connections
+    await upgrade_connections()
     from app.services.error_backup import install_error_backup
     install_error_backup()
     from app.api.miniapp_checkout import worker_loop

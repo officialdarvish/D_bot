@@ -77,11 +77,20 @@ async def trial_info(user=Depends(customer)):
     used=used and user.telegram_id not in settings.admin_ids
     running=bool(op and op.status in ('queued','processing'))
     return dict(used=used,can_request=not used and not running,can_repeat=user.telegram_id in settings.admin_ids,services=services,volume_gb=parse_volume_gb(await get_setting_value('test_account_volume_gb','1')),
-                duration_days=trial_duration(await get_setting_value('test_account_duration_days','1')),server_count=len(await _load_test_account_targets()),operation=operation)
+                duration_days=trial_duration(await get_setting_value('test_account_duration_days','1')),server_count=len(await _load_test_account_targets()),servers=await trial_server_choices(),operation=operation)
+
+
+async def trial_server_choices():
+    from app.bot.handlers.public.test_account import _load_test_account_targets
+    targets=await _load_test_account_targets()
+    async with SessionLocal() as session:
+        rows=(await session.execute(select(Server).where(Server.id.in_([t['server_id'] for t in targets]),Server.is_active.is_(True)))).scalars().all()
+    return [{'id':s.id,'name':s.name} for s in rows]
 
 
 class TrialRequest(BaseModel):
     key:uuid.UUID
+    server_id:int|None=Field(default=None,gt=0)
 
 
 @router.post('/trial')
@@ -100,8 +109,10 @@ async def request_trial(body:TrialRequest,user=Depends(customer)):
         if pending:return await operation_view(s,pending)
         if user.telegram_id not in settings.admin_ids and await s.scalar(select(TestAccountUsage.id).where(TestAccountUsage.telegram_id==user.telegram_id)):
             raise HTTPException(409,'شما قبلاً یک بار اکانت تست دریافت کرده‌اید.')
-        if not await _load_test_account_targets():raise HTTPException(409,'تنظیمات اکانت تست هنوز توسط مدیر کامل نشده است.')
-        op=MiniAppOperation(user_id=user.id,key=str(body.key),kind='trial',payload={'action':'trial'})
+        targets=await _load_test_account_targets()
+        if not targets:raise HTTPException(409,'تنظیمات اکانت تست هنوز توسط مدیر کامل نشده است.')
+        if body.server_id is not None and body.server_id not in [t['server_id'] for t in targets]:raise HTTPException(400,'سرور تست معتبر نیست.')
+        op=MiniAppOperation(user_id=user.id,key=str(body.key),kind='trial',payload={'action':'trial','server_id':body.server_id})
         s.add(op);await s.commit();return await operation_view(s,op)
 
 
@@ -114,8 +125,8 @@ async def catalog(user=Depends(customer)):
         packages=(await s.execute(select(ResellerPackage).where(ResellerPackage.is_active.is_(True)))).scalars().all()
         from app.services.reseller_management import profile
         personal_rate=int((await profile(s,f'account:{account.id}')).get('volume_rate',0))
-        return dict(servers=[dict(id=x.id,name=x.name,provider=x.server_type) for x in rows if server_allows(account,x) and (x.meta or {}).get('scope')=='reseller'],
-            packages=[dict(id=p.id,title=p.title,server_id=p.server_id,volume_gb=p.volume_gb,days=p.reseller_validity_days,price=f'{personal_rate*int(p.volume_gb):,} تومان' if personal_rate else plan_price_label(p)) for p in packages if p.server_id in {x.id for x in rows if server_allows(account,x) and (x.meta or {}).get('scope')=='reseller'}],default_server_id=next((x.id for x in rows if x.id==account.server_id and server_allows(account,x)),next((x.id for x in rows if server_allows(account,x)),None)))
+        return dict(servers=[dict(id=x.id,name=x.name,provider=x.server_type) for x in rows if server_allows(account,x) and (x.meta or {}).get('scope') in {'reseller','all'}],
+            packages=[dict(id=p.id,title=p.title,server_id=p.server_id,volume_gb=p.volume_gb,days=p.reseller_validity_days,price=f'{personal_rate*int(p.volume_gb):,} تومان' if personal_rate else plan_price_label(p)) for p in packages if p.server_id in {x.id for x in rows if server_allows(account,x) and (x.meta or {}).get('scope') in {'reseller','all'}}],default_server_id=next((x.id for x in rows if x.id==account.server_id and server_allows(account,x)),next((x.id for x in rows if server_allows(account,x)),None)))
 
 @router.post('/reseller/actions')
 async def reseller_action(body:Action,user=Depends(customer)):
@@ -279,25 +290,25 @@ async def configuration_control(s,user,sid,action,*,reseller=False):
     from app.services.mikrotik_service import MikroTikService
     email=svc.xui_email or svc.client_username
     if action=='hwid':
-        if server.server_type=='pasarguard':result=await PasarGuardService().reset_hwid_and_rotate(server,email)
+        if server.server_type in {'pasarguard','nx'}:result=await PasarGuardService().reset_hwid_and_rotate(server,email)
         elif server.server_type=='xui':result=await XuiService().reset_hwid_and_rotate(server,email)
         else:raise ValueError('این پنل قابلیت ریست HWID ندارد.')
         svc.sub_link=result.get('sub_link') or result.get('subscription_url')
         if result.get('uuid'):svc.xui_uuid=str(result['uuid'])
         plan=await s.get(Plan,svc.plan_id) if svc.plan_id else None
-        if server.server_type!='pasarguard':
+        if server.server_type not in {'pasarguard','nx'}:
             svc.sub_link=await XuiService().resolve_service_subscription(s,server,svc,plan,refresh_happ=True)
     elif server.server_type=='mikrotik':
         result=await MikroTikService().rotate_password(server,email);svc.xui_uuid=str(result.get('password') or svc.xui_uuid or '')
-    elif server.server_type in {'xui','pasarguard'}:
-        if server.server_type=='pasarguard':
+    elif server.server_type in {'xui','pasarguard','nx'}:
+        if server.server_type in {'pasarguard','nx'}:
             # Sanaei subscription rotation must never be used for other providers.
             result=await PasarGuardService().revoke_subscription(server,email)
         else:result=await XuiService().revoke_and_new_link(server,email)
         svc.sub_link=result.get('sub_link') or result.get('subscription_url')
         if result.get('uuid'):svc.xui_uuid=str(result['uuid'])
         plan=await s.get(Plan,svc.plan_id) if svc.plan_id else None
-        if server.server_type!='pasarguard':
+        if server.server_type not in {'pasarguard','nx'}:
             svc.sub_link=await XuiService().resolve_service_subscription(s,server,svc,plan,refresh_happ=True)
     else:raise ValueError('این پنل پشتیبانی نمی‌شود.')
     await s.commit()
@@ -346,7 +357,7 @@ async def process_operations():
                     if not user or user.is_blocked:raise ValueError('User is blocked')
                     from types import SimpleNamespace
                     from app.bot.handlers.public.test_account import handle_test_account
-                    outcome=await handle_test_account(SimpleNamespace(bot=real),user.telegram_id,user.username,native=True)
+                    outcome=await handle_test_account(SimpleNamespace(bot=real),user.telegram_id,user.username,native=True,server_id=data.get('server_id'))
                     result={k:v for k,v in outcome.items() if k!='ok'}
                     status='done' if outcome['ok'] else 'failed'
                 elif action in {'revoke','hwid'}:

@@ -1153,7 +1153,7 @@ async def test_config_server_start(callback: CallbackQuery, state: FSMContext):
     if not admin(callback.from_user.id): return
     async with SessionLocal() as session:
         all_servers = (await session.execute(select(Server).where(Server.is_active == True).order_by(Server.id.asc()))).scalars().all()
-        servers = [s for s in all_servers if (s.meta or {}).get('scope') != 'reseller' and s.server_type in {'xui', 'pasarguard', 'mikrotik'}]
+        servers = [s for s in all_servers if (s.meta or {}).get('scope') != 'reseller' and s.server_type in {'xui', 'pasarguard', 'nx', 'mikrotik'}]
     if not servers:
         await callback.answer('هیچ سرور فعالی برای اکانت تست ثبت نشده است.', show_alert=True); return
     kb = InlineKeyboardMarkup(inline_keyboard=[

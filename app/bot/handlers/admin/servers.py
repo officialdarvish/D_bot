@@ -5,7 +5,7 @@ from sqlalchemy import select, update, delete
 from app.core.roles import is_owner
 from app.core.security import encrypt_text, decrypt_text
 from app.database.session import SessionLocal
-from app.database.models import Server, Plan, ServerCategory, ClientService, PaymentCard, Order, TestAccountUsage
+from app.database.models import Server, Plan, ServerCategory, ClientService, PaymentCard, Order, TestAccountUsage, Setting
 from app.bot.states.admin_states import AddServer
 from app.services.xui_service import XuiService
 from app.services.pasarguard_service import PasarGuardService
@@ -29,10 +29,11 @@ def router_connection_text(server: Server | None) -> str:
 def type_text(t):
     if t == 'xui': return 'Sanaei / 3x-ui'
     if t == 'pasarguard': return 'PasarGuard'
+    if t == 'nx':return 'NX Panel'
     if t == 'mikrotik': return 'MikroTik'
     return 'OpenVPN'
 def is_public_server(s: Server | None) -> bool:
-    return bool(s) and (s.meta or {}).get('scope') != 'reseller'
+    return bool(s) and not (s.meta or {}).get('connection_alias_of') and not (s.meta or {}).get('deleted_from_panel') and (s.meta or {}).get('scope') != 'reseller'
 
 def _clean_inbound_ids(value) -> list[int]:
     ids: list[int] = []
@@ -194,6 +195,7 @@ async def servers_keyboard():
         InlineKeyboardButton(text='➕ Sanaei / 3x-ui', callback_data='server:add:xui'),
         InlineKeyboardButton(text='➕ PasarGuard', callback_data='server:add:pasarguard'),
     ])
+    rows.append([InlineKeyboardButton(text='➕ NX Panel',callback_data='server:add:nx')])
     rows.append([back_button('admin:sales_section')])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -208,6 +210,7 @@ async def servers_menu(callback: CallbackQuery, state: FSMContext):
 
 async def _start_server_questions(callback: CallbackQuery, state: FSMContext, mode: str = 'add', server: Server | None = None, server_type: str = 'xui'):
     base, path = _split_panel_url(server)
+    if server and server.server_type=='nx':base,path=server.panel_url.rstrip('/'),'/'
     old_password = None
     if server:
         try: old_password = decrypt_text(server.password_encrypted)
@@ -251,6 +254,11 @@ async def server_url(message: Message, state: FSMContext):
     if not panel_url.startswith(('http://', 'https://')):
         await ui_message(message, '❌ آدرس پنل باید با http:// یا https:// شروع شود. دوباره وارد کنید:'); return
     await state.update_data(panel_url=panel_url.rstrip('/'))
+    if data.get('server_type')=='nx':
+        await state.update_data(panel_path='/',username='api-token',subscription_url=data.get('old_subscription_url'))
+        await state.set_state(AddServer.password)
+        await ui_message(message,'توکن API پنل NX را وارد کنید؛ آدرس واردشده باید مسیر خصوصی پنل را نیز داشته باشد.',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin:servers')]]))
+        return
     if data.get('server_type') == 'pasarguard':
         await state.update_data(panel_path='/')
         await state.set_state(AddServer.subscription_url)
@@ -350,6 +358,19 @@ async def server_password(message: Message, state: FSMContext):
         await ui_message(message, 'رمز عبور نمی‌تواند خالی باشد. دوباره وارد کنید:'); return
     await state.update_data(password=password)
     data = await state.get_data()
+    if data.get('server_type')=='nx':
+        from app.services.nx_service import NxService
+        candidate=Server(server_type='nx',panel_url=data['panel_url'],username='api-token',password_encrypted=encrypt_text(password),meta={})
+        try:
+            probe=await NxService().probe_server(candidate)
+            if not probe['ok']:raise ValueError('No visible NX templates')
+        except Exception:
+            await ui_message(message,'اتصال NX تأیید نشد؛ آدرس کامل پنل، توکن و دسترسی قالب‌ها را بررسی کنید.')
+            return
+        await state.update_data(inbound_ids=[int(row['id']) for row in probe['groups']])
+        await state.set_state(AddServer.confirm)
+        await ui_message(message,_server_summary(await state.get_data()),reply_markup=_server_confirm_kb(data.get('mode') or 'add'))
+        return
     if data.get('server_type') == 'pasarguard':
         await _pasarguard_finish_or_request_scope(message, state)
         return
@@ -391,10 +412,10 @@ async def server_confirm(callback: CallbackQuery, state: FSMContext):
             'panel_base_url': data.get('panel_url'), 'panel_path': data.get('panel_path'),
         },
     )
-    if server_type in ('xui', 'pasarguard'):
+    if server_type in ('xui', 'pasarguard','nx'):
         ok=False; err=''; rows=[]
         try:
-            if server_type == 'pasarguard':
+            if server_type in {'pasarguard','nx'}:
                 probe = await PasarGuardService().probe_server(server)
                 ok = bool(probe.get('ok'))
                 rows = list(probe.get('groups') or [])
@@ -411,9 +432,9 @@ async def server_confirm(callback: CallbackQuery, state: FSMContext):
         inbound_ids = live_ids
         server.meta = {
             'scope': 'public', 'inbound_ids': inbound_ids, 'panel_base_url': data.get('panel_url'), 'panel_path': data.get('panel_path'),
-            'inbounds': ([{'id': int(r.get('id')), 'remark': str(r.get('name') or f'Group {r.get("id")}'), 'protocol': 'group', 'enable': True} for r in (rows or []) if server_type == 'pasarguard' and isinstance(r, dict) and r.get('id')] if server_type == 'pasarguard' else []),
+            'inbounds': ([{'id': int(r.get('id')), 'remark': str(r.get('name') or f'Group {r.get("id")}'), 'protocol': 'group', 'enable': True} for r in (rows or []) if server_type in {'pasarguard','nx'} and isinstance(r, dict) and r.get('id')] if server_type in {'pasarguard','nx'} else []),
         }
-        if server_type == 'pasarguard' and probe:
+        if server_type in {'pasarguard','nx'} and probe:
             server.meta.update(PasarGuardService().probe_meta(probe))
     mode = data.get('mode') or 'add'
     async with SessionLocal() as session:
@@ -424,10 +445,16 @@ async def server_confirm(callback: CallbackQuery, state: FSMContext):
             target.name = data['name']; target.server_type = server_type; target.panel_url = panel_url_full
             target.subscription_url = data.get('subscription_url'); target.username = data['username']
             target.password_encrypted = encrypt_text(data['password'])
-            target.meta = dict(server.meta or {'scope': 'public', 'inbound_ids': inbound_ids, 'panel_base_url': data.get('panel_url'), 'panel_path': data.get('panel_path')})
+            target.meta = {**dict(server.meta or {}),'scope':'all' if (target.meta or {}).get('scope')=='all' else 'public',**{k:v for k,v in (target.meta or {}).items() if k.startswith('reseller_')}}
+            from app.services.server_migration import sync_alias_connections
+            await sync_alias_connections(session,target)
             server_id = target.id; success_text = '✅ اطلاعات سرور فروش با موفقیت تغییر کرد.'
         else:
-            session.add(server); await session.flush(); server_id = server.id; success_text = '✅ سرور فروش با موفقیت اضافه شد.'
+            from app.services.server_connections import add_shared_connection
+            server=await add_shared_connection(session,server); await session.flush(); server_id = server.id; success_text = '✅ سرور فروش با موفقیت اضافه شد.'
+        if server_type=='nx' and not await session.get(Setting,'service_type:custom:nx'):
+            await session.merge(Setting(key='service_type:custom:nx',value='NX'))
+            await session.merge(Setting(key='service_type_provider:nx',value='nx'))
         await session.commit()
     await state.clear()
     await edit_or_answer(callback, f'{success_text}\n\n🖥 سرور: {data["name"]}\n🆔 ID: {server_id}\n🔢 اینباندها: {", ".join(map(str, inbound_ids)) if inbound_ids else "-"}\n\n📋 لیست سرورها بروزرسانی شد:', reply_markup=await servers_keyboard())
@@ -445,6 +472,8 @@ async def toggle_server(callback: CallbackQuery):
                 meta = dict(s.meta or {})
                 meta['admin_enabled'] = bool(s.is_active)
                 s.meta = meta
+            from app.services.server_migration import sync_alias_connections
+            await sync_alias_connections(session,s)
             await session.commit()
     await edit_or_answer(callback, '✅ وضعیت سرور بروزرسانی شد.', reply_markup=await servers_keyboard()); await callback.answer()
 
@@ -542,19 +571,12 @@ async def delete_server(callback: CallbackQuery):
     async with SessionLocal() as session:
         s=await session.get(Server,sid)
         if is_public_server(s):
-            plan_ids=[p.id for p in (await session.execute(select(Plan).where(Plan.server_id == sid))).scalars().all()]
-            service_ids=[cs.id for cs in (await session.execute(select(ClientService).where(ClientService.server_id == sid))).scalars().all()]
-            if plan_ids:
-                await session.execute(delete(Order).where(Order.plan_id.in_(plan_ids)))
-            if service_ids:
-                await session.execute(update(Order).where(Order.service_id.in_(service_ids)).values(service_id=None))
-                await session.execute(update(TestAccountUsage).where(TestAccountUsage.service_id.in_(service_ids)).values(service_id=None))
-            await session.execute(delete(PaymentCard).where(PaymentCard.server_id == sid))
-            await session.execute(update(ClientService).where(ClientService.server_id == sid).values(server_id=None))
-            await session.execute(update(Plan).where(Plan.server_id == sid).values(server_id=None, is_active=False))
-            await session.execute(update(ServerCategory).where(ServerCategory.server_id == sid).values(server_id=None))
-            await session.delete(s); await session.commit()
-    await edit_or_answer(callback, '✅ سرور حذف شد، اما یوزرهای ساخته‌شده در دیتابیس نگهداری شدند.\n\n📋 لیست سرورها:', reply_markup=await servers_keyboard()); await callback.answer()
+            # Keep receipt orders, tariff snapshots, service ownership and ledger joins.
+            s.is_active=False;s.meta={**(s.meta or {}),'deleted_from_panel':True}
+            from app.services.server_migration import sync_alias_connections
+            await sync_alias_connections(session,s)
+            await session.commit()
+    await edit_or_answer(callback, '✅ سرور از فهرست خارج شد؛ سرویس‌ها، رسیدها و سوابق مالی نگهداری شدند.\n\n📋 لیست سرورها:', reply_markup=await servers_keyboard()); await callback.answer()
 
 @router.callback_query(F.data.startswith('server:toggle:'))
 async def toggle_server(callback: CallbackQuery):
