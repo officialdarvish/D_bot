@@ -4,36 +4,39 @@ Amounts are integer currency minor units. Pending orders retain encrypted
 connection credentials so changing admin settings never misroutes old webhooks.
 """
 import hashlib,hmac,json,re,time
-from decimal import Decimal,ROUND_CEILING
 from datetime import datetime
 from urllib.parse import urlsplit
 import httpx
 from sqlalchemy import select
 from app.core.security import encrypt_text,decrypt_text
 from app.database.models import Setting,Order,User,Plan
-from app.services.live_pricing import wallex_usdt_tmn_rate
 
 KEY='darvish_bridge_config'
-SCALES={'USD':2,'USDT':6}
+SCALES={'IRT':0}
 
 
 async def config(session):
     row=await session.get(Setting,KEY)
-    if not row:return {'enabled':False}
-    return json.loads(decrypt_text(row.value))
+    if not row:return {'enabled':False,'currency':'IRT'}
+    value=json.loads(decrypt_text(row.value))
+    if value.get('currency')!='IRT':
+        return {**value,'enabled':False,'currency':'IRT','requires_toman_setup':True}
+    return value
 
 
 def normalize(value,previous=None):
     result={**(previous or {}),**{k:value[k] for k in ('url','bot_username','currency','enabled') if k in value}}
     for key in ('key','secret'):
         if value.get(key):result[key]=str(value[key]).strip()
+    result.pop('requires_toman_setup',None)
+    result.setdefault('currency','IRT')
     result['enabled']=result.get('enabled') in (True,'1',1)
     result['url']=str(result.get('url','')).strip().rstrip('/')
     result['bot_username']=str(result.get('bot_username','')).strip().lstrip('@')
+    if result.get('currency') not in SCALES:raise ValueError('Bridge payments must use Toman (IRT)')
     if not result['url'] and not result['enabled']:return result
     parsed=urlsplit(result['url'])
     if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:raise ValueError('Bridge URL must be HTTPS')
-    if result.get('currency') not in SCALES:raise ValueError('Choose USD or USDT')
     if not re.fullmatch(r'[A-Za-z0-9_]{5,32}',result['bot_username']):raise ValueError('Invalid Bridge bot username')
     if result['enabled'] and (not result.get('key') or len(result.get('secret',''))<24):raise ValueError('Bridge API key and webhook secret are required')
     return result
@@ -49,11 +52,9 @@ async def request(connection,method,path,**kwargs):
 async def quote(session,amount):
     connection=await config(session)
     if not connection.get('enabled'):return None
-    rate,fetched=await wallex_usdt_tmn_rate()
-    scale=SCALES[connection['currency']]
-    minor=int((Decimal(int(amount))*10**scale/Decimal(rate)).to_integral_value(rounding=ROUND_CEILING))
-    if minor<=0 or minor>10**16:raise ValueError('Bridge amount is outside supported limits')
-    return {'amount_minor':minor,'currency':connection['currency'],'scale':scale,'display':format(Decimal(minor)/10**scale,f'.{scale}f')+' '+connection['currency'],'rate_toman':rate,'connection':connection}
+    if connection.get('currency')!='IRT':raise ValueError('Bridge payments must use Toman (IRT)')
+    if type(amount) is not int or amount<=0 or amount>10**16:raise ValueError('Bridge amount is outside supported limits')
+    return {'amount_minor':amount,'currency':'IRT','scale':0,'display':f'{amount:,} Toman','connection':connection}
 
 
 def public_quote(value):return {k:v for k,v in value.items() if k!='connection'} if value else None

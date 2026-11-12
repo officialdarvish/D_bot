@@ -7,7 +7,7 @@
   const $ = (selector) => document.querySelector(selector);
   const escape = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const state = {me:null, admin:null, seller:null, selectedMerchant:null, tab:'home', photoUrl:null};
-  const scales = {USDT:6,TON:9,USD:2,EUR:2,UNIT:2};
+  const scales = {IRT:0,USDT:6,TON:9,USD:2,EUR:2,UNIT:2};
   const statusMap = {pending:'در انتظار',approved:'تأییدشده',rejected:'ردشده',paid:'پرداخت‌شده',requested:'درخواست‌شده',
     awaiting_receipt:'در انتظار رسید',receipt_submitted:'نیازمند بررسی',fulfillment_pending:'در انتظار تحویل',
     fulfilled:'تحویل‌شده',delivery_failed:'خطای تحویل',refunded:'برگشت وجه',suspended:'تعلیق‌شده',open:'باز',resolved:'بررسی‌شده'};
@@ -18,7 +18,7 @@
     let n=BigInt(value ?? 0), negative=n<0n;
     if(negative)n=-n;
     const factor=10n**BigInt(scale), int=n/factor, decimal=(n%factor).toString().padStart(scale,'0').replace(/0+$/,'');
-    return `${negative?'-':''}${int.toLocaleString('fa-IR')}${decimal?'٫'+decimal:''} ${escape(currency)}`;
+    return `${negative?'-':''}${int.toLocaleString('fa-IR')}${decimal?'٫'+decimal:''} ${currency==='IRT'?'تومان':escape(currency)}`;
   }
   function toMinor(value,currency){
     const scale=scales[currency];
@@ -30,7 +30,7 @@
     if(n<=0n||n>BigInt(Number.MAX_SAFE_INTEGER))throw Error('مبلغ خارج از محدوده است');
     return Number(n);
   }
-  const currencyOptions = Object.keys(scales).map(c => `<option value="${c}">${c}</option>`).join('');
+  const currencyOptions = Object.keys(scales).map(c => `<option value="${c}">${c==='IRT'?'تومان (IRT)':c}</option>`).join('');
   const btn = (text, action, id='', kind='secondary', extra='') => `<button class="button ${kind} small" data-action="${escape(action)}" data-id="${escape(id)}" ${extra}>${escape(text)}</button>`;
   const none = (title,desc='موردی برای نمایش وجود ندارد') => `<div class="empty"><strong>${escape(title)}</strong>${escape(desc)}</div>`;
   function title(name, desc=''){return `<div class="section-title"><div><h2>${escape(name)}</h2>${desc?`<p>${escape(desc)}</p>`:''}</div></div>`;}

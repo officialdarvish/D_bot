@@ -31,7 +31,7 @@ class Settings:
 settings = Settings.from_env()
 
 # Explicit minimal-unit scales. No floating point for financial amounts.
-CURRENCY_SCALE = {"USDT": 6, "TON": 9, "USD": 2, "EUR": 2, "UNIT": 2}
+CURRENCY_SCALE = {"IRT": 0, "USDT": 6, "TON": 9, "USD": 2, "EUR": 2, "UNIT": 2}
 
 
 def validate_runtime_secrets():
