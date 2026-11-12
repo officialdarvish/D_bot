@@ -92,6 +92,6 @@ def test_update_queue_exclusive_and_no_arbitrary_command(tmp_path,monkeypatch):
     monkeypatch.setattr(web_update,'QUEUE',tmp_path)
     monkeypatch.setattr(web_update,'check',AsyncMock(return_value={'host_ready':True,'available':True,'commit':sha,'latest':{'version':'1.3.0','build':2}}))
     first=asyncio.run(web_update.enqueue(sha))
-    assert set(first)=={'id','commit','build','version'} and first['commit']==sha
+    assert set(first)=={'id','commit','build','version','state'} and first['state']=='queued' and first['commit']==sha
     with pytest.raises(ValueError):asyncio.run(web_update.enqueue(sha))
     with pytest.raises(ValueError):asyncio.run(web_update.enqueue('$(whoami)'))

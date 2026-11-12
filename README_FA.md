@@ -143,3 +143,5 @@ Built with ❤️ by [Darvish](https://github.com/officialdarvish)
 ## نسخه 1.4.0 — راه‌اندازی و اتصال‌ها
 
 در این شاخه آپدیت وب با فایل نسخه، ویزارد قابل ادامه فارسی/انگلیسی، اتصال مشترک فروش عمومی/نمایندگی، مدیریت NX و پرداخت Darvish Bridge اضافه شده‌اند. این نسخه با درخواست نگهدارنده به شماره 1.4.0 منتشر می‌شود؛ تست زنده VPS، PostgreSQL و سرویس‌ها همچنان انجام نشده است. [وضعیت](docs/WEB_SETUP_UPDATE_STATUS_FA.md)، [NX](docs/NX_PANEL_FA.md)، [تنظیم بریج](docs/DARVISH_BRIDGE_CONNECTION_FA.md)، [سیاست مهاجرت](docs/SERVER_CONNECTION_MIGRATION_FA.md) و [نتیجه تست‌ها](docs/VALIDATION_WEB_SETUP.md) را ببینید.
+
+در **Payments ← + افزودن روش پرداخت** گزینه **Darvish Bridge** را برای تنظیم آدرس HTTPS، ربات، ارز و کلیدها انتخاب کنید. اتصال ذخیره‌شده از کارت خودش در Payments ویرایش می‌شود. کارت Version وضعیت اتصال اجراکننده VPS را نشان می‌دهد. در نصب‌های قدیمی، یک‌بار `sudo dbot update` اجرا کنید تا اجراکننده systemd نصب یا ترمیم شود؛ تأییدهای بعدی داخل وب، بکاپ، ساخت و راه‌اندازی را روی همان VPS اجرا می‌کنند. [راهنمای آپدیت وب](docs/WEB_SETUP_UPDATE_STATUS_FA.md).

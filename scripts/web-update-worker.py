@@ -2,9 +2,16 @@
 """Host worker; no Docker socket exposed to the web panel."""
 import fcntl,json,os,re,subprocess,sys,time,threading,stat,tempfile
 from pathlib import Path
-APP=Path(sys.argv[1]).resolve();QUEUE=APP/'.web-update';QUEUE.mkdir(mode=0o700,exist_ok=True)
+APP=None
+QUEUE=None
+
+def configure(app):
+    global APP,QUEUE
+    APP=Path(app).resolve();QUEUE=APP/'.web-update'
+    QUEUE.mkdir(mode=0o700,exist_ok=True)
+
 def read_json(path):
-    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
     with os.fdopen(fd,'r') as source:
         if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):raise ValueError('Not a regular queue file')
         data=source.read(8193)
@@ -17,15 +24,12 @@ def write_json(path,data):
             json.dump(data,out);out.flush();os.fsync(out.fileno())
         os.replace(name,path)
     finally:Path(name).unlink(missing_ok=True)
-lock=os.fdopen(os.open(QUEUE/'worker.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600),'r+')
-fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
 def heartbeat():
     while True:
         fd=os.open(QUEUE/'ready',os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW,0o644)
         try:os.utime(fd,None)
         finally:os.close(fd)
         time.sleep(10)
-threading.Thread(target=heartbeat,daemon=True).start()
 def run(args,**kwargs):return subprocess.run(args,cwd=APP,check=True,timeout=kwargs.pop('timeout',1800),**kwargs)
 def state(job,status,**extra):
     write_json(QUEUE/'status.json',{**job,'state':status,**extra})
@@ -70,16 +74,14 @@ def apply_runtime():
             state({'id':value['id'],'kind':'runtime'},'failed',error='Optional runtime failed; inspect the host journal.',finished_at=time.time())
         raise
 
-while True:
-    try:apply_runtime()
-    except Exception:
-        import traceback;traceback.print_exc()
+def process_update():
+    """Consume one authenticated queue job using fixed host-side commands."""
     request=QUEUE/'request.json'
-    if not request.exists():time.sleep(3);continue
-    job={};previous=None;switched=False;started=time.time()
+    job={};previous=None;switched=False;started=time.time();refresh=False
     try:
         incoming=read_json(request)
         if not isinstance(incoming,dict) or set(incoming)!={'id','commit','build','version'} or not re.fullmatch('[0-9a-f]{40}',str(incoming.get('commit',''))):raise ValueError('Invalid request')
+        if not re.fullmatch('[0-9a-f-]{36}',str(incoming.get('id',''))) or type(incoming.get('build')) is not int or incoming['build']<1 or not re.fullmatch(r'\d+\.\d+\.\d+',str(incoming.get('version',''))):raise ValueError('Invalid update identity')
         job=incoming;sha=job['commit']
         state(job,'checking',started_at=started)
         run(['git','fetch','https://github.com/officialdarvish/D_bot.git','main'])
@@ -97,6 +99,11 @@ while True:
         state(job,'building',started_at=started,backup=backup.name);run(['docker','compose','build'],timeout=3600)
         state(job,'restarting',started_at=started,backup=backup.name);run(['docker','compose','up','-d'])
         if not healthy():raise ValueError('New API health check failed')
+        installer=APP/'scripts/install-web-updater.sh'
+        if installer.is_file():
+            # Replace the installed agent only after healthy containers, without
+            # killing this process before its completion status/request cleanup.
+            run(['bash',str(installer),'--defer-restart'],timeout=60);refresh=True
         state(job,'completed',started_at=started,finished_at=time.time(),backup=backup.name)
     except Exception:
         # Raw command output stays in the host journal, not in a customer API.
@@ -108,3 +115,24 @@ while True:
             except Exception:traceback.print_exc()
         state(job,'failed',started_at=started,finished_at=time.time(),error='Update failed; inspect host journal. Previous source recovery: '+str(recovered))
     finally:request.unlink(missing_ok=True)
+    return refresh
+
+
+def main():
+    configure(sys.argv[1])
+    lock=os.fdopen(os.open(QUEUE/'worker.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600),'r+')
+    fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    threading.Thread(target=heartbeat,daemon=True).start()
+    while True:
+        if (QUEUE/'request.json').exists() or (QUEUE/'request.json').is_symlink():
+            if process_update():
+                run(['systemctl','restart','--no-block','dbot-web-update.service'],timeout=30)
+                return
+            continue
+        try:apply_runtime()
+        except Exception:
+            import traceback;traceback.print_exc()
+        time.sleep(3)
+
+
+if __name__=='__main__':main()

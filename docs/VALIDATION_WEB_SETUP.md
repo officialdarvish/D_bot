@@ -59,3 +59,20 @@ Date: 2026-11-12.
 Bot modules now use shared settings styles and bilingual switch cards. The Version card sits below System Status and retains the host update confirmation flow; manual recheck bypasses the five-minute update metadata cache. The legacy migration banner and Servers subtitle were removed. Build 2 changes only update.json metadata, so it does not overwrite the v1.4.0 release tag or assets.
 
 Operational limits above still apply. Chromium could not launch in this environment, so no interactive visual/browser check was completed. The role-aware v2 consolidation runs on application startup after installation; the user's live server IDs #5/#8 were not directly inspected or modified. Genuine changes to a role's payment recipient still prevent automatic consolidation.
+
+
+## 1.4.0 build 3 — Bridge in Payments and VPS update confirmation
+
+Date: 2026-11-12.
+
+- Backend integration/regression checks: **25 passed**. Panel confirmation writes an exclusive complete request to the shared directory, the host runner consumes it, backs up, checks out the official commit, builds/restarts, and reports completion. Failure tests cover manifest rejection, build/health recovery and preserved backups. Docker/systemd command execution is mocked; this is not a live VPS deployment test.
+- React DOM interaction checks: **6 passed** using JSDOM and the real language provider. Both English and Persian exercise Payments + → Bridge configuration/save, retained blank credentials and the bank-card alternative; update confirmation sends the expected commit/CSRF token, immediately displays queued status and blocks duplicates. Offline-worker feedback and refreshing a changed commit before retry are covered. A private web path is checked too. Run `npm --prefix frontend run test:payments-updater`.
+- Full D BOT suite: **1232 passed, 12 previously documented failures, 3 subtests passed** (122.92 seconds). Failed test names are unchanged from build 2.
+- Next.js production export with TypeScript checking: **passed**. Generated frontend/out is not committed.
+- Python syntax, installer shell syntax and whitespace checks: **passed**.
+
+Bridge settings now live under Payments, including a payment-method chooser and a configurable saved connection card. The backend encryption, capability verification and bot/Mini App configuration remain shared; API save/disable/error checks prove they stay synchronized.
+
+The update confirmation now uses the existing admin dialog system, acknowledges queued jobs immediately and shows host connection diagnostics. Publishing a request uses a temporary file plus an exclusive atomic link, so the worker cannot read partial JSON or accept duplicate jobs. The systemd installer checks actual readiness. After a healthy web update, the host worker is replaced from the new source before a deferred restart, after request cleanup. The queue is excluded from Docker build context.
+
+An old installation with no host agent still requires `sudo dbot update` once on that same VPS; a web container cannot install a privileged service on an inaccessible host. No user VPS connection, SSH/Docker/systemd deployment, live Bridge payment or graphical Chromium check was performed. Existing v1.4.0 release assets/tag are preserved; update.json advances to build 3.

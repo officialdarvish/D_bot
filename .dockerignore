@@ -43,3 +43,6 @@ Thumbs.db
 
 # Explicit administrator-supplied official Xray archives for offline builds.
 !build/xray/**/*.zip
+
+# Host update queue, heartbeat and database snapshots must stay on the VPS.
+.web-update/

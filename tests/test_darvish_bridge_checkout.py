@@ -127,3 +127,44 @@ def test_bridge_settings_are_authenticated_mask_secrets_and_precede_admin_catcha
     from pathlib import Path
     source=Path('app/api/main.py').read_text()
     assert source.index('app.include_router(darvish_bridge_router)')<source.index("@app.get('/admin/{path:path}'")
+
+
+def test_payment_settings_connect_validate_encrypt_and_sync_checkout(native,monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.api import darvish_bridge as api
+    c,sessions,_,_=native
+    monkeypatch.setattr(api,'SessionLocal',sessions)
+    remote=AsyncMock(return_value={'product_kinds':['digital'],'currencies':{'USDT':6}})
+    monkeypatch.setattr(bridge,'request',remote)
+    monkeypatch.setattr(bridge,'wallex_usdt_tmn_rate',AsyncMock(return_value=(100000,None)))
+    app=FastAPI();app.include_router(api.router)
+    values={**CONNECTION,'enabled':'1'}
+    with TestClient(app) as admin:
+        assert admin.post('/admin/darvish-bridge/save',data=values,headers={'X-Requested-With':'fetch'}).status_code==401
+        app.dependency_overrides[api._auth_user]=lambda:'owner'
+        result=admin.post('/admin/darvish-bridge/save',data=values)
+        assert result.status_code==200,result.text
+        remote.assert_awaited_once()
+        assert remote.await_args.args[1:]==('GET','/capabilities')
+        data=admin.get('/admin/api/v2/darvish-bridge').json()
+        assert data['config']['enabled'] and data['key_saved'] and data['secret_saved']
+        assert CONNECTION['secret'] not in json.dumps(data) and CONNECTION['key'] not in json.dumps(data)
+        async def stored():
+            async with sessions() as session:
+                from app.database.models import Setting
+                row=await session.get(Setting,bridge.KEY)
+                assert CONNECTION['secret'] not in row.value and CONNECTION['key'] not in row.value
+                assert (await bridge.config(session))['key']==CONNECTION['key']
+        asyncio.run(stored())
+        quote=c.post('/api/miniapp/checkout/quote',headers=H,json={'plan_id':1,'username':'bridgeconfig'}).json()
+        assert 'bridge' in quote['methods'],quote
+        # Reject unsupported connection changes without replacing the working config.
+        remote.return_value={'product_kinds':[],'currencies':{'USDT':6}}
+        assert admin.post('/admin/darvish-bridge/save',data={**values,'url':'https://wrong.example.com','key':'','secret':''}).status_code==422
+        assert admin.get('/admin/api/v2/darvish-bridge').json()['config']['url']==CONNECTION['url']
+        assert admin.post('/admin/darvish-bridge/save',data={**values,'enabled':'0','key':'','secret':''}).status_code==200
+        data=admin.get('/admin/api/v2/darvish-bridge').json()
+        assert not data['config']['enabled'] and data['key_saved'] and data['secret_saved']
+        quote=c.post('/api/miniapp/checkout/quote',headers=H,json={'plan_id':1,'username':'bridgeconfig'}).json()
+        assert 'bridge' not in quote['methods']
