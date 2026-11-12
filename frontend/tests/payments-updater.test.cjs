@@ -179,3 +179,28 @@ test('Custom home editor retains unsaved draft when saving fails',async()=>{
  await act(async()=>document.querySelector('form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));
  assert.equal(editor.value,'New home');assert.ok(notice);assert.equal(button('Save home message').disabled,false);assert.equal(document.querySelector('.home-message-heading [role=status]').textContent,'Unsaved changes');
 });
+
+test('Bridge dialog stays open while saving and unlocks after validation',async()=>{
+ let finish;const pending=new Promise(resolve=>finish=resolve);
+ const info={ok:true,config:{enabled:true,url:'https://bridge.example.com',bot_username:'bridge_bot',currency:'USDT'},key_saved:true,secret_saved:true};
+ global.fetch=async(url)=>String(url).endsWith('/admin/darvish-bridge/save')?pending:response(info);
+ await render(React.createElement(PaymentMethods,{addCard:()=>{},accountCount:0,query:'',reloadKey:0,setAuthRequired:()=>{}}));
+ await click('Add Payment');await click('Darvish Bridge');
+ const dialog=document.querySelector('[role=dialog]');assert.ok(dialog.querySelector('.bridge-layout'));assert.equal(dialog.querySelectorAll('fieldset').length,2);
+ const form=dialog.querySelector('form');
+ await act(async()=>form.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));
+ assert.equal(button('Close').disabled,true);
+ await act(async()=>document.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+ assert.ok(document.querySelector('[role=dialog]'));
+ await act(async()=>{finish(response({ok:true}));await pending});
+ assert.equal(button('Close').disabled,false);await click('Close');assert.equal(document.querySelector('[role=dialog]'),null);
+});
+
+test('Bridge load failure offers retry and keeps connection fields disabled',async()=>{
+ const {BridgeSettings}=require('../components/bridge-settings.tsx');let fail=true;
+ global.fetch=async()=>fail?response({ok:false,message:'Bridge connection failed'},503):response({ok:true,config:{enabled:false,url:'https://bridge.example.com',bot_username:'bridge_bot',currency:'USD'},key_saved:true,secret_saved:true});
+ await render(React.createElement(BridgeSettings));
+ assert.ok(document.querySelector('[role=alert]'));assert.equal(document.querySelector('input[type=url]').disabled,true);
+ assert.ok(text().includes('Connection settings unavailable.'));fail=false;await click('Retry');
+ assert.equal(document.querySelector('[role=alert]'),null);assert.equal(document.querySelector('input[type=url]').disabled,false);assert.equal(document.querySelector('input[type=password]').value,'');assert.ok(document.querySelector('label[for]'));
+});
