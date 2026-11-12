@@ -21,6 +21,8 @@ VALUES=dict(username='test_user', title='20GB service', volume_gb=20, duration_d
 def editor(catalogue,monkeypatch):
     _,sessions=catalogue
     monkeypatch.setattr(api,'SessionLocal',sessions)
+    monkeypatch.setattr(custom_texts,'SessionLocal',sessions)
+    custom_texts.invalidate_custom_text_cache()
     import app.database.session as db
     monkeypatch.setattr(db,'SessionLocal',sessions)
     app=FastAPI();app.include_router(api.router,dependencies=[Depends(_auth_user)])
@@ -136,3 +138,62 @@ def test_template_writes_require_admin_session_and_csrf(editor):
     c.cookies.clear()
     assert c.get('/admin/api/v2/delivery-templates').status_code==401
     assert c.post('/admin/api/v2/delivery-templates',data={'active':'simple','templates_json':'[]'}).status_code==401
+
+
+@pytest.mark.parametrize('provider,link,symbol',[
+    ('xui',LINK,'TEST_SERVICE_CARD_XUI_TEXT'),
+    ('pasarguard',LINK,'TEST_SERVICE_CARD_XUI_TEXT'),
+    ('nx',LINK,'TEST_SERVICE_CARD_XUI_TEXT'),
+    ('xui',None,'TEST_SERVICE_CARD_BASIC_TEXT'),
+    ('mikrotik',None,'TEST_SERVICE_CARD_MIKROTIK_TEXT'),
+])
+def test_saved_trial_text_is_used_before_delivery_and_reset_restores_default(editor,monkeypatch,provider,link,symbol):
+    c,sessions=editor
+    monkeypatch.setattr(custom_texts,'SessionLocal',sessions)
+    custom_texts.invalidate_custom_text_cache()
+    entry=next(e for e in c.get('/admin/api/v2/custom-texts').json()['items'] if e['symbol']==symbol)
+    # Expand past Telegram's photo-caption limit to verify sizing uses the edit.
+    replacement='🎁 متن تست سفارشی '+('راهنما ' * 160)+'\nکاربر: {username}\nپلن: {title}\nحجم: {volume_gb}\nمدت: {duration_days}'
+    if link: replacement+='\n{sub_link}'
+    r=c.post('/admin/api/v2/custom-texts',data={'key':entry['key'],'value':replacement})
+    assert r.status_code==200 and r.json()['ok']
+    saved=next(e for e in c.get('/admin/api/v2/custom-texts').json()['items'] if e['key']==entry['key'])
+    assert saved['current']==replacement and saved['customized']
+    values={**VALUES,'username':'test_1074','title':'تست اختصاصی','server_type':provider,'sub_link':link,'is_test':True}
+    async def delivery():
+        caption=await presenter.build_delivery_caption(**values)
+        assert 'متن تست سفارشی' in caption and 'test_1074' in caption and 'تست اختصاصی' in caption
+        assert '{username}' not in caption and 'Happ' not in caption
+        bot=SimpleNamespace(send_photo=AsyncMock(),send_message=AsyncMock(),send_document=AsyncMock())
+        from app.services import user_content
+        monkeypatch.setattr(user_content,'background_bytes',AsyncMock(return_value=None))
+        monkeypatch.setattr(presenter,'make_qr_card',Mock(return_value='/tmp/dbot-test-no-real-qr.png'))
+        await presenter.send_service_info(bot,1,**values)
+        if link:
+            assert bot.send_photo.await_args.kwargs['caption']!=''
+        assert bot.send_message.await_args.args[1]==caption
+    asyncio.run(delivery())
+    assert c.post('/admin/api/v2/custom-texts/reset',data={'key':entry['key']}).json()['ok']
+    assert asyncio.run(presenter.build_delivery_caption(**values))==presenter.build_service_caption(**values)
+    custom_texts.invalidate_custom_text_cache()
+
+
+@pytest.mark.asyncio
+async def test_custom_media_captions_and_buttons_are_applied(monkeypatch):
+    from aiogram.methods import SendMediaGroup,EditMessageMedia,SendMessage
+    from aiogram.types import InputMediaPhoto,InlineKeyboardMarkup,InlineKeyboardButton
+    monkeypatch.setattr(custom_texts,'customize_text',AsyncMock(side_effect=lambda v: v.replace('متن قبلی','متن جدید') if isinstance(v,str) else v))
+    album=await custom_texts.customize_method(SendMediaGroup(chat_id=1,media=[InputMediaPhoto(media='file1',caption='متن قبلی'),InputMediaPhoto(media='file2',caption='متن قبلی')]))
+    assert all(m.caption=='متن جدید' for m in album.media)
+    edit=await custom_texts.customize_method(EditMessageMedia(chat_id=1,message_id=2,media=InputMediaPhoto(media='file',caption='متن قبلی')))
+    assert edit.media.caption=='متن جدید'
+    message=await custom_texts.customize_method(SendMessage(chat_id=1,text='متن قبلی',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='متن قبلی',callback_data='unchanged')]])))
+    assert message.text=='متن جدید' and message.reply_markup.inline_keyboard[0][0].text=='متن جدید'
+    assert message.reply_markup.inline_keyboard[0][0].callback_data=='unchanged'
+
+
+def test_existing_trial_rows_keep_trial_template_on_redelivery():
+    base=dict(plan_id=None,reseller_id=None,client_username='test_1074')
+    assert presenter.is_trial_service(SimpleNamespace(**base))
+    for change in [{'plan_id':1},{'reseller_id':1},{'client_username':'customer_test'}]:
+        assert not presenter.is_trial_service(SimpleNamespace(**{**base,**change}))

@@ -1258,9 +1258,8 @@ async def buy_payment(callback: CallbackQuery, state: FSMContext):
             await notify_paid_order(callback.message.bot, paid_order_id, event='✅ خرید کانفیگ با کیف پول')
             await send_service_info(callback.message.bot, callback.from_user.id, service.client_username, plan, sub_link, service.id, server.server_type, (service.xui_uuid if server.server_type == 'mikrotik' else None), server)
             return
-        card=(await session.execute(select(PaymentCard).where(PaymentCard.server_id == server.id, PaymentCard.is_active == True).order_by(PaymentCard.id.desc()))).scalars().first()
-        if not card:
-            card=(await session.execute(select(PaymentCard).where(PaymentCard.server_type == server.server_type, PaymentCard.server_id.is_(None), PaymentCard.is_active == True).order_by(PaymentCard.id.desc()))).scalars().first()
+        from app.services.payment_cards import public_payment_card
+        card=await public_payment_card(session,server)
         if not card:
             await ui_callback_message(callback, 'برای این سرور هنوز شماره کارت ثبت نشده است.', reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('pay:back_methods')]])); await safe_callback_answer(callback); return
         

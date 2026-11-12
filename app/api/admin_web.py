@@ -7485,9 +7485,9 @@ async def module_capabilities(_: str = Depends(_auth_user)):
     async with SessionLocal() as session:return {'ok':True,'features':await capabilities(session)}
 
 @router.get('/admin/api/v2/update')
-async def update_information(_: str = Depends(_auth_user)):
+async def update_information(force: bool = False, _: str = Depends(_auth_user)):
     from app.services.web_update import check,status
-    return {**await check(),'job':status()}
+    return {**await check(force=force),'job':status()}
 
 @router.post('/admin/update/start')
 async def start_web_update(commit: str = Form(...), _: str = Depends(_auth_user)):

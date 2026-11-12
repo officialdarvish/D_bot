@@ -315,14 +315,14 @@ async def configuration_control(s,user,sid,action,*,reseller=False):
     return svc.id
 
 async def deliver_subscription(real,user,sid):
-    from app.bot.service_presenter import send_service_info
+    from app.bot.service_presenter import send_service_info, is_trial_service
     from app.services.xui_service import XuiService
     async with SessionLocal() as s:
         svc=await s.get(ClientService,sid);plan=await s.get(Plan,svc.plan_id) if svc.plan_id else None;server=await s.get(Server,svc.server_id)
         link=await XuiService().resolve_service_subscription(s,server,svc,plan,refresh_happ=True) if server.server_type!='mikrotik' else None
         await s.commit()
-        await send_service_info(real,user.telegram_id,svc.client_username,plan.title if plan else f'نمایندگی | {svc.total_bytes/1024**3:g} گیگ',svc.total_bytes/1024**3,max(0,((svc.expires_at or datetime.utcnow())-datetime.utcnow()).days),link,
-            is_test=False,allow_happ=not bool(svc.reseller_id),service_id=svc.id,server_type=server.server_type,password=svc.xui_uuid if server.server_type=='mikrotik' else None,
+        await send_service_info(real,user.telegram_id,svc.client_username,plan.title if plan else ('اکانت تست' if is_trial_service(svc) else f'نمایندگی | {svc.total_bytes/1024**3:g} گیگ'),svc.total_bytes/1024**3,max(0,((svc.expires_at or datetime.utcnow())-datetime.utcnow()).days),link,
+            is_test=is_trial_service(svc),allow_happ=not bool(svc.reseller_id) and not is_trial_service(svc),service_id=svc.id,server_type=server.server_type,password=svc.xui_uuid if server.server_type=='mikrotik' else None,
             l2tp_server=(server.meta or {}).get('l2tp_server'),l2tp_ipsec_secret=(server.meta or {}).get('l2tp_ipsec_secret'))
 
 async def process_operations():

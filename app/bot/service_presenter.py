@@ -208,7 +208,21 @@ def build_service_caption(*, username: str, title: str, volume_gb, duration_days
 async def build_delivery_caption(**values) -> str:
     from app.services.delivery_templates import selected_caption
     selected = await selected_caption(**values)
-    return selected if selected is not None else build_service_caption(**values)
+    if selected is not None:
+        return selected
+    # Resolve Custom overrides before QR caption sizing/splitting, including trials.
+    # All callers (also background Mini App delivery) use the saved text even when
+    # their Bot instance has no outgoing customization middleware.
+    from app.bot.custom_texts import customize_text
+    from app.services.delivery_templates import DeliveryTemplateText
+    return DeliveryTemplateText(await customize_text(build_service_caption(**values)))
+
+
+def is_trial_service(service) -> bool:
+    """Recognize existing trial rows without changing or resetting their data."""
+    import re
+    return bool(not service.plan_id and not service.reseller_id and
+                re.fullmatch(r'test_\d+', service.client_username or '', re.IGNORECASE))
 
 
 async def send_service_info(

@@ -128,3 +128,59 @@ def test_removing_connection_preserves_receipts_services_and_plan_references(cli
             order=await session.get(Order,1)
             assert order.status=='paid' and order.receipt_file_id=='original-receipt'
     asyncio.run(verify())
+
+
+def test_role_cards_merge_after_v1_conflict_without_changing_receipt_routes(client):
+    from app.services.server_migration import consolidate, REPORT_KEY
+    from app.services.payment_cards import public_payment_card, reseller_payment_card
+    from app.database.models import PaymentCard, Setting, Order
+    import json
+    _, sessions = client
+    async def scenario():
+        async with sessions() as session:
+            first = await session.get(Server, 1); second = await session.get(Server, 2)
+            first.password_encrypted = encrypt_text('same'); first.meta = {'scope': 'public'}
+            second.panel_url = first.panel_url; second.username = first.username
+            second.password_encrypted = encrypt_text('same'); second.meta = {'scope': 'reseller'}
+            session.add_all([
+                PaymentCard(id=1,server_id=1,server_type='xui',card_number='public-card',owner_name='Public',reviewer_telegram_id=111,is_active=True),
+                PaymentCard(id=2,server_id=2,server_type='reseller',card_number='reseller-card',owner_name='Reseller',reviewer_telegram_id=222,is_active=True),
+                PaymentCard(id=3,server_id=2,server_type='panel_reseller',card_number='panel-card',owner_name='Panel',reviewer_telegram_id=333,is_active=True),
+            ])
+            await session.flush()
+            order = await session.get(Order,1); order.payment_card_id=1; order.receipt_reviewer_telegram_id=111
+            session.add(Setting(key='server_connection_migration_v1',value=json.dumps({'schema':1,'merged':[],'conflicts':[{'server_ids':[1,2],'reason':'role-specific payment routing requires review'}]})))
+            await session.commit()
+        async with sessions() as session:
+            result=await consolidate(session); await session.commit()
+            assert result['merged']==[{'canonical_id':1,'alias_ids':[2]}] and not result['conflicts']
+            assert (await public_payment_card(session,await session.get(Server,1))).id==1
+            assert (await reseller_payment_card(session,1)).id==2
+            assert (await reseller_payment_card(session,1,panel=True)).id==3
+            assert (await public_payment_card(session,await session.get(Server,2))).id==1
+            assert (await reseller_payment_card(session,2)).id==2
+            order=await session.get(Order,1)
+            assert (order.payment_card_id,order.receipt_reviewer_telegram_id)==(1,111)
+            assert await session.get(Setting,REPORT_KEY)
+            assert 'conflicts' in (await session.get(Setting,'server_connection_migration_v1')).value
+            assert await consolidate(session)==result
+    asyncio.run(scenario())
+
+
+def test_merge_retains_conflict_when_same_role_would_change_recipient(client):
+    from app.services.server_migration import consolidate
+    from app.database.models import PaymentCard
+    _,sessions=client
+    async def scenario():
+        async with sessions() as session:
+            first=await session.get(Server,1); second=await session.get(Server,2)
+            second.panel_url=first.panel_url;second.username=first.username
+            first.password_encrypted=second.password_encrypted=encrypt_text('same')
+            first.meta=second.meta={'scope':'public'}
+            session.add_all([PaymentCard(id=i,server_id=i,server_type='xui',card_number=f'card-{i}',owner_name=f'Owner-{i}',is_active=True) for i in [1,2]])
+            await session.commit()
+        async with sessions() as session:
+            result=await consolidate(session)
+            assert not result['merged'] and result['conflicts'][0]['reason']=='public payment recipient would change'
+            assert not (await session.get(Server,2)).meta.get('connection_alias_of')
+    asyncio.run(scenario())

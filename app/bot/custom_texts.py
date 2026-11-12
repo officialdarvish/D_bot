@@ -741,6 +741,23 @@ async def customize_method(method: Any) -> Any:
             new_value = await customize_text(value)
             if new_value != value:
                 updates[field] = new_value
+    # Captions inside albums and edit-media requests live on InputMedia, rather
+    # than on the Telegram method itself. Apply the same saved overrides there.
+    if not FIXED_DELIVERY_TEXT.get():
+        media = getattr(method, 'media', None)
+        if media is not None:
+            nested = list(media) if isinstance(media, (list, tuple)) else [media]
+            changed = False
+            transformed = []
+            for item in nested:
+                caption = getattr(item, 'caption', None)
+                customized = await customize_text(caption)
+                if customized != caption and hasattr(item, 'model_copy'):
+                    item = item.model_copy(update={'caption': customized})
+                    changed = True
+                transformed.append(item)
+            if changed:
+                updates['media'] = transformed if isinstance(media, (list, tuple)) else transformed[0]
     markup = getattr(method, 'reply_markup', None)
     if markup is not None:
         new_markup = await _transform_markup(markup)

@@ -1,5 +1,4 @@
 'use client';
-import {ServerMigrationStatus} from '@/components/server-migration-status';
 import {BridgeSettings} from '@/components/bridge-settings';
 import {ModuleSettings} from '@/components/module-settings';
 import {SystemUpdate} from '@/components/system-update';
@@ -240,7 +239,7 @@ const sectionTitles: Record<SectionKey, { title: string; subtitle: string }> = {
   discounts: { title: 'Discount Codes', subtitle: 'Percentage and fixed Toman discount codes with per-user limits.' },
   users: { title: 'Users', subtitle: 'Search all Telegram users, wallets, reseller access, referrals and purchases.' },
   resellers: { title: 'Resellers', subtitle: 'Manage reseller capacity, used traffic, and expiry dates.' },
-  servers: { title: 'Servers', subtitle: 'Sanaei / 3x-ui servers and dedicated MikroTik / Custom router connections.' },
+  servers: { title: 'Servers', subtitle: '' },
   categories: { title: 'Categories', subtitle: 'Group servers and plans for a clean purchase flow.' },
   connection: { title: 'Connection', subtitle: 'Route Telegram traffic through direct, proxy, MikroTik SOCKS, or V2/Xray connections.' },
   backup: { title: 'Backup & Restore', subtitle: 'Configure website and bot backups, test Telegram delivery, and restore local backup files safely.' },
@@ -481,7 +480,7 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
             </div>
           ))}
         </nav>
-        <div className="sidebar-footer"><SystemUpdate/>
+        <div className="sidebar-footer">
           <div className="sidebar-language-row" title="Language">
             <Languages size={19} aria-hidden="true" />
             <span className="sidebar-language-label">Language</span>
@@ -652,7 +651,7 @@ function DashboardSection({ reloadKey, setAuthRequired, show }: any) {
             <RevenueChart data={chartData} ticks={chartTicks} />
           </div>
         </section>
-        <SystemStatus resources={data.resources} setAuthRequired={setAuthRequired} />
+        <div className="dashboard-system-column"><SystemStatus resources={data.resources} setAuthRequired={setAuthRequired} /><SystemUpdate /></div>
       </div>
       <RecentOrders orders={data.latest_orders} />
     </>
@@ -793,7 +792,6 @@ function ServersSection({ query, reloadKey, setAuthRequired, openModal, runActio
   if (api.loading) return <SkeletonGrid />;
   if (api.error || !api.data) return <EmptyState message={api.error || 'Servers could not be loaded.'} />;
   return <>
-    <ServerMigrationStatus report={api.data.connection_migration}/>
     <div className="filterbar">
       <button className="btn primary" onClick={() => openModal(serverForm())}><Plus size={16} /> Add Server</button>
       <span className="badge">{rows.length} servers</span>

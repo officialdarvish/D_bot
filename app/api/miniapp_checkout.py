@@ -66,9 +66,8 @@ async def validate_purchase(s,user,body,*,lock_discount=False):
         await s.scalar(select(DiscountCode).where(func.upper(DiscountCode.code)==code).with_for_update())
     amount,error,discount=await apply_discount_amount(s,code,quote.amount_irt,user.id,'renew' if body.service_id else 'buy',server.id)
     if error:raise HTTPException(409,error)
-    card=await s.scalar(select(PaymentCard).where(PaymentCard.server_id==server.id,PaymentCard.is_active.is_(True)).order_by(PaymentCard.id.desc()).limit(1))
-    if not card:
-        card=await s.scalar(select(PaymentCard).where(PaymentCard.server_type==server.server_type,PaymentCard.server_id.is_(None),PaymentCard.is_active.is_(True)).order_by(PaymentCard.id.desc()).limit(1))
+    from app.services.payment_cards import public_payment_card
+    card=await public_payment_card(s,server)
     return plan,server,username,quote,amount,discount,card,code
 
 @router.get('/services/{sid}/renewal-plans')

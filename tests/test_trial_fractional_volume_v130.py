@@ -101,4 +101,4 @@ def test_trial_admin_ui_and_api_provide_fractional_input_and_validation():
     assert 'step="any"' in ui
     assert 'parse_positive_trial_gb(volume_gb)' in api
     assert "parse_positive_trial_gb(message.text or '')" in bot
-    assert (ROOT / 'VERSION').read_text().strip() == '1.3.0'
+    assert tuple(map(int, (ROOT / 'VERSION').read_text().strip().split('.'))) >= (1, 3, 0)
