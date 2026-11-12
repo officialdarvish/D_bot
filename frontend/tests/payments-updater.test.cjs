@@ -33,7 +33,7 @@ async function click(label){await act(async()=>button(label).click())}
 async function input(element,value){await act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(element,value);element.dispatchEvent(new window.Event('input',{bubbles:true}))})}
 
 for(const language of ['en','fa'])test(`Payments + configures Bridge with shared saved credentials (${language})`,async()=>{
- let config={enabled:false,url:'',bot_username:'',currency:'USDT'},saved=false;const posts=[];
+ let config={enabled:false,url:'',bot_username:'',currency:'IRT'},saved=false;const posts=[];
  global.fetch=async(url,opts={})=>{
   if(String(url).endsWith('/admin/darvish-bridge/save')){
    assert.equal(opts.headers['X-CSRF-Token'],'csrf');const fields=Object.fromEntries(opts.body.entries());posts.push(fields);
@@ -54,7 +54,7 @@ for(const language of ['en','fa'])test(`Payments + configures Bridge with shared
  const fields=[...form.querySelectorAll('input:not([type=checkbox])')];
  for(const [i,value] of ['https://bridge.example.com','darvish_bridge_bot','merchant-key','secret-123456789012345678901234'].entries())await input(fields[i],value);
  await act(async()=>form.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));
- assert.equal(posts.length,1);assert.equal(posts[0].enabled,'1');assert.equal(posts[0].key,'merchant-key');
+ assert.equal(posts.length,1);assert.equal(posts[0].currency,'IRT');assert.equal(form.querySelector('select').options.length,1);assert.equal(posts[0].enabled,'1');assert.equal(posts[0].key,'merchant-key');
  assert.ok(text().includes('https://bridge.example.com'));assert.ok(!document.body.innerHTML.includes('merchant-key'));
  // Editing a saved connection keeps both secrets blank and optional.
  assert.equal(fields[2].value,'');assert.equal(fields[2].required,false);assert.equal(fields[3].required,false);
@@ -182,7 +182,7 @@ test('Custom home editor retains unsaved draft when saving fails',async()=>{
 
 test('Bridge dialog stays open while saving and unlocks after validation',async()=>{
  let finish;const pending=new Promise(resolve=>finish=resolve);
- const info={ok:true,config:{enabled:true,url:'https://bridge.example.com',bot_username:'bridge_bot',currency:'USDT'},key_saved:true,secret_saved:true};
+ const info={ok:true,config:{enabled:true,url:'https://bridge.example.com',bot_username:'bridge_bot',currency:'IRT'},key_saved:true,secret_saved:true};
  global.fetch=async(url)=>String(url).endsWith('/admin/darvish-bridge/save')?pending:response(info);
  await render(React.createElement(PaymentMethods,{addCard:()=>{},accountCount:0,query:'',reloadKey:0,setAuthRequired:()=>{}}));
  await click('Add Payment');await click('Darvish Bridge');
@@ -198,7 +198,7 @@ test('Bridge dialog stays open while saving and unlocks after validation',async(
 
 test('Bridge load failure offers retry and keeps connection fields disabled',async()=>{
  const {BridgeSettings}=require('../components/bridge-settings.tsx');let fail=true;
- global.fetch=async()=>fail?response({ok:false,message:'Bridge connection failed'},503):response({ok:true,config:{enabled:false,url:'https://bridge.example.com',bot_username:'bridge_bot',currency:'USD'},key_saved:true,secret_saved:true});
+ global.fetch=async()=>fail?response({ok:false,message:'Bridge connection failed'},503):response({ok:true,config:{enabled:false,url:'https://bridge.example.com',bot_username:'bridge_bot',currency:'IRT'},key_saved:true,secret_saved:true});
  await render(React.createElement(BridgeSettings));
  assert.ok(document.querySelector('[role=alert]'));assert.equal(document.querySelector('input[type=url]').disabled,true);
  assert.ok(text().includes('Connection settings unavailable.'));fail=false;await click('Retry');

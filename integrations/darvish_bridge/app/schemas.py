@@ -28,7 +28,7 @@ class BotCreate(BaseModel):
 
 
 class AccountCreate(BaseModel):
-    currency: Literal["USDT", "TON", "USD", "EUR", "UNIT"]
+    currency: Literal["IRT", "USDT", "TON", "USD", "EUR", "UNIT"]
     label: str = Field(min_length=2, max_length=120)
     instructions: str = Field(min_length=5, max_length=2000)
     active: bool = True
@@ -40,7 +40,7 @@ class OrderCreate(BaseModel):
     product_title: str = Field(min_length=1, max_length=255)
     product_kind: Literal["physical", "offline_service", "digital"]
     amount_minor: int = Field(gt=0, le=10**16)
-    currency: Literal["USDT", "TON", "USD", "EUR", "UNIT"]
+    currency: Literal["IRT", "USDT", "TON", "USD", "EUR", "UNIT"]
     delivery_message: str | None = Field(default=None, max_length=2000)
 
 
@@ -56,7 +56,7 @@ class DeliveryUpdate(BaseModel):
 
 class SettlementCreate(BaseModel):
     amount_minor: int = Field(gt=0, le=10**16)
-    currency: Literal["USDT", "TON", "USD", "EUR", "UNIT"]
+    currency: Literal["IRT", "USDT", "TON", "USD", "EUR", "UNIT"]
     destination: str = Field(min_length=5, max_length=300)
 
 

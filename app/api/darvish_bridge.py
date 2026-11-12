@@ -13,7 +13,7 @@ router=APIRouter()
 @router.get('/admin/api/v2/darvish-bridge')
 async def bridge_settings(_:str=Depends(_auth_user)):
     async with SessionLocal() as session:value=await bridge.config(session)
-    return {'ok':True,'config':{**{k:value.get(k,'') for k in ('enabled','url','bot_username')},'currency':value.get('currency') or 'USDT'},'key_saved':bool(value.get('key')),'secret_saved':bool(value.get('secret'))}
+    return {'ok':True,'config':{**{k:value.get(k,'') for k in ('enabled','url','bot_username')},'currency':'IRT'},'requires_toman_setup':bool(value.get('requires_toman_setup')),'key_saved':bool(value.get('key')),'secret_saved':bool(value.get('secret'))}
 
 
 @router.post('/admin/darvish-bridge/save')
@@ -24,7 +24,7 @@ async def save_bridge(request:Request,_:str=Depends(_auth_user)):
             value=bridge.normalize(dict(form),await bridge.config(session))
             if value['enabled']:
                 capabilities=await bridge.request(value,'GET','/capabilities')
-                if 'digital' not in capabilities.get('product_kinds',[]) or value['currency'] not in capabilities.get('currencies',{}):raise ValueError('Bridge does not support the selected digital payment capability')
+                if 'digital' not in capabilities.get('product_kinds',[]) or type(capabilities.get('currencies',{}).get('IRT')) is not int or capabilities.get('currencies',{}).get('IRT')!=0:raise ValueError('Bridge does not support the selected digital payment capability')
         except (ValueError,KeyError):raise HTTPException(422,'Bridge settings or capabilities are invalid; verify the companion configuration.')
         except Exception:raise HTTPException(502,'Bridge connection failed')
         await session.merge(Setting(key=bridge.KEY,value=encrypt_text(json.dumps(value))))
