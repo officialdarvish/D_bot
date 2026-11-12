@@ -115,3 +115,11 @@ Full suite: **1260 passed, the same 12 baseline failures, 3 subtests passed**. A
 The counter's local tests cover deduplication, expiration, malformed/oversized requests, hash-only storage, absent list routes, disabled reporting and stable identity. Its separate service is prepared but has no configured/live HTTPS endpoint. No real VPS disk measurements, Docker/systemd cleanup or update/recovery execution, live Telegram/provider purchase, central counter deployment, or graphical browser validation was performed. Operational validation remains necessary on the actual host. See MAINTENANCE_AND_HISTORY_BUILD7.md and integrations/installation_counter/README.md.
 
 The manifest advances to build 7; the existing v1.4.0 release tag/assets remain unchanged.
+
+## 1.4.0 build 8 — System Status icons and Custom home-message editor
+
+Removed the compact-card rule that shrank hardware SVGs to 17px. Status emblems retain a non-shrinking 48px frame and center 44px SVGs constrained to their frame. Top summary cards are unchanged.
+
+Rebuilt Bot home message as a dedicated responsive form below the Custom page header. Desktop uses an editor/help column beside a safe plain-text preview; mobile stacks them with full-width actions and 16px text input. It includes accessible labels/help, a 4096 UTF-16-character limit, cursor-position variable insertion, localized saved/unsaved state, and protected drafts after save failures. Preview substitutes current settings as plain text and never evaluates markup. Loading/error/retry states are bilingual; the separate reseller-panel visibility card stays in Settings.
+
+Next.js production build with TypeScript and `git diff --check` passed. Frontend DOM tests: **14 passed**, including English/Persian variable insertion, escaped preview, successful save and failed-save draft preservation. No backend contracts changed; backend tests were not rerun. No graphical browser or live VPS verification was performed. update.json advances to build 8 without changing the v1.4.0 release assets/tag.
