@@ -60,7 +60,7 @@ async def test_busy_button_stays_blocked_when_acknowledgement_fails(env,monkeypa
   if method.__api_method__=='answerCallbackQuery':raise error(method)
   return await original(bot,method,timeout)
  monkeypatch.setattr(tg,'make_request',failing)
- lock=ui._locks[ui._key(bot,11)]
+ lock=ui._locks.setdefault(ui._key(bot,11),asyncio.Lock())
  async with lock:await click('Admin')
  assert events==[]
  await click('Admin')

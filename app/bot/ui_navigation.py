@@ -11,6 +11,7 @@ import logging
 import re
 import secrets
 import time
+import weakref
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__)
 CALLBACK_ACK_TIMEOUT = 3
 _redis = None
 _memory = {}
-_locks = {}
+_locks = weakref.WeakValueDictionary()
 
 
 def configure_ui_storage(redis):
@@ -150,21 +151,32 @@ def _empty_placeholder(method):
 async def load_ui(bot, chat):
     key = _key(bot, chat)
     if _redis is not None:
-        raw = await _redis.get(key)
-        if raw:
-            return _clean_history(json.loads(raw))
+        try:
+            raw = await _redis.get(key)
+            if raw:return _clean_history(json.loads(raw))
+        except Exception:
+            logger.warning('UI Redis read unavailable; using bounded fallback')
     value=copy.deepcopy(_memory.get(key, {'active':None,'history':[],'terminal':[]}))
-    if value.get('_saved_at',time.time()) < time.time()-TTL:return {'active':None,'history':[],'terminal':[]}
+    if value.get('_saved_at',time.time()) < time.time()-TTL:
+        _memory.pop(key,None)
+        return {'active':None,'history':[],'terminal':[]}
     return _clean_history(value)
 
 
 async def save_ui(bot, chat, record):
     key = _key(bot, chat)
     record['_saved_at']=time.time()
+    if _redis is not None:
+        try:
+            await _redis.set(key, json.dumps(record, ensure_ascii=False, default=str), ex=TTL)
+            # Redis already owns this history. Do not retain a second copy for
+            # every user for the entire bot process lifetime.
+            _memory.pop(key,None)
+            return
+        except Exception:
+            logger.warning('UI Redis write unavailable; using bounded fallback')
     _memory[key] = copy.deepcopy(record)
     if len(_memory) > 2048: _memory.pop(next(iter(_memory)))
-    if _redis is not None:
-        await _redis.set(key, json.dumps(record, ensure_ascii=False, default=str), ex=TTL)
 
 
 def _back(button):

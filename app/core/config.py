@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     NOWPAYMENTS_API_URL: str = 'https://api.nowpayments.io/v1'
     NOWPAYMENTS_IPN_CALLBACK_URL: str = ''
     SERVER_SYNC_SECONDS: int = 300
-    SERVER_SYNC_CONCURRENCY: int = 4
+    SERVER_SYNC_CONCURRENCY: int = 2
     WEB_ADMIN_USERNAME: str = 'admin'
     WEB_ADMIN_PASSWORD: str = ''
     WEB_PATH: str = 'dbot'
@@ -54,15 +54,15 @@ class Settings(BaseSettings):
     # 3x-ui v3.8.0 / bot latency tuning. These defaults keep enough parallel
     # capacity for multi-server panels while still bounding resource usage.
     XUI_AUTH_CACHE_SECONDS: float = 180.0
-    XUI_MAX_CONNECTIONS: int = 40
-    XUI_MAX_KEEPALIVE_CONNECTIONS: int = 20
+    XUI_MAX_CONNECTIONS: int = 12
+    XUI_MAX_KEEPALIVE_CONNECTIONS: int = 4
     XUI_KEEPALIVE_EXPIRY_SECONDS: float = 30.0
-    DB_POOL_SIZE: int = 10
-    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_SIZE: int = 3
+    DB_MAX_OVERFLOW: int = 5
     DB_POOL_RECYCLE_SECONDS: int = 1800
-    REDIS_MAX_CONNECTIONS: int = 50
+    REDIS_MAX_CONNECTIONS: int = 20
     TELEGRAM_HTTP_TIMEOUT_SECONDS: float = 20.0
-    TELEGRAM_HTTP_CONNECTION_LIMIT: int = 100
+    TELEGRAM_HTTP_CONNECTION_LIMIT: int = 30
     # Independent recovery key: never use a shared key embedded in source/backups.
     BACKUP_ENCRYPTION_KEY: str = ''
     BACKUP_ENCRYPTION_KEY_FILE: str = '/var/lib/dbot/backup/backup.key'

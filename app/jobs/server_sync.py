@@ -222,7 +222,7 @@ async def sync_all_servers() -> None:
     if not server_ids:
         return
 
-    semaphore = asyncio.Semaphore(max(int(getattr(settings, 'SERVER_SYNC_CONCURRENCY', 4) or 4), 1))
+    semaphore = asyncio.Semaphore(max(int(getattr(settings, 'SERVER_SYNC_CONCURRENCY', 2) or 2), 1))
 
     async def _sync_one(server_id: int) -> tuple[int, str, bool, str]:
         async with semaphore:

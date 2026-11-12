@@ -325,7 +325,7 @@ async def main():
     # Database must stay raw: nothing is inserted by default.
     redis = Redis.from_url(
         settings.REDIS_URL,
-        max_connections=max(int(settings.REDIS_MAX_CONNECTIONS or 50), 10),
+        max_connections=max(int(settings.REDIS_MAX_CONNECTIONS or 20), 10),
         health_check_interval=30,
         socket_connect_timeout=3,
         socket_timeout=5,

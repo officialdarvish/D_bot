@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 4,
+  "build": 5,
   "channel": "main",
   "notes": {
-    "fa": "بازطراحی افقی آیکن‌ها و کارت‌های آماری داشبورد با چیدمان راست‌به‌چپ و اسکرول موبایل",
-    "en": "Horizontal dashboard statistic cards with line icons, RTL layout and mobile scrolling"
+    "fa": "کاهش مصرف حافظه، ساخت یک ایمیج مشترک، بازیابی بدون بیلد مجدد و نمایش مرحله و علت شکست آپدیت",
+    "en": "Lower memory usage, shared runtime image, image-based rollback and actionable update failure phases"
   }
 }

@@ -77,6 +77,7 @@ def make_qr_card(
                 blue = int(72 * radial + 32 * vertical)
                 px[x, y] = (3 + blue // 10, 12 + blue // 3, 34 + blue)
 
+        del px
         bg = bg.convert('RGBA')
 
         # Soft geometric glow layers.
@@ -86,7 +87,9 @@ def make_qr_card(
         od.polygon([(1080, 0), (820, 0), (1000, 540), (1080, 470)], fill=(0, 180, 255, 24))
         od.polygon([(0, 1050), (330, 900), (1080, 1080), (1080, 1350), (0, 1350)], fill=(0, 90, 210, 34))
         overlay = overlay.filter(ImageFilter.GaussianBlur(5))
-        bg = Image.alpha_composite(bg, overlay)
+        del od
+        bg.alpha_composite(overlay)
+        overlay.close()
 
         # Stars and subtle plus marks.
         stars = Image.new('RGBA', (width, height), (0, 0, 0, 0))
@@ -101,7 +104,8 @@ def make_qr_card(
         for x, y in [(150, 150), (875, 155), (950, 910), (250, 1120), (175, 600), (805, 570)]:
             sd.line((x - 12, y, x + 12, y), fill=(150, 220, 255, 170), width=2)
             sd.line((x, y - 12, x, y + 12), fill=(150, 220, 255, 170), width=2)
-        bg = Image.alpha_composite(bg, stars)
+        bg.alpha_composite(stars)
+        stars.close();del sd
 
         # Outer neon border only.
         glow = Image.new('RGBA', (width, height), (0, 0, 0, 0))
@@ -110,7 +114,9 @@ def make_qr_card(
         gd.rounded_rectangle((56, 48, width - 56, height - 58), radius=52, outline=(115, 205, 255, 80), width=2)
         gd.ellipse((250, 430, 830, 1060), fill=(0, 135, 255, 42))
         glow = glow.filter(ImageFilter.GaussianBlur(5))
-        bg = Image.alpha_composite(bg, glow)
+        del gd
+        bg.alpha_composite(glow)
+        glow.close()
 
     # QR code.
     qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=1, border=4)
@@ -120,8 +126,10 @@ def make_qr_card(
     # Integer module scaling preserves crisp cells and the four-module quiet zone.
     side = qr_img.width * max(1, 560 // qr_img.width)
     scaled = qr_img.resize((side, side), Image.Resampling.NEAREST)
+    qr_img.close()
     qr_img = Image.new('RGBA', (560, 560), 'white')
     qr_img.alpha_composite(scaled, ((560-side)//2, (560-side)//2))
+    scaled.close()
 
     qx, qy = (width - 640) // 2, (height - 640) // 2
 
@@ -130,17 +138,23 @@ def make_qr_card(
     shd = ImageDraw.Draw(shadow)
     _rounded(shd, (45, 45, 715, 715), 54, fill=(35, 170, 255, 140), outline=None)
     shadow = shadow.filter(ImageFilter.GaussianBlur(30))
+    del shd
     bg.alpha_composite(shadow, (qx - 60, qy - 60))
+    shadow.close()
 
     # QR white card.
     qr_back = Image.new('RGBA', (640, 640), (0, 0, 0, 0))
     qd = ImageDraw.Draw(qr_back)
     _rounded(qd, (0, 0, 640, 640), 50, fill=(255, 255, 255, 255), outline=(56, 174, 255, 255), width=7)
     qr_back.alpha_composite(qr_img, (40, 40))
+    qr_img.close()
 
     bg.alpha_composite(qr_back, (qx, qy))
+    qr_back.close();del qd
 
     tmp = temporary_artifact(delete=False, suffix='.png')
     tmp.close()
-    bg.convert('RGB').save(tmp.name, quality=95)
+    try:
+        with bg.convert('RGB') as rendered:rendered.save(tmp.name, quality=95)
+    finally:bg.close()
     return tmp.name

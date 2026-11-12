@@ -55,7 +55,7 @@ def queue_json(path):
 def status():
     try:
         data=queue_json(QUEUE/'status.json')
-        current={k:data.get(k) for k in ('id','state','started_at','finished_at','error','backup')}
+        current={k:data.get(k) for k in ('id','state','started_at','finished_at','error','backup','phase','exit_code','recovery','log_file','reason')}
     except (OSError,ValueError):current={'state':'idle'}
     try:
         pending=queue_json(QUEUE/'request.json')

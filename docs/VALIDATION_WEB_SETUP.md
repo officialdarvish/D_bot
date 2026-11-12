@@ -83,3 +83,20 @@ An old installation with no host agent still requires `sudo dbot update` once on
 The four dashboard statistic cards now form a single horizontal row with line icons next to their labels/values, distinct accent colors and correct negative trend coloring. Narrow screens retain the row with horizontal scroll/snap and a visible next-card edge; logical CSS supports Persian RTL. The scrollable list can receive keyboard focus. Other dashboard sections and data sources are unchanged.
 
 Next.js production build, final TypeScript check and git diff whitespace validation passed. This is a reversible presentation change; backend tests were not rerun, and no interactive graphical browser/VPS validation was performed. Build metadata advances to 4; the v1.4.0 release assets/tag remain unchanged.
+
+
+## 1.4.0 build 5 — memory review and update recovery
+
+- Full-suite checkpoint: **1244 passed, the same 12 documented failures, 3 subtests passed** (118.51 seconds). The final aiogram download-rewind and target-build health verification edge adjustments were checked separately afterward.
+- Focused updater/memory/navigation/QR/video/Xray tests: **104 passed, 3 subtests passed**. Final disk-stream/updater/health checks after the rewind adjustment: **39 passed**.
+- React DOM interaction tests: **7 passed**, including failure stage, exit code, retained log filename and accurate recovery state without a journal message.
+- Next.js production export under NODE_OPTIONS=--max-old-space-size=768 with one configured export worker: **passed**. Final TypeScript, Python/shell syntax and whitespace checks passed. Generated frontend/out is restored rather than committed.
+- QR benchmark in independent local Python processes: **116.29 → 84.15 MiB peak RSS**, with identical pixel SHA-256 `5bfebae65a1f600010354dc88b8dc05ddd17b85a772067d3c28c68ce2de33485`. This is one QR scenario including interpreter/import overhead, not a VPS-wide before/after measurement.
+
+The install-time executable-bit mismatch is reproduced with a real temporary Git repository; mode-only changes no longer block an update, while content changes still do. The busy-callback test now retains a live lock explicitly to match weak lock ownership; its blocking/acknowledgement assertions are unchanged. The Xray build contract now asserts one shared runtime image rather than the obsolete two-build YAML anchor; pinned-Xray image/archive assertions remain.
+
+Runtime improvements remove the duplicate Python history copy when Redis is healthy, release idle navigation locks, stream tutorial media from disk in fixed chunks, release temporary QR layers earlier and lower default connection pools. Existing explicit .env settings remain authoritative; no Redis/financial data eviction or hard container RAM cap was added. Both API and bot share one built image, builds are serialized, and Python containers default to two malloc arenas.
+
+The host worker retains old image tags before updating and rolls back without rebuilding. Recovery Compose data lives outside the web-writable queue. Failed jobs expose stage, exit code and recovery state; bounded command tails are saved locally even without journald. This fixes concrete source defects but does not establish the exact cause of the user's historical failure or the amount of RAM used by their bot. No live VPS, Docker/systemd/PostgreSQL rollback or actual 350-user load test was performed. See MEMORY_UPDATE_RECOVERY_FA.md and the new read-only `sudo dbot memory` command. Build metadata advances to 5; the v1.4.0 tag/assets remain unchanged.
+
+The final updater also marks source switching before checkout so a partial checkout triggers recovery. New-version health must match the target version/build; legacy health remains supported during rollback. Focused tests cover both contracts.

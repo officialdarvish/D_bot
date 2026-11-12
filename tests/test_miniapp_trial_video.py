@@ -220,3 +220,31 @@ def test_bot_usage_blocks_first_native_request(trials):
     assert c.get('/api/miniapp/trial',headers=H).json()['used']
     assert c.post('/api/miniapp/trial',headers=H,json={'key':str(uuid.uuid4())}).status_code==409
     assert not calls
+
+
+@pytest.mark.parametrize('oversize',[False,True])
+def test_native_tutorial_stream_handles_aiogram_default_rewind_and_closes_file(client,monkeypatch,oversize):
+    from app.services import tutorial_video,media_stream
+    c,_=client
+    monkeypatch.setattr(content,'load_apps',AsyncMock(return_value=[dict(id='video',video_file_id='BAAC_test',enabled=True)]))
+    monkeypatch.setattr(miniapp,'read_config',AsyncMock(return_value={'enabled':True}))
+    payload=b'v'*100000
+    if oversize:monkeypatch.setattr(content,'MAX_TUTORIAL_VIDEO_BYTES',10)
+    tracked=[];original=media_stream.MediaFile
+    def create(limit):
+        result=original(limit);tracked.append(result);return result
+    monkeypatch.setattr(media_stream,'MediaFile',create)
+    async def download(path,destination):
+        destination.write(payload)
+        # aiogram.Bot.download_file defaults to seek=True.
+        destination.seek(0)
+    @asynccontextmanager
+    async def bot():yield SimpleNamespace(get_file=AsyncMock(return_value=SimpleNamespace(file_size=1,file_path='video')),download_file=download)
+    monkeypatch.setattr(miniapp,'telegram_bot',bot)
+    response=c.get(tutorial_video.url('video',1))
+    assert tracked and tracked[0].closed
+    if oversize:assert response.status_code==413
+    else:
+        assert response.status_code==200,response.text
+        assert response.content==payload and response.headers['content-length']==str(len(payload))
+        assert response.headers['cache-control']=='no-store, private'

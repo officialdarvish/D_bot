@@ -8,8 +8,9 @@ def _engine_kwargs() -> dict:
     if url.startswith('sqlite'):
         return {"pool_pre_ping": True}
     return {
-        "pool_size": max(int(settings.DB_POOL_SIZE or 10), 1),
-        "max_overflow": max(int(settings.DB_MAX_OVERFLOW or 20), 0),
+        "pool_size": max(int(settings.DB_POOL_SIZE or 3), 1),
+        "max_overflow": max(int(settings.DB_MAX_OVERFLOW), 0),
+        "pool_use_lifo": True,
         "pool_recycle": max(int(settings.DB_POOL_RECYCLE_SECONDS or 1800), 60),
         "pool_pre_ping": True,
     }

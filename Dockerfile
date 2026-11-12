@@ -6,6 +6,8 @@ FROM ${XRAY_IMAGE} AS xray-image
 
 FROM node:20-bookworm-slim AS frontend-build
 WORKDIR /frontend
+ARG NODE_BUILD_MAX_OLD_SPACE_SIZE=768
+ENV NODE_OPTIONS="--max-old-space-size=${NODE_BUILD_MAX_OLD_SPACE_SIZE}"
 
 ENV NEXT_TELEMETRY_DISABLED=1 \
     NPM_CONFIG_AUDIT=false \

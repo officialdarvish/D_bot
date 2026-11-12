@@ -140,7 +140,11 @@ if update_app; then echo 'UNEXPECTED_SUCCESS'; else exit 9; fi
         self.assertLess(docker.index('AS xray-archive'),docker.index('COPY requirements.txt'))
         self.assertIn('!build/xray/**/*.zip',(ROOT/'.dockerignore').read_text())
         compose=(ROOT/'docker-compose.yml').read_text()
-        self.assertIn('build: *dbot_build',compose)
+        import yaml
+        services=yaml.safe_load(compose)['services']
+        self.assertEqual(services['api']['image'],services['bot']['image'])
+        self.assertIn('build',services['api'])
+        self.assertNotIn('build',services['bot'])
         self.assertIn('XRAY_SOURCE: ${XRAY_SOURCE:-image}',compose)
 
 if __name__=='__main__':unittest.main()
