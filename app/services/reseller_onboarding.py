@@ -51,7 +51,7 @@ async def catalog(s,user):
     await access()
     chosen=await selected_mode(s,user.id)
     servers=(await s.scalars(select(Server).where(Server.is_active.is_(True)).order_by(Server.id))).all()
-    servers=[v for v in servers if (v.meta or {}).get('scope')=='reseller']
+    servers=[v for v in servers if (v.meta or {}).get('scope') in {'reseller','all'}]
     packages=(await s.scalars(select(ResellerPackage).where(ResellerPackage.is_active.is_(True)).order_by(ResellerPackage.id))).all()
     packages=[p for p in packages if p.server_id in {v.id for v in servers} and p.volume_gb>0]
     volume_enabled=await get_setting_value('reseller_join_volume_enabled','1')=='1'
@@ -80,7 +80,7 @@ async def quote(s,user,request):
     await require_mode(s,user.id,mode)
     sid=cat['panel_server_id'] if kind=='panel' else int(request.get('server_id') or 0)
     server=await s.get(Server,sid)
-    if not server or not server.is_active or (server.meta or {}).get('scope')!='reseller' or mode not in policy(server)[0]:
+    if not server or not server.is_active or (server.meta or {}).get('scope') not in {'reseller','all'} or mode not in policy(server)[0]:
         raise ValueError('سرور برای این مدل نمایندگی فعال نیست.')
     package=None;volume=days=initial=0;rate=policy(server)[1];setup=cat['panel_price'] if kind=='panel' else 0
     if mode=='volume':
@@ -182,7 +182,7 @@ async def approve(s,op,actor,server_id,mode):
     # cannot silently allocate another vendor or another economic model.
     if mode!=q['mode'] or server_id!=q['server_id']:raise ValueError('سرور و مدل باید با فاکتور پرداخت‌شده مطابقت داشته باشند.')
     server=await s.get(Server,server_id)
-    if not server or not server.is_active or (server.meta or {}).get('scope')!='reseller' or mode not in policy(server)[0]:raise ValueError('سرور یا تعرفه دیگر فعال نیست.')
+    if not server or not server.is_active or (server.meta or {}).get('scope') not in {'reseller','all'} or mode not in policy(server)[0]:raise ValueError('سرور یا تعرفه دیگر فعال نیست.')
     if q['kind']=='panel':
         from app.database.models import PaymentCard
         current_card=await s.get(PaymentCard,q['card']['id']) if q['card'] else None
@@ -237,7 +237,7 @@ async def check_panel_username(s,username,server_id):
     from app.services.pasarguard_panel_sales import PanelResellerProvisioner,validate_panel_username
     if not validate_panel_username(username):raise ValueError('نام کاربری باید ۴ تا ۳۲ نویسه انگلیسی باشد و با حرف شروع شود.')
     server=await s.get(Server,server_id)
-    if not server or not server.is_active or server.server_type!='pasarguard' or (server.meta or {}).get('scope')!='reseller':raise ValueError('سرور پنل فعال نیست.')
+    if not server or not server.is_active or server.server_type!='pasarguard' or (server.meta or {}).get('scope') not in {'reseller','all'}:raise ValueError('سرور پنل فعال نیست.')
     held=await s.scalar(select(MiniAppOperation.id).where(MiniAppOperation.kind==KIND,MiniAppOperation.status.in_(list(OPEN)),MiniAppOperation.payload['server_id'].as_integer()==server.id,func.lower(MiniAppOperation.payload['username'].as_string())==username.lower()).limit(1))
     if held:raise ValueError('این نام کاربری برای سفارش دیگری رزرو شده است؛ نام طولانی‌تری انتخاب کنید.')
     if not await PanelResellerProvisioner().username_available(server,username):raise ValueError('نام کاربری در پاسارگارد تکراری است؛ نام طولانی‌تری انتخاب کنید.')

@@ -1,4 +1,6 @@
 'use client';
+import {ModuleSettings} from '@/components/module-settings';
+import {SystemUpdate} from '@/components/system-update';
 import { ResellerActivityCard } from '@/components/reseller-activity-card';
 import { ResourceIcon } from '@/components/resource-icon';
 import { TutorialSettings } from '@/components/tutorial-settings';
@@ -110,7 +112,7 @@ type ResourceMetric = { title: string; value: string; detail: string; percent: n
 type UserItem = { id: number; telegram_id: number; username?: string; full_name?: string; wallet_total: number; purchases: number; referral_code?: string; joined_at?: string; is_blocked?: boolean; is_reseller?: boolean };
 type ServerItem = { reseller_billing_modes?: string[]; reseller_payg_rate_irt?: number; id: number; name: string; display_name?: string; server_type: string; server_type_label?: string; panel_url: string; panel_base_url?: string; panel_path?: string; subscription_url?: string; username: string; auth_username?: string; scope?: string; inbound_ids?: unknown[]; inbounds?: { id: number; remark?: string; protocol?: string; enable?: boolean }[]; client_groups?: { name: string; client_count?: number | null }[]; last_inbound_sync_at?: string; is_active: boolean; user_count?: number; router_name?: string; router_host?: string; router_port?: string | number; router_online?: boolean; router_identity?: string; router_version?: string; router_uptime?: string; router_secrets?: number; router_active?: number; router_error?: string; last_router_sync_at?: string; default_protocol?: string; openvpn_profile_id?: number; l2tp_server?: string; l2tp_ipsec_secret?: string; badge_color?: string; badge_emoji?: string; badge_label?: string; pasarguard_role_name?: string; pasarguard_restricted?: boolean; pasarguard_group_source?: string; pasarguard_group_ids?: number[]; pasarguard_require_template?: boolean; pasarguard_capabilities?: Record<string, any>; pasarguard_limits?: Record<string, any>; pasarguard_warnings?: string[] };
 type CategoryItem = { service_type_key?: string; service_type_name?: string; id: number; name: string; server_id?: number | null; server_ids?: number[]; server_names?: string[]; is_active?: boolean; bot_visibility?: { status: string; detail: string; providers: string[]; provider_labels: string[]; active_public_server_ids: number[]; inactive_public_server_ids: number[] } };
-type PlanItem = { id: number; title: string; volume_gb: number; duration_days: number; price_irt: number; pricing_currency?: 'IRT' | 'USD'; price_usd?: string; category_id?: number; server_id?: number; inbound_ids?: unknown[]; inbound_mode?: 'automatic' | 'manual'; group_name?: string; hwid_limit?: number; happ_encrypted_sub?: boolean; is_active: boolean; is_unlimited?: boolean };
+type PlanItem = { custom_tariff?:Record<string,number|boolean>; id: number; title: string; volume_gb: number; duration_days: number; price_irt: number; pricing_currency?: 'IRT' | 'USD'; price_usd?: string; category_id?: number; server_id?: number; inbound_ids?: unknown[]; inbound_mode?: 'automatic' | 'manual'; group_name?: string; hwid_limit?: number; happ_encrypted_sub?: boolean; is_active: boolean; is_unlimited?: boolean };
 type ServerGroupsApi = { ok: boolean; items: { server_id: number; groups: { name: string; client_count?: number | null }[]; error?: string }[] };
 type ResellerPackage = { inbound_mode?:'automatic'|'manual';inbound_ids?:number[];id: number; title: string; server_id?: number; volume_gb: number; price_irt: number; pricing_currency?: 'IRT' | 'USD'; price_usd?: string; reseller_validity_days: number; is_active: boolean };
 type PaymentItem = { id: number; server_type: string; server_id?: number; card_number: string; owner_name: string; reviewer_telegram_id?: number | null; is_active: boolean };
@@ -324,6 +326,8 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileAvatar, setProfileAvatar] = useState<string>('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [features,setFeatures]=useState<Record<string,boolean>>({});
+  useEffect(()=>{void fetchJson<{features:Record<string,boolean>}>('/admin/api/v2/capabilities').then(r=>setFeatures(r.features)).catch(()=>{})},[reloadKey]);
   const [authRequired, setAuthRequired] = useState(false);
   const { toast, show } = useToast();
 
@@ -352,6 +356,7 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
     };
   }, [mobileOpen]);
 
+  useEffect(()=>{if((section==='openvpn-profiles'&&features.openvpn===false)||(['resellers','pasarguard-panel-sales'].includes(section)&&features.resellers===false))setSection('dashboard')},[section,features]);
   const title = sectionTitles[section];
 
   function openSection(item: { key: SectionKey; href: string }, event?: any) {
@@ -456,7 +461,7 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
           {navGroups.map((group) => (
             <div className="nav-section" key={group.label}>
               <div className="nav-section-title">{group.label}</div>
-              {group.items.map((item) => {
+              {group.items.filter(item=>!(item.key==='openvpn-profiles'&&features.openvpn===false)&&!(['resellers','pasarguard-panel-sales'].includes(item.key)&&features.resellers===false)).map((item) => {
                 const Icon = item.icon;
                 return (
                   <a key={item.key} className={`nav-link ${section === item.key ? 'active' : ''}`} title={item.title} aria-label={item.title} aria-current={section === item.key ? 'page' : undefined} href={item.href} onClick={(event) => openSection(item, event)}>
@@ -467,7 +472,7 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
             </div>
           ))}
         </nav>
-        <div className="sidebar-footer">
+        <div className="sidebar-footer"><SystemUpdate/>
           <div className="sidebar-language-row" title="Language">
             <Languages size={19} aria-hidden="true" />
             <span className="sidebar-language-label">Language</span>
@@ -1478,6 +1483,7 @@ function SettingsSection({ reloadKey, setAuthRequired, openModal, show }: any) {
   const loginUrl = map.web_login_url || (domain ? `${baseUrl}/${map.web_path || 'dbot'}/login` : '-');
 
   return <div className="section-grid settings-grid" data-no-i18n="true" dir={language === 'fa' ? 'rtl' : 'ltr'}>
+    <ModuleSettings/>
     <BotHomeSettings map={map} show={show} setAuthRequired={setAuthRequired} />
 
     <EntityCard
@@ -2079,7 +2085,7 @@ function filterItems<T>(items: T[], query: string, keys: string[]) {
 }
 function serverOptions(items: ServerItem[]) { return [{ value: 0, label: 'Select server' }, ...items.map((s) => ({ value: s.id, label: `${s.display_name || s.name} (${s.server_type === 'mikrotik' ? 'MikroTik / Custom' : (s.server_type === 'pasarguard' ? 'PasarGuard' : s.server_type)})` }))]; }
 function categoryOptions(items: CategoryItem[]) { return [{ value: 0, label: 'Select category' }, ...items.map((c) => ({ value: c.id, label: `${c.name}${c.server_names?.length ? ` (${c.server_names.join(', ')})` : (c.server_id ? ` (Server #${c.server_id})` : '')}` }))]; }
-function commonScopeOptions() { return [{ value: 'public', label: 'Public sales' }, { value: 'reseller', label: 'Reseller sales' }]; }
+function commonScopeOptions() { return [{ value: 'public', label: 'Public sales' }, { value: 'reseller', label: 'Reseller sales' }, {value:'all',label:'Public + Reseller'}]; }
 
 function serverForm(s?: ServerItem): ModalForm {
   const isCustom = s?.server_type === 'mikrotik';
@@ -2089,7 +2095,7 @@ function serverForm(s?: ServerItem): ModalForm {
     reseller_billing_modes: s.reseller_billing_modes || ['volume'],
     reseller_payg_rate_irt: s.reseller_payg_rate_irt || 0,
     server_type: isCustom ? 'mikrotik' : (isPasarGuard ? 'pasarguard' : 'xui'),
-    scope: s.scope === 'reseller' ? 'reseller' : 'public',
+    scope: ['public','reseller','all'].includes(s.scope||'') ? s.scope : 'public',
     panel_url: isCustom ? (s.panel_base_url || s.panel_url || '') : (s.panel_base_url || s.panel_url || ''),
     panel_path: (isCustom || isPasarGuard) ? '/' : (s.panel_path || '/'),
     subscription_url: isCustom ? '' : (s.subscription_url || ''),
@@ -2130,8 +2136,8 @@ function serverForm(s?: ServerItem): ModalForm {
     fields: [
       { name: 'server_type', label: 'Profile', type: 'select', options: [{ value: 'xui', label: 'Sanaei / 3x-ui' }, { value: 'pasarguard', label: 'PasarGuard' }, { value: 'mikrotik', label: 'MikroTik / Custom' }] },
       { name: 'scope', label: 'Show this server for', type: 'select', options: commonScopeOptions() },
-      { name:'reseller_billing_modes',label:'Allowed reseller financial systems',type:'checkbox-group',required:true,options:[{value:'volume',label:'Volume purchase'},{value:'payg',label:'Pay As You Go'}],full:true,showWhen:{name:'scope',value:'reseller'}},
-      { name:'reseller_payg_rate_irt',label:'PAYG price per GB (Toman)',type:'number',min:0,full:true,showWhenAll:[{name:'scope',value:'reseller'},{name:'__payg_enabled',value:'yes'}]},
+      { name:'reseller_billing_modes',label:'Allowed reseller financial systems',type:'checkbox-group',required:true,options:[{value:'volume',label:'Volume purchase'},{value:'payg',label:'Pay As You Go'}],full:true,showWhen:{name:'scope',values:['reseller','all']}},
+      { name:'reseller_payg_rate_irt',label:'PAYG price per GB (Toman)',type:'number',min:0,full:true,showWhenAll:[{name:'scope',values:['reseller','all']},{name:'__payg_enabled',value:'yes'}]},
       { name: 'name', label: 'Server name shown to users', required: true, placeholder: 'Germany / DE / OpenVPN Germany' },
       { name: 'display_name', label: 'Display name', placeholder: 'Optional bot/admin display name' },
       { name: 'badge_label', label: 'Service badge text shown to users', placeholder: 'V2Ray or MikroTik / OpenVPN' },
@@ -2199,13 +2205,20 @@ function planForm(catOptions: any[], servers: ServerItem[], p?: PlanItem): Modal
   return {
     title: p ? 'Edit Public Plan' : 'Add Plan',
     action: p ? `/admin/plans/${p.id}/edit` : '/admin/plans/add',
-    defaults: p ? { ...p, plan_kind: 'public', pricing_currency: p.pricing_currency || 'IRT', price_usd: p.price_usd || '', inbound_mode: inboundMode, group_name: p.group_name || '', hwid_limit: Number(p.hwid_limit || 0), happ_encrypted_sub: p.happ_encrypted_sub ? 'yes' : 'no' } : { plan_kind: 'public', pricing_currency: 'IRT', price_irt: 0, price_usd: '', category_id: 0, server_id: 0, reseller_validity_days: 365, inbound_mode: 'automatic', inbound_ids: [], group_name: '', hwid_limit: 0, happ_encrypted_sub: 'no' },
+    defaults: p ? { ...p,...Object.fromEntries(Object.entries(p.custom_tariff||{}).map(([k,v])=>['custom_'+k,k==='enabled'?(v?'yes':'no'):v])), plan_kind: 'public', pricing_currency: p.pricing_currency || 'IRT', price_usd: p.price_usd || '', inbound_mode: inboundMode, group_name: p.group_name || '', hwid_limit: Number(p.hwid_limit || 0), happ_encrypted_sub: p.happ_encrypted_sub ? 'yes' : 'no' } : { plan_kind: 'public', pricing_currency: 'IRT', price_irt: 0, price_usd: '', category_id: 0, server_id: 0, reseller_validity_days: 365, inbound_mode: 'automatic', inbound_ids: [], group_name: '', hwid_limit: 0, happ_encrypted_sub: 'no' },
     fields: [
       { name: 'plan_kind', label: 'Plan is for', type: 'select', options: [{ value: 'public', label: 'Public' }, { value: 'reseller', label: 'Resellers' }], hidden: !!p },
       { name: 'title', label: 'Plan title', required: true },
       { name: 'pricing_currency', label: 'Pricing currency', type: 'select', options: [{ value: 'IRT', label: 'Toman — fixed price' }, { value: 'USD', label: 'USD — live Wallex rate at checkout' }], required: true },
       { name: 'price_irt', label: 'Price (Toman)', type: 'number', required: true, min: 0, showWhen: { name: 'pricing_currency', value: 'IRT' } },
       { name: 'price_usd', label: 'Price (USD)', type: 'number', required: true, min: 0.01, step: 0.01, placeholder: 'Example: 4.99', showWhen: { name: 'pricing_currency', value: 'USD' } },
+      {name:'custom_enabled',label:'Custom volume and days',type:'select',options:[{value:'no',label:'No'},{value:'yes',label:'Yes'}]},
+      {name:'custom_min_gb',label:'Minimum GB',type:'number',min:1,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
+      {name:'custom_max_gb',label:'Maximum GB',type:'number',min:1,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
+      {name:'custom_min_days',label:'Minimum days',type:'number',min:1,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
+      {name:'custom_max_days',label:'Maximum days',type:'number',min:1,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
+      {name:'custom_price_gb',label:'Price per GB (Toman)',type:'number',min:0,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
+      {name:'custom_price_day',label:'Price per day (Toman)',type:'number',min:0,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
       { name: 'volume_gb', label: 'Volume GB', type: 'number', required: true },
       { name: 'duration_days', label: 'Duration days', type: 'number', required: true, showWhen: { name: 'plan_kind', value: 'public' } },
       { name: 'reseller_validity_days', label: 'Reseller validity days', type: 'number', required: true, showWhen: { name: 'plan_kind', value: 'reseller' } },
@@ -2228,7 +2241,7 @@ function resellerPlanForm(categories: any[], servers: ServerItem[], p?: Reseller
 
 function paymentForm(servers: ServerItem[], p?: PaymentItem): ModalForm {
   const publicOptions = serverOptions(servers.filter(s => (s.scope || 'public') !== 'reseller'));
-  const resellerOptions = [{ value: 0, label: 'All reseller servers — fallback' }, ...serverOptions(servers.filter(s => s.scope === 'reseller')).slice(1)];
+  const resellerOptions = [{ value: 0, label: 'All reseller servers — fallback' }, ...serverOptions(servers.filter(s => ['reseller','all'].includes(s.scope||''))).slice(1)];
   return { title: p ? 'Edit Payment' : 'Add Payment', action: p ? `/admin/payments/${p.id}/edit` : '/admin/payments/add', defaults: p ? { ...p, reviewer_telegram_id: p.reviewer_telegram_id || 0, show_for: ['reseller','panel_reseller'].includes(p.server_type) ? p.server_type : 'public' } : { show_for: 'public', server_id: 0, reviewer_telegram_id: 0 }, fields: [
     { name: 'card_number', label: 'Card / account number', required: true },
     { name: 'owner_name', label: 'Owner name', required: true },
@@ -2286,7 +2299,7 @@ function resellerForm(r?: ResellerItem, servers: ServerItem[] = []): ModalForm {
     if(options&&policy.group_name&&!options.some(o=>o.value===policy.group_name))options.push({value:policy.group_name,label:policy.group_name+' (current)'});
   }
   const serverLabels=Object.fromEntries(servers.map(server=>[String(server.id),server.display_name||server.name]));
-  const resellerServers = servers.filter((server) => server.scope === 'reseller' && (server.is_active || (r?.allowed_server_ids || []).includes(server.id)));
+  const resellerServers = servers.filter((server) => ['reseller','all'].includes(server.scope||'') && (server.is_active || (r?.allowed_server_ids || []).includes(server.id)));
   const defaults = r ? { total_gb: r.total_bytes / 1024 ** 3, expires_at: expiryDate, allowed_server_ids: r.allowed_server_ids?.length ? r.allowed_server_ids : r.server_id ? [r.server_id] : [], server_id: r.server_id || 0, inbound_mode: r.inbound_mode || 'automatic', inbound_ids: r.inbound_ids || [], inbound_policies_json: JSON.stringify(Object.keys(savedPolicies).length ? savedPolicies : r.server_id && r.inbound_mode === 'manual' ? { [String(r.server_id)]: { mode: 'manual', inbound_ids: r.inbound_ids || [] } } : {}), group_name: r.group_name || '' } : { total_gb: 0, days: 30, allowed_server_ids: [], inbound_policies_json: '{}' };
   return {
     title: r ? 'Edit Reseller' : 'Add Reseller',

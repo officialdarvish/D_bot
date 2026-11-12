@@ -299,6 +299,9 @@ async def _auth_user(request: Request) -> str:
         raise HTTPException(status_code=303, headers={'Location': _with_web_prefix(request, '/login?updated=1')})
     if request.method.upper() in {'POST', 'PUT', 'PATCH', 'DELETE'}:
         _verify_csrf(request)
+    from app.services.features import require_feature
+    if '/openvpn-profiles' in request.url.path:await require_feature('openvpn')
+    if any(x in request.url.path for x in ('/resellers','/pasarguard-panel-sales')):await require_feature('resellers')
     return data['username']
 
 
@@ -2337,7 +2340,16 @@ async def _setup_values() -> dict[str, str]:
 async def setup_wizard_page(request: Request, _: str = Depends(_auth_user)):
     if (await db_setting('initial_setup_done', '0')) == '1':
         return RedirectResponse(_with_web_prefix(request, '/admin'), status_code=303)
-    return HTMLResponse(_setup_wizard_html(request, await _setup_values()))
+    return await _setup_response(request,await _setup_values())
+
+
+async def _setup_response(request,values,error='',status_code=200):
+    from app.services.setup_steps import staged
+    async with SessionLocal() as session:
+        servers=(await session.execute(select(Server).where(Server.is_active.is_(True)))).scalars().all()
+    m=await _settings_map()
+    for name in ('resellers','openvpn','trials','wallet','tutorials'):values['feature_'+name]=m.get('feature_'+name,'0')
+    return HTMLResponse(staged(_setup_wizard_html(request,values,error),values,str((request.scope.get('state') or {}).get('dbot_web_prefix') or ''),_session_csrf_token(request),servers),status_code=status_code)
 
 
 @router.post('/setup/save', response_class=HTMLResponse)
@@ -2354,6 +2366,11 @@ async def setup_wizard_save(
     web_path: str = Form(''),
     _: str = Depends(_auth_user),
 ):
+    form=await request.form()
+    feature_values={'feature_'+name:'1' if form.get('feature_'+name)=='1' else '0' for name in ('resellers','openvpn','trials','wallet','tutorials')}
+    async with SessionLocal() as session:
+        if not await session.scalar(select(Server.id).where(Server.is_active.is_(True)).limit(1)):
+            return await _setup_response(request,await _setup_values(),'Add and verify a server first / ابتدا سرور اضافه کنید',400)
     values = await _setup_values()
     values.update({
         'force_join_enabled': '1' if force_join_enabled == '1' else '0',
@@ -2381,10 +2398,11 @@ async def setup_wizard_save(
         if not values['welcome_text']:
             raise ValueError('Home page text cannot be empty.')
     except ValueError as exc:
-        return HTMLResponse(_setup_wizard_html(request, values, str(exc)), status_code=400)
+        return await _setup_response(request,values,str(exc),400)
 
     async with SessionLocal() as s:
         for key, value in {
+            **feature_values,
             'force_join_enabled': values['force_join_enabled'],
             'channel_url': values['channel_url'] if values['force_join_enabled'] == '1' else '',
             'rules_enabled': values['rules_enabled'],
@@ -2542,7 +2560,7 @@ async def dashboard(request: Request, page: int = 1, page_size: int = 50, _: str
         purchases={}
         if page_user_ids:
             purchases=dict((await s.execute(select(Order.user_id, func.count(Order.id)).where(Order.user_id.in_(page_user_ids)).group_by(Order.user_id))).all())
-        recent_orders=(await s.execute(select(Order).where(Order.created_at >= now - timedelta(days=30)).order_by(Order.id.desc()).limit(5))).scalars().all()
+        recent_orders=(await s.execute(select(Order).where(Order.created_at >= now - timedelta(days=30), Order.receipt_file_id.is_not(None), Order.receipt_file_id != '').order_by(Order.id.desc()).limit(5))).scalars().all()
         recent_user_ids=[o.user_id for o in recent_orders]
         recent_users={}
         if recent_user_ids:
@@ -2956,7 +2974,7 @@ def _custom_panel_server_payload(origin: str, auth_username: str, password: str,
     display = f'{custom_display} ({name})' if custom_display and name and custom_display.lower() != name.lower() else (custom_display or router_display)
     meta = {
         'display_name': display,
-        'scope': scope if scope in ('public','reseller') else 'public',
+        'scope': scope if scope in ('public','reseller','all') else 'public',
         'panel_base_url': origin,
         'panel_path': '/',
         'custom_panel': True,
@@ -3042,12 +3060,12 @@ async def servers(request: Request, _: str = Depends(_auth_user)):
     async with SessionLocal() as s:
         items=(await s.execute(select(Server).order_by(Server.id.desc()))).scalars().all()
         counts=dict((await s.execute(select(ClientService.server_id,func.count(ClientService.id)).group_by(ClientService.server_id))).all())
-    scope_select = select_field('scope','Show for',[('public','Public sales'),('reseller','Reseller')],'public')
+    scope_select = select_field('scope','Show for',[('public','Public sales'),('reseller','Reseller'),('all','Public + Reseller')],'public')
     add_form='<form method="post" action="/admin/servers/add" class="formgrid"><div><label>Profile</label><select name="server_type"><option value="xui">Sanaei / 3x-ui</option><option value="pasarguard">PasarGuard</option><option value="mikrotik">MikroTik / Custom</option></select></div>'+scope_select+field('name','Server name')+field('display_name','Display name')+field('panel_url','Panel URL / Origin')+field('panel_path','Panel Web Path','text','/')+field('subscription_url','Subscription URL')+field('username','Username')+field('password','Password','password')+field('api_key','API Token Panel','password')+field('badge_label','Service badge text','text','')+field('badge_color','Service badge color','color','#2563eb')+field('badge_emoji','Bot circle emoji','text','')+field('l2tp_server','L2TP Server','text','vpn.example.com')+field('l2tp_ipsec_secret','L2TP Secret','text','CHANGE_ME_IPSEC_SECRET')+'<div class="full"><button class="btn primary">Save</button></div></form>'
     cards=[]
     for sv in items:
         m=sv.meta or {}; inbs=m.get('inbound_ids') or []
-        edit='<form method="post" action="/admin/servers/'+str(sv.id)+'/edit" class="formgrid">'+field('name','Server name','text',sv.name)+select_field('scope','Show for',[('public','Public sales'),('reseller','Reseller')],server_scope(sv))+field('display_name','Display name','text',m.get('display_name') or sv.name)+field('panel_url','Panel URL / Origin','text',m.get('panel_base_url') or sv.panel_url)+field('panel_path','Panel Web Path','text',m.get('panel_path') or '/')+field('subscription_url','Subscription URL','text',sv.subscription_url or '')+field('username','Username','text',sv.username)+field('password','New password','password')+field('api_key','New API Token Panel','password')+field('badge_label','Service badge text','text',m.get('badge_label') or ('MikroTik / OpenVPN' if sv.server_type == 'mikrotik' else 'V2Ray'))+field('badge_color','Service badge color','color',m.get('badge_color') or ('#f97316' if sv.server_type == 'mikrotik' else '#2563eb'))+field('badge_emoji','Bot circle emoji','text',m.get('badge_emoji') or ('🟠' if sv.server_type == 'mikrotik' else '🔵'))+field('l2tp_server','L2TP Server','text',m.get('l2tp_server') or 'vpn.example.com')+field('l2tp_ipsec_secret','L2TP Secret','text',m.get('l2tp_ipsec_secret') or 'CHANGE_ME_IPSEC_SECRET')+'<div class="full"><button class="btn primary">Save</button></div></form>'
+        edit='<form method="post" action="/admin/servers/'+str(sv.id)+'/edit" class="formgrid">'+field('name','Server name','text',sv.name)+select_field('scope','Show for',[('public','Public sales'),('reseller','Reseller'),('all','Public + Reseller')],server_scope(sv))+field('display_name','Display name','text',m.get('display_name') or sv.name)+field('panel_url','Panel URL / Origin','text',m.get('panel_base_url') or sv.panel_url)+field('panel_path','Panel Web Path','text',m.get('panel_path') or '/')+field('subscription_url','Subscription URL','text',sv.subscription_url or '')+field('username','Username','text',sv.username)+field('password','New password','password')+field('api_key','New API Token Panel','password')+field('badge_label','Service badge text','text',m.get('badge_label') or ('MikroTik / OpenVPN' if sv.server_type == 'mikrotik' else 'V2Ray'))+field('badge_color','Service badge color','color',m.get('badge_color') or ('#f97316' if sv.server_type == 'mikrotik' else '#2563eb'))+field('badge_emoji','Bot circle emoji','text',m.get('badge_emoji') or ('🟠' if sv.server_type == 'mikrotik' else '🔵'))+field('l2tp_server','L2TP Server','text',m.get('l2tp_server') or 'vpn.example.com')+field('l2tp_ipsec_secret','L2TP Secret','text',m.get('l2tp_ipsec_secret') or 'CHANGE_ME_IPSEC_SECRET')+'<div class="full"><button class="btn primary">Save</button></div></form>'
         cards.append(f'''<div class="card server-card"><div class="server-glow"></div><div class="headrow"><h3><span class="service-dot" style="background:{e(m.get('badge_color') or ('#f97316' if sv.server_type == 'mikrotik' else '#2563eb'))}"></span> {e(m.get('display_name') or sv.name)} <small class="muted">{e(m.get('badge_label') or ('MikroTik / OpenVPN' if sv.server_type == 'mikrotik' else 'V2Ray'))}</small></h3><span class="badge status" data-fa="Online" data-en="Online">Online</span></div><div class="server-meta"><div><span>Panel</span><b>{e(sv.server_type)}</b></div><div><span>Users</span><b>{counts.get(sv.id,0)}</b></div><div><span>Inbound</span><b>{len(inbs)}</b></div><div><span>Status</span><b>ON</b></div></div><div class="kvs"><div class="kv"><span>Server name</span><b>{e(sv.name)}</b></div><div class="kv"><span>Panel type</span><b>{e(sv.server_type)}</b></div><div class="kv"><span>Usage</span><b>Public sales / Resellers</b></div><div class="kv"><span>Users</span><b>{counts.get(sv.id,0)}</b></div><div class="kv"><span>Inbound</span><b>{len(inbs)}</b></div></div><div class="rowactions"><a data-action="1" class="btn success" href="/admin/servers/{sv.id}/refresh">Refresh</a><button class="btn" onclick="openModal('srvEdit{sv.id}')">Edit</button><a data-action="1" class="btn {'danger' if sv.is_active else 'success'}" href="/admin/toggle/servers/{sv.id}">{'Deactivate' if sv.is_active else 'Activate'}</a><a data-action="1" class="btn" href="/admin/servers/{sv.id}/duplicate">Duplicate</a><button class="btn danger" onclick="askDelete('/admin/servers/{sv.id}/delete')">Delete</button></div></div>{modal('srvEdit'+str(sv.id),'Edit Server','Edit Server',edit)}''')
     return layout('Servers','Servers','<div class="headrow"><h2>Servers</h2><button class="btn primary" onclick="openModal(\'srvAdd\')">+ Add Server</button></div>'+modal('srvAdd','Add Server','Add Server',add_form)+'<div class="gridcards">'+''.join(cards)+'</div>','/admin/servers')
 
@@ -3341,7 +3359,7 @@ async def server_add(request: Request, server_type:str=Form('xui'), scope:str=Fo
                 'display_name': display_name or name,
                 'inbound_ids': [],
                 'inbounds': [],
-                'scope': scope if scope in ('public','reseller') else 'public',
+                'scope': scope if scope in ('public','reseller','all') else 'public',
                 'panel_base_url': origin,
                 'panel_path': '/',
                 'auth_mode': pg_auth_mode,
@@ -3382,7 +3400,7 @@ async def server_add(request: Request, server_type:str=Form('xui'), scope:str=Fo
         if xui_auth_mode == 'session' and not xui_username:
             return fail(request, '3x-ui username is required when using panel username/password login. API Token Panel mode does not need username.', 400)
         base_url, web_path, final_url = _normalize_panel_parts(panel_url, panel_path)
-        srv=Server(name=name,server_type=server_type,panel_url=final_url,subscription_url=subscription_url or None,username=xui_username,password_encrypted=encrypt_text(xui_secret),is_active=True,meta={**{'display_name':display_name or name,'inbound_ids':[],'inbounds':[],'scope':scope if scope in ('public','reseller') else 'public','panel_base_url':base_url,'panel_path':web_path,'auth_mode':xui_auth_mode}, **_server_badge_meta('xui', badge_color, badge_label, badge_emoji)})
+        srv=Server(name=name,server_type=server_type,panel_url=final_url,subscription_url=subscription_url or None,username=xui_username,password_encrypted=encrypt_text(xui_secret),is_active=True,meta={**{'display_name':display_name or name,'inbound_ids':[],'inbounds':[],'scope':scope if scope in ('public','reseller','all') else 'public','panel_base_url':base_url,'panel_path':web_path,'auth_mode':xui_auth_mode}, **_server_badge_meta('xui', badge_color, badge_label, badge_emoji)})
         srv.meta = {**(srv.meta or {}), **billing_policy}
         s.add(srv); await s.commit(); await s.refresh(srv)
         ok_sync, old_ids, new_ids, err = await refresh_server_inbounds(s,srv,force_plan_update=True)
@@ -3408,7 +3426,7 @@ async def server_edit(request: Request, sid:int, name:str=Form(...), scope:str=F
             auth_username=(username or meta.get('auth_username') or '').strip()
             srv.name=name or srv.name; srv.panel_url=(panel_url or '').strip().rstrip('/'); srv.subscription_url=None; srv.username=router
             if api_key or password: srv.password_encrypted=encrypt_text(api_key or password)
-            meta.update({'display_name':display_name or name or srv.name,'scope':scope if scope in ('public','reseller') else 'public','panel_base_url':srv.panel_url,'router_name':router,'auth_username':auth_username,'default_protocol':default_protocol or meta.get('default_protocol') or 'openvpn','openvpn_profile_id':int(openvpn_profile_id or 0),'l2tp_server':l2tp_server or meta.get('l2tp_server') or 'vpn.example.com','l2tp_ipsec_secret':l2tp_ipsec_secret or meta.get('l2tp_ipsec_secret') or 'CHANGE_ME_IPSEC_SECRET'}); meta.update(_server_badge_meta('mikrotik', badge_color, badge_label, badge_emoji, default_protocol)); srv.meta=meta
+            meta.update({'display_name':display_name or name or srv.name,'scope':scope if scope in ('public','reseller','all') else 'public','panel_base_url':srv.panel_url,'router_name':router,'auth_username':auth_username,'default_protocol':default_protocol or meta.get('default_protocol') or 'openvpn','openvpn_profile_id':int(openvpn_profile_id or 0),'l2tp_server':l2tp_server or meta.get('l2tp_server') or 'vpn.example.com','l2tp_ipsec_secret':l2tp_ipsec_secret or meta.get('l2tp_ipsec_secret') or 'CHANGE_ME_IPSEC_SECRET'}); meta.update(_server_badge_meta('mikrotik', badge_color, badge_label, badge_emoji, default_protocol)); srv.meta=meta
             await s.commit()
             return ok(request, '/admin/servers', 'MikroTik server updated')
         if server_type == 'pasarguard':
@@ -3436,7 +3454,7 @@ async def server_edit(request: Request, sid:int, name:str=Form(...), scope:str=F
             meta.pop('pasarguard_group_ids', None)
             meta.update({
                 'display_name': display_name or name or srv.name,
-                'scope': scope if scope in ('public','reseller') else 'public',
+                'scope': scope if scope in ('public','reseller','all') else 'public',
                 'panel_base_url': origin,
                 'panel_path': '/',
             })
@@ -3468,7 +3486,7 @@ async def server_edit(request: Request, sid:int, name:str=Form(...), scope:str=F
             srv.password_encrypted=encrypt_text(xui_secret)
         elif username:
             srv.username=username
-        meta=dict(srv.meta or {}); meta['display_name']=display_name or name; meta['scope']=scope if scope in ('public','reseller') else 'public'; meta['panel_base_url']=base_url; meta['panel_path']=web_path; meta.pop('happ_encrypted_sub', None)
+        meta=dict(srv.meta or {}); meta['display_name']=display_name or name; meta['scope']=scope if scope in ('public','reseller','all') else 'public'; meta['panel_base_url']=base_url; meta['panel_path']=web_path; meta.pop('happ_encrypted_sub', None)
         if xui_secret:
             meta['auth_mode']=xui_auth_mode
         meta.update(_server_badge_meta('xui', badge_color, badge_label, badge_emoji))
@@ -4013,6 +4031,8 @@ async def plan_add(request: Request, plan_kind:str=Form('public'), title:str=For
         plan_meta = {'inbound_mode': mode, 'happ_encrypted_sub': srv.server_type == 'xui' and str(happ_encrypted_sub).lower() in {'yes','true','1','on'}}
         try:
             plan_meta = update_plan_pricing_meta(plan_meta, pricing_currency=pricing_currency, price_usd=price_usd)
+            from app.services.custom_tariff import from_form
+            plan_meta = await from_form(request,plan_meta)
         except ValueError as exc:
             return fail(request, str(exc))
         stored_price_irt = int(price_irt or 0) if str(pricing_currency or 'IRT').upper() != 'USD' else 0
@@ -4055,6 +4075,8 @@ async def plan_edit(request: Request, pid:int, title:str=Form(...), volume_gb:in
             meta['happ_encrypted_sub'] = srv.server_type == 'xui' and str(happ_encrypted_sub or '').lower() in {'yes','true','1','on'}
         try:
             meta = update_plan_pricing_meta(meta, pricing_currency=pricing_currency, price_usd=price_usd)
+            from app.services.custom_tariff import from_form
+            meta = await from_form(request,meta)
         except ValueError as exc:
             return fail(request, str(exc))
         obj.price_irt = int(price_irt or 0) if str(pricing_currency or 'IRT').upper() != 'USD' else 0
@@ -4196,7 +4218,7 @@ async def pay_add(request: Request, card_number:str=Form(...), owner_name:str=Fo
             if server_id:
                 srv=await s.get(Server,server_id)
                 if not srv:return fail(request,'Selected server was not found.',404)
-                if server_scope(srv)!='reseller':return fail(request,'Selected server is not enabled for reseller sales.',400)
+                if server_scope(srv) not in {'reseller','all'}:return fail(request,'Selected server is not enabled for reseller sales.',400)
                 if show_for=='panel_reseller' and srv.server_type!='pasarguard':return fail(request,'Panel payment requires a PasarGuard server.',400)
         else:
             if not server_id:
@@ -4220,7 +4242,7 @@ async def pay_edit(request: Request, pid:int, card_number:str=Form(...), owner_n
                 if server_id:
                     srv=await s.get(Server,server_id)
                     if not srv:return fail(request,'Selected server was not found.',404)
-                    if server_scope(srv)!='reseller':return fail(request,'Selected server is not enabled for reseller sales.',400)
+                    if server_scope(srv) not in {'reseller','all'}:return fail(request,'Selected server is not enabled for reseller sales.',400)
                     if show_for=='panel_reseller' and srv.server_type!='pasarguard':return fail(request,'Panel payment requires a PasarGuard server.',400)
             else:
                 if not server_id:
@@ -6023,7 +6045,7 @@ def user_json(u, purchases=0):
 
 def plan_json(p):
     return {
-        'id': p.id, 'title': p.title, 'volume_gb': p.volume_gb,
+        'id': p.id, 'title': p.title, 'custom_tariff': (p.meta or {}).get('custom_tariff'), 'volume_gb': p.volume_gb,
         'duration_days': p.duration_days, 'price_irt': int(p.price_irt or 0),
         'pricing_currency': plan_currency(p), 'price_usd': format_usd(plan_price_usd(p)),
         'category_id': p.category_id, 'server_id': p.server_id,
@@ -6200,7 +6222,7 @@ async def api_v2_dashboard(start_date: str | None = None, end_date: str | None =
             select(func.count(ResellerAccount.id)).scalar_subquery(),
             select(func.count(ClientService.id)).where(ClientService.is_active == True).scalar_subquery(),
         ))).one()
-        recent = (await s.execute(select(Order).where(Order.created_at >= start_dt, Order.created_at < end_dt).order_by(Order.id.desc()).limit(8))).scalars().all()
+        recent = (await s.execute(select(Order).where(Order.created_at >= start_dt, Order.created_at < end_dt, Order.receipt_file_id.is_not(None), Order.receipt_file_id != '').order_by(Order.id.desc()).limit(8))).scalars().all()
         user_ids = [o.user_id for o in recent]
         plan_ids = [o.plan_id for o in recent if o.plan_id]
         users = {u.id: u for u in (await s.execute(select(User).where(User.id.in_(user_ids)))).scalars().all()} if user_ids else {}
@@ -6684,7 +6706,7 @@ async def _validate_reseller_server_ids(session, raw: str) -> list[int]:
     if not ids:
         raise ValueError('Select at least one server for this reseller.')
     available = (await session.execute(select(Server).where(Server.id.in_(ids), Server.is_active.is_(True)))).scalars().all()
-    if len(available) != len(ids) or any(item.server_type not in {'xui', 'pasarguard', 'mikrotik'} or (item.meta or {}).get('scope') != 'reseller' for item in available):
+    if len(available) != len(ids) or any(item.server_type not in {'xui', 'pasarguard', 'mikrotik'} or (item.meta or {}).get('scope') not in {'reseller','all'} for item in available):
         raise ValueError('Choose active servers explicitly configured as Reseller. Public/Default servers are not available here.')
     return ids
 
@@ -7099,7 +7121,7 @@ async def api_panel_reseller_sales(_: str = Depends(_auth_user)):
     cfg = {k: m.get('pasarguard_panel_sales_' + k, '100' if k=='min_initial_gb' else '0') for k in keys}
     async with SessionLocal() as s:
         servers = (await s.execute(select(Server).where(Server.server_type == 'pasarguard', Server.is_active.is_(True)).order_by(Server.id))).scalars().all()
-        servers = [srv for srv in servers if (srv.meta or {}).get('scope') == 'reseller']
+        servers = [srv for srv in servers if (srv.meta or {}).get('scope') in {'reseller','all'}]
         orders = (await s.execute(select(PasarGuardPanelOrder, User, PasarGuardPanelMeter)
             .join(User, User.id == PasarGuardPanelOrder.user_id)
             .outerjoin(PasarGuardPanelMeter, PasarGuardPanelMeter.order_id == PasarGuardPanelOrder.id)
@@ -7130,7 +7152,7 @@ async def save_panel_reseller_sales(request: Request, enabled: str = Form('0'), 
     async with SessionLocal() as s:
         server = await s.get(Server, server_id) if server_id else None
     if enabled == '1':
-        if not server or server.server_type != 'pasarguard' or not server.is_active or (server.meta or {}).get('scope') != 'reseller':
+        if not server or server.server_type != 'pasarguard' or not server.is_active or (server.meta or {}).get('scope') not in {'reseller','all'}:
             raise HTTPException(422, 'Please select an active PasarGuard server configured as Reseller in Servers')
         try:
             provider = PanelResellerProvisioner()
@@ -7274,7 +7296,7 @@ async def reseller_join_admin(_: str = Depends(_auth_user)):
             'button_reseller_menu_enabled':'1','button_reseller_request_enabled':'1',
             **{'pasarguard_panel_sales_'+key:default for key,default in [('enabled','0'),('server_id','0'),('price_irt','0'),('gb_price_irt','0'),('hourly_price_irt','0'),('max_users','0'),('min_initial_gb','100'),('volume_enabled','1'),('payg_enabled','1')]}}
         return {'ok':True,'settings':{key:values.get(key,default) for key,default in defaults.items()},
-            'servers':[{'id':server.id,'name':server.name} for server in servers if (server.meta or {}).get('scope')=='reseller'],
+            'servers':[{'id':server.id,'name':server.name} for server in servers if (server.meta or {}).get('scope') in {'reseller','all'}],
             'requests':[{**view(op),'user':{'name':u.full_name,'telegram_id':u.telegram_id,'username':u.username},'has_receipt':bool(op.result.get('receipt_file_id'))} for op,u in rows]}
 
 
@@ -7366,3 +7388,31 @@ async def reseller_join_review(request: Request,oid: int,action: str,server_id: 
             try:await bot.send_message(user.telegram_id,op.result['message'])
             except Exception:logger.warning('Onboarding review notification unavailable request=%s',oid)
     return ok(request,'/admin/resellers','Reseller request reviewed')
+
+@router.get('/admin/api/v2/capabilities')
+async def module_capabilities(_: str = Depends(_auth_user)):
+    from app.services.features import capabilities
+    async with SessionLocal() as session:return {'ok':True,'features':await capabilities(session)}
+
+@router.get('/admin/api/v2/update')
+async def update_information(_: str = Depends(_auth_user)):
+    from app.services.web_update import check,status
+    return {**await check(),'job':status()}
+
+@router.post('/admin/update/start')
+async def start_web_update(commit: str = Form(...), _: str = Depends(_auth_user)):
+    from app.services.web_update import enqueue
+    try:return {'ok':True,'job':await enqueue(commit)}
+    except ValueError as exc:raise HTTPException(409,str(exc))
+
+@router.post('/admin/modules/save')
+async def save_modules(request: Request, _: str = Depends(_auth_user)):
+    from app.services.features import FEATURES
+    form=await request.form()
+    async with SessionLocal() as session:
+        for name in FEATURES:
+            if name in form:await session.merge(Setting(key='feature_'+name,value='1' if form[name]=='1' else '0'))
+        await session.commit()
+    from app.bot.keyboards.common import invalidate_button_settings_cache
+    invalidate_button_settings_cache()
+    return {'ok':True}

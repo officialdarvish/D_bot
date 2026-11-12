@@ -380,13 +380,14 @@ async def _create_test_account_on_target(*, user_id: int, target: dict, volume_g
         }
 
 
-async def handle_test_account(target, telegram_id: int, username: str | None, *, native: bool = False):
+async def handle_test_account(target, telegram_id: int, username: str | None, *, native: bool = False, server_id: int | None = None):
     from app.bot.keyboards.common import get_user_button
     if not trial_enabled((await get_user_button('test_account'))[1], await get_setting_value('test_account_button_visible', '1'), await get_setting_value('test_account_enabled', '1')):
         if not native:await ui_page(target, '⛔️ دریافت اکانت تست فعلاً غیرفعال است.', reply_markup=back_main_inline())
         return {'ok':False,'message':'⛔️ دریافت اکانت تست فعلاً غیرفعال است.'}
 
     targets = await _load_test_account_targets()
+    if server_id is not None:targets=[row for row in targets if row['server_id']==server_id]
     volume_gb = parse_volume_gb(await get_setting_value('test_account_volume_gb', '1'), '1')
     duration_days = trial_duration(await get_setting_value('test_account_duration_days', '1'))
     if not targets:
@@ -521,7 +522,7 @@ async def handle_test_account(target, telegram_id: int, username: str | None, *,
 
 @router.message(F.text == BTN_TEST_ACCOUNT)
 async def test_account_text(message: Message):
-    await handle_test_account(message, message.from_user.id, message.from_user.username)
+    await choose_trial_server(message,message.from_user.id,message.from_user.username)
 
 async def safe_callback_answer(callback: CallbackQuery) -> None:
     """Acknowledge inline-button clicks without crashing on expired callbacks."""
@@ -537,4 +538,21 @@ async def safe_callback_answer(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == CB_TEST_ACCOUNT)
 async def test_account_cb(callback: CallbackQuery):
     await safe_callback_answer(callback)
-    await handle_test_account(callback.message, callback.from_user.id, callback.from_user.username)
+    await choose_trial_server(callback.message,callback.from_user.id,callback.from_user.username)
+
+
+async def choose_trial_server(message,telegram_id,username):
+    targets=await _load_test_account_targets()
+    if len(targets)<=1:return await handle_test_account(message,telegram_id,username,server_id=targets[0]['server_id'] if targets else None)
+    async with SessionLocal() as session:
+        rows=(await session.execute(select(Server).where(Server.id.in_([t['server_id'] for t in targets]),Server.is_active.is_(True)))).scalars().all()
+    keyboard=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=s.name,callback_data=f'trial:server:{s.id}')] for s in rows]+[[InlineKeyboardButton(text='بازگشت',callback_data='back:main')]])
+    await ui_page(message,'سرور اکانت تست را انتخاب کنید:',reply_markup=keyboard)
+
+
+@router.callback_query(F.data.startswith('trial:server:'))
+async def selected_trial_server(callback: CallbackQuery):
+    await safe_callback_answer(callback)
+    try:sid=int(callback.data.rsplit(':',1)[1])
+    except ValueError:return
+    await handle_test_account(callback.message,callback.from_user.id,callback.from_user.username,server_id=sid)

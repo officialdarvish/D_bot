@@ -56,6 +56,7 @@ COPY requirements.txt ./
 RUN pip install --upgrade pip \
     && pip install -r requirements.txt
 
+COPY VERSION update.json ./
 COPY app ./app
 COPY scripts ./scripts
 # Stop incomplete source deployments before an image with broken bot buttons is released.

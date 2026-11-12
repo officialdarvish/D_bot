@@ -888,6 +888,12 @@ async def buy_plan(callback: CallbackQuery, state: FSMContext):
     await state.update_data(plan_id=pid, server_id=server.id, category_id=plan.category_id or data.get('category_id'))
     selected_group = data.get('selected_category_group')
     back_cb = category_group_callback(selected_group) if selected_group is not None else (f'buy:cat:{getattr(plan, "category_id", data.get("category_id", 0))}' if (getattr(plan, 'category_id', None) or data.get('category_id')) else f'buy:type:{data.get("kind", "v2ray")}')
+    policy=(plan.meta or {}).get('custom_tariff')
+    if policy:
+        await state.set_state(BuyFlow.custom_selection)
+        await edit_or_answer(callback,f"حجم و مدت را با یک فاصله بفرستید؛ نمونه: 20 30\nحجم: {policy['min_gb']} تا {policy['max_gb']} گیگ\nمدت: {policy['min_days']} تا {policy['max_days']} روز",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(back_cb)]]))
+        await safe_callback_answer(callback)
+        return
     await state.set_state(BuyFlow.username)
     if getattr(server, 'server_type', '') == 'mikrotik':
         prompt = MIKROTIK_USERNAME_PROMPT
@@ -898,6 +904,25 @@ async def buy_plan(callback: CallbackQuery, state: FSMContext):
      'Testnemone1\n'
      'name1')
     await edit_or_answer(callback, prompt, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(back_cb)]])); await safe_callback_answer(callback)
+
+@router.message(BuyFlow.custom_selection)
+async def buy_custom_selection(message: Message,state: FSMContext):
+    from app.services.custom_tariff import selected_plan,snapshot
+    data=await state.get_data()
+    try:
+        parts=(message.text or '').split()
+        if len(parts)!=2:raise ValueError('حجم و روز را به‌صورت 20 30 وارد کنید.')
+        async with SessionLocal() as session:
+            plan=await session.get(Plan,data['plan_id'])
+            if not plan or not plan.is_active or not (plan.meta or {}).get('custom_tariff'):raise ValueError('پلن دیگر در دسترس نیست.')
+            user=await session.scalar(select(User).where(User.telegram_id==message.from_user.id))
+            concrete=await snapshot(session,selected_plan(plan,*parts),user.id)
+            await session.commit()
+        await state.update_data(plan_id=concrete.id,custom_parent_id=plan.id)
+        await state.set_state(BuyFlow.username)
+        await ui_message(message,f'پلن انتخاب‌شده: {concrete.title}\nمبلغ: {concrete.price_irt:,} تومان\nنام کانفیگ را وارد کنید:')
+    except (ValueError,TypeError) as exc:await ui_message(message,str(exc))
+
 
 @router.message(BuyFlow.username)
 async def buy_username(message: Message, state: FSMContext):
@@ -1449,7 +1474,8 @@ async def process_approved_order_background(
                 raise
 
         await edit_admin_receipt_keyboard(bot, admin_receipt_chat_id, admin_receipt_message_id, approved_only_keyboard('✅ رسید تایید شد.', order_id=order_id))
-        await notify_paid_order(bot, order_id, event='✅ رسید تأیید شد و خرید/تمدید انجام شد')
+        if not order.receipt_file_id:
+            await notify_paid_order(bot,order_id,event='✅ خرید/تمدید انجام شد')
 
         if is_renewal_order and not order.checkout_key:
             await send_renewal_confirmation(
@@ -1488,8 +1514,6 @@ async def process_approved_order_background(
             f'📦 پلن: {plan_title}\n'
             f'🔐 کانفیگ: {service_username}'
         )
-        if commission_amount:
-            admin_text += f'\n🎁 پورسانت معرف: {commission_amount:,} تومان'
         await send_admin_notice(bot, admin_chat_id, admin_text)
         if admin_chat_id and admin_chat_id != buyer_chat_id:
             await send_home(bot, admin_chat_id, True)
@@ -1597,7 +1621,6 @@ async def approve_order_cb(callback: CallbackQuery):
         admin_receipt_message_id,
         processing_only_keyboard(f'⏳ {operation_name} در حال انجام...'),
     )
-    await send_admin_notice(bot, admin_chat_id, f'✅ رسید سفارش #{oid} تایید شد. {operation_name} در پس‌زمینه شروع شد.')
 
     asyncio.create_task(process_approved_order_background(
         oid,

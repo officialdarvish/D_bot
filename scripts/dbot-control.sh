@@ -1097,6 +1097,7 @@ update_app(){
       return 1
     }
   fi
+  bash "$APP_DIR/scripts/install-web-updater.sh"
   echo -e "${C_GREEN}Service Types API verification passed.${C_NC}"
 }
 

@@ -1,0 +1,13 @@
+'use client';
+import {useEffect,useState} from 'react';
+import {fetchJson,submitForm} from '@/lib/api';
+import {useUiLanguage} from '@/lib/ui-language';
+type Info={installed:{version:string;build:number};latest?:{version:string;build:number;notes:{fa:string;en:string}};available:boolean;commit?:string;host_ready:boolean;check_error?:string;job:{state:string;error?:string;backup?:string}};
+export function SystemUpdate(){
+ const {language}=useUiLanguage(),fa=language==='fa';const [info,setInfo]=useState<Info|null>(null),[open,setOpen]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ async function load(){try{setInfo(await fetchJson<Info>('/admin/api/v2/update'))}catch{}}
+ useEffect(()=>{void load();const t=setInterval(()=>void load(),15000);return()=>clearInterval(t)},[]);
+ async function start(){if(!info?.commit)return;setBusy(true);setError('');try{await submitForm('/admin/update/start',{commit:info.commit});await load()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}
+ const running=!!info&&['checking','backing_up','building','restarting'].includes(info.job.state);
+ return <><button className="btn" style={{width:'100%',whiteSpace:'normal'}} onClick={()=>setOpen(true)}>{info?`v${info.installed.version} · ${info.installed.build}`:'D BOT'}{info?.available&&<span className="badge green">{fa?'آپدیت جدید':'Update available'}</span>}</button>{open&&<div className="modal-backdrop"><section className="card" role="dialog" aria-modal="true" style={{maxWidth:560,padding:28,margin:'10vh auto'}}><h2>{fa?'به‌روزرسانی D BOT':'Update D BOT'}</h2><p>{info?.installed.version} · {info?.installed.build}</p>{info?.latest&&<p>{info.latest.version} · {info.latest.build} — {info.latest.notes[fa?'fa':'en']}</p>}<p>{fa?'ابتدا پشتیبان دیتابیس گرفته می‌شود، سپس ربات بازسازی و راه‌اندازی می‌شود. در این مدت پنل موقتاً قطع می‌شود.':'The updater backs up the database, rebuilds and restarts the bot. The panel will be temporarily unavailable.'}</p>{!info?.host_ready&&<p>{fa?'برای فعال‌شدن آپدیت وب، یک‌بار روی VPS دستور dbot update را اجرا کنید.':'Run dbot update once on the VPS to enable web updates.'}</p>}<p role="status">{info?.job.state}{info?.job.backup?' · '+info.job.backup:''}</p>{(error||info?.job.error||info?.check_error)&&<p role="alert">{error||info?.job.error||info?.check_error}</p>}<button className="btn primary" disabled={busy||running||!info?.available||!info?.host_ready} onClick={()=>void start()}>{fa?'تأیید و آپدیت VPS':'Confirm and update VPS'}</button><button className="btn" onClick={()=>setOpen(false)}>{fa?'بستن':'Close'}</button></section></div>}</>;
+}

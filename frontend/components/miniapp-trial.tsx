@@ -6,6 +6,7 @@ import {canRequestTrial,trialServices,type TrialInfo,type TrialOperation} from '
 
 type API=<T,>(path:string,body?:unknown)=>Promise<T>;
 export function MiniAppTrial({api,onBack,onService,onCompleted,refreshKey=0}:{api:API;onBack:()=>void;onService:(s:any)=>void;onCompleted?:()=>void;refreshKey?:number}){
+ const [serverId,setServerId]=useState<number>(0);
  const [info,setInfo]=useState<TrialInfo|null>(null),[op,setOp]=useState<TrialOperation|null>(null);
  const [error,setError]=useState(''),[busy,setBusy]=useState(false);
  const key=useRef(''),requesting=useRef(false),version=useRef(0),mounted=useRef(true),completed=useRef(0),onCompletedRef=useRef(onCompleted);
@@ -54,7 +55,7 @@ export function MiniAppTrial({api,onBack,onService,onCompleted,refreshKey=0}:{ap
   const current=++version.current;
   if(!key.current)key.current=crypto.randomUUID();
   try{
-   const result=await api<TrialOperation>('/trial',{key:key.current});
+   const result=await api<TrialOperation>('/trial',{key:key.current,server_id:serverId||info?.servers?.[0]?.id});
    if(mounted.current&&current===version.current)setOp(result);
   }catch(e){if(mounted.current&&current===version.current)setError(errorMessage(e,'ثبت درخواست تست انجام نشد.','fa'));}
   finally{requesting.current=false;if(mounted.current)setBusy(false);}
@@ -65,6 +66,7 @@ export function MiniAppTrial({api,onBack,onService,onCompleted,refreshKey=0}:{ap
   <h1><Gift size={24}/> دریافت اکانت تست</h1>
   <p className="ma-muted">سهمیه، تنظیمات و کانفیگ‌های تست بین ربات و مینی‌اپ مشترک است.</p>
   {info&&<p>{info.volume_gb.toLocaleString('fa-IR')} گیگ · {info.duration_days.toLocaleString('fa-IR')} روز · {info.server_count.toLocaleString('fa-IR')} سرور</p>}
+  {info&&info.servers&&info.servers.length>0&&<label>سرور تست<select disabled={busy||running} value={serverId||info.servers[0].id} onChange={e=>{setServerId(Number(e.target.value));key.current=''}}>{info.servers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label>}
   {error&&<div role="alert" className="ma-error">{error}<button className="ma-text" disabled={busy} onClick={()=>void load()}>بررسی دوباره وضعیت</button></div>}
   {running?<p role="status"><RefreshCw className="ma-spin" size={18}/>در حال ساخت اکانت تست… پس از بازگشت به این صفحه، نتیجه همین درخواست نمایش داده می‌شود.</p>:<>
    {op?.result.message&&<p role={op.status==='failed'?'alert':'status'} className={op.status==='failed'?'ma-error':''}>{op.result.message}</p>}

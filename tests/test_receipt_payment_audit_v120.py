@@ -28,7 +28,7 @@ def test_receipt_details_include_identity_item_amount_and_utc_date():
 def test_payment_notifications_cover_all_paid_paths_and_only_after_commit():
     cases = {
         'app/bot/handlers/public/buy.py': ['await notify_paid_order(callback.message.bot, paid_order_id',
-                                                'await notify_paid_order(bot, order_id'],
+                                                'await send_admin_notice(bot, admin_chat_id, admin_text)'],
         'app/bot/handlers/public/my_services.py': ['await notify_paid_order(callback.message.bot, renewed_order.id',
                                                        'await notify_paid_order(callback.message.bot, order_discount.id'],
         'app/bot/handlers/public/account.py': ["await notify_paid_order(callback.message.bot, oid"],

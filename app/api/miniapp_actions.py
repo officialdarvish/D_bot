@@ -77,11 +77,20 @@ async def trial_info(user=Depends(customer)):
     used=used and user.telegram_id not in settings.admin_ids
     running=bool(op and op.status in ('queued','processing'))
     return dict(used=used,can_request=not used and not running,can_repeat=user.telegram_id in settings.admin_ids,services=services,volume_gb=parse_volume_gb(await get_setting_value('test_account_volume_gb','1')),
-                duration_days=trial_duration(await get_setting_value('test_account_duration_days','1')),server_count=len(await _load_test_account_targets()),operation=operation)
+                duration_days=trial_duration(await get_setting_value('test_account_duration_days','1')),server_count=len(await _load_test_account_targets()),servers=await trial_server_choices(),operation=operation)
+
+
+async def trial_server_choices():
+    from app.bot.handlers.public.test_account import _load_test_account_targets
+    targets=await _load_test_account_targets()
+    async with SessionLocal() as session:
+        rows=(await session.execute(select(Server).where(Server.id.in_([t['server_id'] for t in targets]),Server.is_active.is_(True)))).scalars().all()
+    return [{'id':s.id,'name':s.name} for s in rows]
 
 
 class TrialRequest(BaseModel):
     key:uuid.UUID
+    server_id:int|None=Field(default=None,gt=0)
 
 
 @router.post('/trial')
@@ -100,8 +109,10 @@ async def request_trial(body:TrialRequest,user=Depends(customer)):
         if pending:return await operation_view(s,pending)
         if user.telegram_id not in settings.admin_ids and await s.scalar(select(TestAccountUsage.id).where(TestAccountUsage.telegram_id==user.telegram_id)):
             raise HTTPException(409,'شما قبلاً یک بار اکانت تست دریافت کرده‌اید.')
-        if not await _load_test_account_targets():raise HTTPException(409,'تنظیمات اکانت تست هنوز توسط مدیر کامل نشده است.')
-        op=MiniAppOperation(user_id=user.id,key=str(body.key),kind='trial',payload={'action':'trial'})
+        targets=await _load_test_account_targets()
+        if not targets:raise HTTPException(409,'تنظیمات اکانت تست هنوز توسط مدیر کامل نشده است.')
+        if body.server_id is not None and body.server_id not in [t['server_id'] for t in targets]:raise HTTPException(400,'سرور تست معتبر نیست.')
+        op=MiniAppOperation(user_id=user.id,key=str(body.key),kind='trial',payload={'action':'trial','server_id':body.server_id})
         s.add(op);await s.commit();return await operation_view(s,op)
 
 
@@ -346,7 +357,7 @@ async def process_operations():
                     if not user or user.is_blocked:raise ValueError('User is blocked')
                     from types import SimpleNamespace
                     from app.bot.handlers.public.test_account import handle_test_account
-                    outcome=await handle_test_account(SimpleNamespace(bot=real),user.telegram_id,user.username,native=True)
+                    outcome=await handle_test_account(SimpleNamespace(bot=real),user.telegram_id,user.username,native=True,server_id=data.get('server_id'))
                     result={k:v for k,v in outcome.items() if k!='ok'}
                     status='done' if outcome['ok'] else 'failed'
                 elif action in {'revoke','hwid'}:

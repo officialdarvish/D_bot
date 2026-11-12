@@ -26,6 +26,8 @@ class QuoteInput(BaseModel):
     username:str=Field(min_length=1,max_length=32)
     password:str=Field(default='',max_length=128)
     discount_code:str=Field(default='',max_length=64)
+    volume_gb:int|None=Field(default=None,gt=0,le=1000000)
+    duration_days:int|None=Field(default=None,gt=0,le=3650)
 
 class CheckoutInput(QuoteInput):
     key:uuid.UUID
@@ -38,6 +40,9 @@ async def validate_purchase(s,user,body,*,lock_discount=False):
     row=next((r for r in rows if r[0].id==body.plan_id),None)
     if not row:raise HTTPException(404,'این تعرفه دیگر قابل خرید نیست.')
     plan,server,_=row
+    from app.services.custom_tariff import selected_plan
+    try:plan=selected_plan(plan,body.volume_gb,body.duration_days)
+    except ValueError as exc:raise HTTPException(422,str(exc))
     username=normalize_service_username(body.username)
     if body.service_id:
         from app.api.miniapp import owned_service
@@ -110,8 +115,10 @@ async def checkout(body:CheckoutInput,user=Depends(customer)):
         previous=await s.scalar(select(Order).where(Order.checkout_key==str(body.key)))
         if previous:
             if previous.user_id!=user.id:raise HTTPException(409,'شناسهٔ عملیات معتبر نیست.')
-            if previous.plan_id!=body.plan_id or (previous.pricing_meta or {}).get('miniapp_renewal')!=body.service_id or ((previous.pricing_meta or {}).get('miniapp_method') or ('wallet' if (previous.payment_method or '').startswith('wallet:') else 'card'))!=body.method or (previous.pricing_meta or {}).get('miniapp_username','').lower()!=body.username.strip().lower():
+            if ((previous.pricing_meta or {}).get('custom_selection') or {}).get('parent_id',previous.plan_id)!=body.plan_id or (previous.pricing_meta or {}).get('miniapp_renewal')!=body.service_id or ((previous.pricing_meta or {}).get('miniapp_method') or ('wallet' if (previous.payment_method or '').startswith('wallet:') else 'card'))!=body.method or (previous.pricing_meta or {}).get('miniapp_username','').lower()!=body.username.strip().lower():
                 raise HTTPException(409,'این عملیات قبلاً ثبت شده است؛ سفارش قبلی را پیگیری یا خرید جدید را انتخاب کنید.')
+            selected=(previous.pricing_meta or {}).get('custom_selection')
+            if selected and (body.volume_gb!=selected['volume_gb'] or body.duration_days!=selected['duration_days']):raise HTTPException(409,'Selection changed; start a new checkout')
             return await order_view(s,previous)
         count=await s.scalar(select(func.count(Order.id)).where(Order.user_id==user.id,Order.checkout_key.is_not(None),Order.status.in_(['waiting_receipt','miniapp_queued','processing'])))
         if count>=10:raise HTTPException(409,'ابتدا سفارش‌های باز قبلی را تکمیل یا لغو کنید.')
@@ -119,7 +126,10 @@ async def checkout(body:CheckoutInput,user=Depends(customer)):
         if amount!=body.expected_amount_irt:raise HTTPException(409,'قیمت تغییر کرده است؛ مبلغ جدید را دوباره بررسی کنید.')
         if body.method=='wallet' and int(locked.wallet_balance or 0)<amount:raise HTTPException(409,'موجودی کیف پول کافی نیست؛ کارت به کارت را انتخاب کنید.')
         if body.method=='card' and not card:raise HTTPException(409,'کارت پرداخت فعالی برای این تعرفه ثبت نشده است.')
-        meta={**quote.as_meta(),'final_amount_irt':amount,'discount_code':code,'miniapp_username':name,'miniapp_source':True,'miniapp_provider':server.server_type,'miniapp_method':body.method,'miniapp_renewal':body.service_id}
+        from app.services.custom_tariff import snapshot
+        selection=(plan.meta or {}).get('custom_selection')
+        if selection:plan=await snapshot(s,plan,user.id)
+        meta={**({'custom_selection':selection} if selection else {}),**quote.as_meta(),'final_amount_irt':amount,'discount_code':code,'miniapp_username':name,'miniapp_source':True,'miniapp_provider':server.server_type,'miniapp_method':body.method,'miniapp_renewal':body.service_id}
         if not body.service_id and server.server_type=='mikrotik':meta['miniapp_password']=encrypt_text(body.password)
         if body.method in {'wallet','admin_free'}:meta['miniapp_submitted_at']=datetime.utcnow().isoformat()
         if body.method=='card':meta['miniapp_card']={'number':card.card_number,'owner':card.owner_name}

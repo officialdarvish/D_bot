@@ -1,0 +1,24 @@
+name: Source provenance
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+jobs:
+  attest:
+    if: github.repository == 'officialdarvish/D_bot'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive exact source
+        run: git archive --format=tar.gz --output=dbot-source.tar.gz HEAD
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dbot-source.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dbot-source-with-provenance
+          path: dbot-source.tar.gz

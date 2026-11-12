@@ -40,7 +40,7 @@ async def public_catalog(session):
     categories=(await session.execute(select(ServerCategory))).scalars().all()
     categories=sort_categories_by_saved_order(categories,await saved_category_order(session))
     rows=await public_plans(session)
-    plans=[dict(id=p.id,title=p.title,volume_gb=p.volume_gb,duration_days=p.duration_days,
+    plans=[dict(custom_tariff=(p.meta or {}).get('custom_tariff'),id=p.id,title=p.title,volume_gb=p.volume_gb,duration_days=p.duration_days,
         unlimited=bool(p.is_unlimited or not p.volume_gb),price=plan_price_label(p),category=c.name,category_id=c.id,
         server=s.name,provider=s.server_type) for p,s,c in rows]
     bindings = await category_service_bindings(session)

@@ -64,6 +64,12 @@ async def read_config(session=None):
         support=await session.get(Setting,'support_username')
         try: name=support_username(support.value if support else '')
         except ValueError: name=''
+        from app.services.features import capabilities
+        features=await capabilities(session)
+        config['features']=features
+        config['reseller_enabled']=config['reseller_enabled'] and features['resellers']
+        config['reseller_requests']=config['reseller_requests'] and features['resellers']
+        config['show_wallet']=config['show_wallet'] and features['wallet']
         config['support_username']=name
         config['support_url']='https://t.me/'+name if name else ''
         return config

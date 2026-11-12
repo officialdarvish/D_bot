@@ -38,7 +38,7 @@ def admin(uid: int) -> bool: return is_owner(uid)
 
 def is_reseller_server(server: Server | None) -> bool:
     # A server marked Public + Reseller is a valid reseller build target too.
-    return bool(server and (server.meta or {}).get('scope') == 'reseller')
+    return bool(server and (server.meta or {}).get('scope') in {'reseller','all'})
 
 def reseller_server_inbounds(server: Server | None) -> list[int]:
     return _clean_inbound_ids((server.meta or {}).get('inbound_ids') if server else [])

@@ -682,6 +682,7 @@ main(){
   write_config_env
   patch_compose
   create_manager_command
+  bash "$APP_DIR/scripts/install-web-updater.sh"
   start_app
   wait_for_api
   finalize_https_admin

@@ -48,6 +48,7 @@ services:
       # Read-only access to the custom panel config. No secrets are hardcoded;
       # D BOT only reads api_key from this mounted host config when it exists.
       - /opt/mikrotik-panel:/host/opt/mikrotik-panel:ro
+      - ./.web-update:/var/lib/dbot/update
       - backup_keys:/var/lib/dbot/backup
       - disposable_artifacts:/tmp/dbot-artifacts
     depends_on:

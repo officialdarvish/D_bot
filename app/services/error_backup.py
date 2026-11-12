@@ -53,6 +53,8 @@ class ErrorBackupHandler(logging.Handler):
     def __init__(self):super().__init__(logging.ERROR)
     def emit(self,record):
         if _delivering.get():return
+        from app.services.network_errors import telegram_timeout
+        if record.exc_info and telegram_timeout(record.exc_info[1],record.name):return
         try:
             loop=asyncio.get_running_loop()
             text=self.format(record)
