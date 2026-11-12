@@ -635,8 +635,8 @@ function DashboardSection({ reloadKey, setAuthRequired, show }: any) {
   ];
   return (
     <>
-      <div className="cards4">
-        {statCards.map((card, index) => <StatCard key={card.label} {...card} index={index} />)}
+      <div className="cards4 dashboard-stats-row" role="list" aria-label="Dashboard statistics" tabIndex={0}>
+        {statCards.map((card) => <StatCard key={card.label} {...card} />)}
       </div>
       <div className="dashboard-grid dashboard-grid-clean">
         <section className="panel revenue-panel">
@@ -658,11 +658,19 @@ function DashboardSection({ reloadKey, setAuthRequired, show }: any) {
   );
 }
 
-function StatCard({ label, value, trend, icon: Icon, cls, index }: any) {
+function StatCard({ label, value, trend, icon: Icon, cls }: any) {
+  const falling = Number(trend) < 0;
   return (
-    <motion.div className={`card stat-card ${cls}`} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * .06 }} tabIndex={0}>
-      <div className="stat-head"><div><div className="stat-label">{label}</div><div className="stat-value">{value}</div><div className="stat-trend">{pct(trend)} <span className="muted">vs previous range</span></div></div><div className="stat-icon"><Icon size={22} /></div></div>
-    </motion.div>
+    <article className={`card stat-card ${cls}`} role="listitem">
+      <div className="stat-head">
+        <div className="stat-icon" aria-hidden="true"><Icon size={23} strokeWidth={1.7} /></div>
+        <div className="stat-copy">
+          <div className="stat-label">{label}</div>
+          <div className="stat-value">{value}</div>
+          <div className={`stat-trend ${falling ? 'is-negative' : 'is-positive'}`}><span dir="ltr">{pct(trend)}</span><span className="muted">vs previous range</span></div>
+        </div>
+      </div>
+    </article>
   );
 }
 
