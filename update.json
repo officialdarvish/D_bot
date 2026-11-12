@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 5,
+  "build": 6,
   "channel": "main",
   "notes": {
-    "fa": "کاهش مصرف حافظه، ساخت یک ایمیج مشترک، بازیابی بدون بیلد مجدد و نمایش مرحله و علت شکست آپدیت",
-    "en": "Lower memory usage, shared runtime image, image-based rollback and actionable update failure phases"
+    "fa": "بازگشت ظاهر چهار کارت آماری و چیدمان افقی System Status کنار Version، سپس نمودار درآمد و سفارش‌های اخیر",
+    "en": "Restore summary card styling; System Status beside Version, followed by revenue and recent orders"
   }
 }
