@@ -6,7 +6,7 @@ async def capabilities(session):
     rows=(await session.execute(select(Setting).where(Setting.key.in_(['feature_'+x for x in FEATURES])))).scalars().all()
     values={r.key:r.value for r in rows}
     result={x:values.get('feature_'+x,'1')=='1' for x in FEATURES}
-    if await session.scalar(select(Server.id).where(Server.is_active.is_(True),Server.server_type=='mikrotik').limit(1)):result['openvpn']=True
+    if await session.scalar(select(Server.id).where(Server.server_type=='mikrotik').limit(1)):result['openvpn']=True
     return result
 async def require_feature(name,session=None):
     from fastapi import HTTPException

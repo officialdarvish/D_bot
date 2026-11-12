@@ -2348,8 +2348,46 @@ async def _setup_response(request,values,error='',status_code=200):
     async with SessionLocal() as session:
         servers=(await session.execute(select(Server).where(Server.is_active.is_(True)))).scalars().all()
     m=await _settings_map()
+    try:
+        draft=json.loads(m.get('setup_progress_v1','{}'));values['setup_step']=str(draft.get('step',0));values['web_path']=draft.get('web_path',values.get('web_path','dbot'))
+    except (ValueError,TypeError):pass
     for name in ('resellers','openvpn','trials','wallet','tutorials'):values['feature_'+name]=m.get('feature_'+name,'0')
     return HTMLResponse(staged(_setup_wizard_html(request,values,error),values,str((request.scope.get('state') or {}).get('dbot_web_prefix') or ''),_session_csrf_token(request),servers),status_code=status_code)
+
+
+@router.get('/setup/options/{section}')
+async def setup_options(request: Request, section: str, _: str = Depends(_auth_user)):
+    allowed={'servers','service-types','miniapp','discounts','custom','connection','categories','plans','payments','resellers','pasarguard-panel-sales','test-account','openvpn-profiles','settings','backup'}
+    if section not in allowed or (await db_setting('initial_setup_done','0'))=='1':raise HTTPException(404)
+    root=Path(__file__).resolve().parents[2]/'frontend_out'
+    for path in (root/'admin'/section/'index.html',root/'admin'/f'{section}.html'):
+        if path.is_file():return FileResponse(path,headers={'Cache-Control':'no-store'})
+    raise HTTPException(503,'Rebuild the frontend to load setup forms.')
+
+
+@router.post('/setup/progress')
+async def setup_progress(request: Request, _: str = Depends(_auth_user)):
+    if (await db_setting('initial_setup_done','0'))=='1':raise HTTPException(409,'Setup already completed')
+    form=await request.form()
+    try:step=max(0,min(20,int(form.get('step','0'))))
+    except ValueError:raise HTTPException(400,'Invalid step')
+    keys={'force_join_enabled','channel_url','rules_enabled','rules_text','welcome_text','bot_name','support_username','admin_description'}
+    updates={key:str(form[key]).strip() for key in keys if key in form}
+    if any(len(value)>16000 for value in updates.values()):raise HTTPException(400,'Value too long')
+    for name in ('resellers','openvpn','trials','wallet','tutorials'):
+        if 'feature_'+name in form:updates['feature_'+name]='1' if form['feature_'+name]=='1' else '0'
+    async with SessionLocal() as session:
+        for key,value in updates.items():await session.merge(Setting(key=key,value=value))
+        draft={'step':step,'web_path':str(form.get('web_path') or await read_web_path())}
+        previous=await session.get(Setting,'setup_progress_v1')
+        if previous and 'web_path' not in form:
+            try:draft['web_path']=json.loads(previous.value).get('web_path',draft['web_path'])
+            except (ValueError,TypeError):pass
+        await session.merge(Setting(key='setup_progress_v1',value=json.dumps(draft)))
+        await session.commit()
+    from app.bot.keyboards.common import invalidate_button_settings_cache
+    invalidate_button_settings_cache()
+    return {'ok':True,'step':step}
 
 
 @router.post('/setup/save', response_class=HTMLResponse)
@@ -2383,8 +2421,11 @@ async def setup_wizard_save(
         'admin_description': admin_description.strip(),
         'web_path': web_path.strip(),
     })
+    if await db_setting('setup_progress_v1',''):
+        current=await _setup_values()
+        for key in ('force_join_enabled','channel_url','rules_enabled','rules_text','welcome_text','bot_name','support_username','admin_description'):values[key]=current[key]
     try:
-        clean_path = normalize_web_path(web_path)
+        clean_path = normalize_web_path(values['web_path'])
         from app.services.miniapp_settings import support_username as clean_support
         values['support_username'] = clean_support(values['support_username'], required=True)
         if values['force_join_enabled'] == '1':

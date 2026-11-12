@@ -305,6 +305,13 @@ function useToast() {
 }
 
 export function AdminDashboard({ initialSection }: { initialSection: SectionKey }) {
+  useEffect(()=>{
+    if (!window.location.pathname.includes('/setup/options/')) return;
+    document.documentElement.classList.add('setup-embedded');
+    const changed=()=>window.parent.postMessage({type:'dbot-setup-dirty'},window.location.origin);
+    document.addEventListener('input',changed,true);document.addEventListener('change',changed,true);
+    return ()=>{document.removeEventListener('input',changed,true);document.removeEventListener('change',changed,true);document.documentElement.classList.remove('setup-embedded')};
+  },[]);
   useUiLanguage(); // Keep locale-sensitive display values in sync without remounting forms.
   const [section, setSection] = useState<SectionKey>(initialSection);
   const [sidebarHovered, setSidebarHovered] = useState(false);

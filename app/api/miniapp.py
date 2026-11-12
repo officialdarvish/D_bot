@@ -411,4 +411,27 @@ async def customer_content(user=Depends(customer)):
         features=await capabilities(session)
         apps=await load_apps(session) if features['tutorials'] and (await get_user_button('tutorials'))[1] else []
         rules=await session.get(Setting,'rules_text')
-    return {'tutorials':[{k:r.get(k,'') for k in ('id','platform','name','download_url','text')} for r in apps if r.get('enabled',True)],'rules':rules.value if rules and (await get_user_button('rules'))[1] else ''}
+    from app.services.tutorial_video import url
+    return {'tutorials':[{**{k:r.get(k,'') for k in ('id','platform','name','download_url','text')},'video_url':url(r['id'],user.id) if r.get('video_file_id') else ''} for r in apps if r.get('enabled',True)],'rules':rules.value if rules and (await get_user_button('rules'))[1] else ''}
+
+
+@router.get('/tutorial-video/{app_id}')
+async def tutorial_video(app_id: str, uid: int, expires: int, token: str):
+    from app.services.tutorial_video import validate
+    from app.services.user_content import load_apps,MAX_TUTORIAL_VIDEO_BYTES
+    from app.services.features import capabilities
+    from fastapi.responses import StreamingResponse
+    if not validate(app_id,uid,expires,token):raise HTTPException(403,'Media URL expired')
+    async with SessionLocal() as session:
+        user=await session.get(User,uid)
+        if not user or user.is_blocked or not (await read_config(session))['enabled'] or not (await capabilities(session))['tutorials'] or not (await get_user_button('tutorials'))[1]:raise HTTPException(403)
+        app=next((r for r in await load_apps(session) if r['id']==app_id and r.get('enabled',True)),None)
+    if not app or not app.get('video_file_id'):raise HTTPException(404)
+    async with telegram_bot() as bot:
+        file=await bot.get_file(app['video_file_id'])
+        if not file.file_size or file.file_size>MAX_TUTORIAL_VIDEO_BYTES:raise HTTPException(413)
+        output=io.BytesIO()
+        await bot.download_file(file.file_path,destination=output)
+    if output.getbuffer().nbytes>MAX_TUTORIAL_VIDEO_BYTES:raise HTTPException(413)
+    output.seek(0)
+    return StreamingResponse(output,media_type='video/mp4',headers={'Cache-Control':'no-store, private','Referrer-Policy':'no-referrer','Content-Length':str(output.getbuffer().nbytes)})

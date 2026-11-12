@@ -1,16 +1,34 @@
 #!/usr/bin/env python3
 """Host worker; no Docker socket exposed to the web panel."""
-import fcntl,json,os,re,subprocess,sys,time,threading
+import fcntl,json,os,re,subprocess,sys,time,threading,stat,tempfile
 from pathlib import Path
 APP=Path(sys.argv[1]).resolve();QUEUE=APP/'.web-update';QUEUE.mkdir(mode=0o700,exist_ok=True)
-lock=(QUEUE/'worker.lock').open('w');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+def read_json(path):
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+    with os.fdopen(fd,'r') as source:
+        if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):raise ValueError('Not a regular queue file')
+        data=source.read(8193)
+        if len(data)>8192:raise ValueError('Queue file too large')
+        return json.loads(data)
+def write_json(path,data):
+    fd,name=tempfile.mkstemp(prefix='.worker-',dir=QUEUE)
+    try:
+        with os.fdopen(fd,'w') as out:
+            json.dump(data,out);out.flush();os.fsync(out.fileno())
+        os.replace(name,path)
+    finally:Path(name).unlink(missing_ok=True)
+lock=os.fdopen(os.open(QUEUE/'worker.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600),'r+')
+fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
 def heartbeat():
     while True:
-        (QUEUE/'ready').touch(mode=0o644);time.sleep(10)
+        fd=os.open(QUEUE/'ready',os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW,0o644)
+        try:os.utime(fd,None)
+        finally:os.close(fd)
+        time.sleep(10)
 threading.Thread(target=heartbeat,daemon=True).start()
 def run(args,**kwargs):return subprocess.run(args,cwd=APP,check=True,timeout=kwargs.pop('timeout',1800),**kwargs)
 def state(job,status,**extra):
-    tmp=QUEUE/'status.tmp';tmp.write_text(json.dumps({**job,'state':status,**extra}));os.chmod(tmp,0o600);tmp.replace(QUEUE/'status.json')
+    write_json(QUEUE/'status.json',{**job,'state':status,**extra})
 def healthy():
     for _ in range(60):
         try:
@@ -22,8 +40,9 @@ while True:
     if not request.exists():time.sleep(3);continue
     job={};previous=None;switched=False;started=time.time()
     try:
-        job=json.loads(request.read_text());sha=job['commit']
-        if set(job)!={'id','commit','build','version'} or not re.fullmatch('[0-9a-f]{40}',sha):raise ValueError('Invalid request')
+        incoming=read_json(request)
+        if not isinstance(incoming,dict) or set(incoming)!={'id','commit','build','version'} or not re.fullmatch('[0-9a-f]{40}',str(incoming.get('commit',''))):raise ValueError('Invalid request')
+        job=incoming;sha=job['commit']
         state(job,'checking',started_at=started)
         run(['git','fetch','https://github.com/officialdarvish/D_bot.git','main'])
         latest=run(['git','rev-parse','FETCH_HEAD'],capture_output=True,text=True).stdout.strip()
@@ -34,8 +53,8 @@ while True:
         if run(['git','status','--porcelain','--untracked-files=no'],capture_output=True,text=True).stdout.strip():raise ValueError('Tracked local edits exist; update manually')
         backup=QUEUE/('database-'+str(int(started))+'.sql')
         state(job,'backing_up',started_at=started)
-        with backup.open('wb') as out:
-            os.chmod(backup,0o600);run(['docker','compose','exec','-T','db','sh','-c','pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"'],stdout=out)
+        with os.fdopen(os.open(backup,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600),'wb') as out:
+            run(['docker','compose','exec','-T','db','sh','-c','pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"'],stdout=out)
         run(['git','checkout','--detach',sha]);switched=True
         state(job,'building',started_at=started,backup=backup.name);run(['docker','compose','build'],timeout=3600)
         state(job,'restarting',started_at=started,backup=backup.name);run(['docker','compose','up','-d'])

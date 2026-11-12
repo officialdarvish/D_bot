@@ -5511,3 +5511,5 @@ html[dir="rtl"] .shell .kv b{unicode-bidi:plaintext}
 }
 
 .shell .toast { white-space: pre-line; }
+
+.setup-embedded .sidebar,.setup-embedded .topbar{display:none!important}.setup-embedded .main{margin:0!important;width:100%!important}.setup-embedded body{min-width:0}

@@ -68,6 +68,7 @@ export async function submitForm(path: string, data: Record<string, FormDataEntr
   if (contentType.includes('text/html')) throw new Error(`API returned HTML instead of JSON: ${path}`);
   const json = await res.json().catch(() => null);
   if (!res.ok || !json?.ok) throw new Error(errorMessage(json, `Action failed: ${res.status}`));
+  if(window.location.pathname.includes('/setup/options/'))window.parent.postMessage({type:'dbot-setup-saved'},window.location.origin);
   return json;
 }
 
@@ -84,5 +85,6 @@ export async function getAction(path: string) {
   if (contentType.includes('text/html')) throw new Error(`API returned HTML instead of JSON: ${path}`);
   const json = await res.json().catch(() => null);
   if (!res.ok || !json?.ok) throw new Error(errorMessage(json, `Action failed: ${res.status}`));
+  if(window.location.pathname.includes('/setup/options/'))window.parent.postMessage({type:'dbot-setup-saved'},window.location.origin);
   return json;
 }
