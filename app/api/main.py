@@ -474,7 +474,9 @@ async def shutdown():
 
 @app.get('/health')
 async def health():
-    return {'status': 'ok'}
+    from app.services.web_update import local_manifest
+    current=local_manifest()
+    return {'status':'ok','version':current['version'],'build':current['build']}
 
 async def _send_home(bot: Bot, chat_id: int) -> None:
     text = await get_setting_value('welcome_text', WELCOME_TEXT_DEFAULT)

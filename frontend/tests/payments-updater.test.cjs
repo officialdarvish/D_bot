@@ -101,3 +101,11 @@ test('Changed official commit refreshes before retry and sends the new commit',a
  assert.ok(text().includes('Update changed; check again'));await click('Confirm and update VPS');
  assert.deepEqual(sent,[sha,'b'.repeat(40)]);
 });
+
+test('Failed updates show stage, exit code and accurate recovery even without a journal message',async()=>{
+ global.fetch=async()=>response({...updateInfo(),job:{state:'failed',phase:'building',exit_code:137,recovery:'not_needed',log_file:'update-job.log',error:'Memory pressure suspected'}});
+ await render(React.createElement(SystemUpdate));await click('Details and update');
+ assert.ok(text().includes('Failed stage:'));assert.ok(text().includes('Command exit code: 137'));
+ assert.ok(text().includes('previous version was not replaced'));assert.ok(text().includes('update-job.log'));
+ assert.ok(!text().includes('Previous source recovery: False'));
+});

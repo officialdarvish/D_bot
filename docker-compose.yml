@@ -27,9 +27,11 @@ services:
       retries: 10
 
   api:
-    build: &dbot_build
+    image: ${DBOT_IMAGE:-dbot-runtime:local}
+    build:
       context: .
       args:
+        NODE_BUILD_MAX_OLD_SPACE_SIZE: ${NODE_BUILD_MAX_OLD_SPACE_SIZE:-768}
         XRAY_SOURCE: ${XRAY_SOURCE:-image}
         XRAY_IMAGE: ${XRAY_IMAGE:-ghcr.io/xtls/xray-core:26.9.9@sha256:45338c4df61fda061c47ce62aafda6c5d7d59cbdefc33f2e335d8b0c748b748a}
         XRAY_VERSION: ${XRAY_VERSION:-26.9.9}
@@ -41,6 +43,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      MALLOC_ARENA_MAX: ${MALLOC_ARENA_MAX:-2}
     command: ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "${API_PORT:-8000}:8000"
@@ -63,7 +67,8 @@ services:
       retries: 5
 
   bot:
-    build: *dbot_build
+    image: ${DBOT_IMAGE:-dbot-runtime:local}
+    pull_policy: never
     logging:
       driver: json-file
       options:
@@ -72,6 +77,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      MALLOC_ARENA_MAX: ${MALLOC_ARENA_MAX:-2}
     command: ["python", "-m", "app.main"]
     volumes:
       # Same read-only mount for service creation/renew/delete from the bot.

@@ -5,7 +5,7 @@ import {PackageCheck,Download,RefreshCw,X,Server} from 'lucide-react';
 import {AdminDialog} from '@/components/admin-dialog';
 import {fetchJson,submitForm} from '@/lib/api';
 import {useUiLanguage} from '@/lib/ui-language';
-type Job={id?:string;state:string;error?:string;backup?:string};
+type Job={id?:string;state:string;error?:string;backup?:string;phase?:string;exit_code?:number;recovery?:string;log_file?:string};
 type Info={installed:{version:string;build:number};latest?:{version:string;build:number;notes:{fa:string;en:string}};available:boolean;commit?:string;host_ready:boolean;host?:{reason:string;bootstrap_command:string};check_error?:string;job:Job};
 export function SystemUpdate(){
  const {language}=useUiLanguage(),fa=language==='fa';
@@ -13,10 +13,10 @@ export function SystemUpdate(){
  async function load(force=false){if(force)setChecking(true);try{setInfo(await fetchJson<Info>('/admin/api/v2/update'+(force?'?force=true':'')));setFetchError('')}catch(e){setFetchError(e instanceof Error?e.message:String(e))}finally{if(force)setChecking(false)}}
  useEffect(()=>{void load();const t=setInterval(()=>void load(),5000);return()=>clearInterval(t)},[]);
  async function start(){if(!info?.commit||busy)return;setBusy(true);setError('');try{const result=await submitForm('/admin/update/start',{commit:info.commit});setInfo(previous=>previous?{...previous,job:result.job}:previous)}catch(e){setError(e instanceof Error?e.message:String(e));await load(true)}finally{setBusy(false)}}
- const running=!!info&&['queued','checking','backing_up','building','restarting'].includes(info.job.state);
+ const running=!!info&&['queued','checking','preparing_recovery','switching_source','backing_up','building','restarting','refreshing_agent'].includes(info.job.state);
  const problem=error||fetchError||info?.check_error;
  const state=running?(fa?'در حال به‌روزرسانی':'Updating'):problem?(fa?'نیاز به بررسی':'Needs attention'):info?.available?(fa?'آپدیت جدید موجود است':'Update available'):info?(fa?'به‌روز است':'Up to date'):(fa?'در حال بررسی':'Checking');
- const jobLabels:Record<string,string>={queued:fa?'درخواست تأیید و برای VPS ثبت شد؛ در صف اجرا است.':'Update confirmed and sent to the VPS; queued for execution.',checking:fa?'VPS در حال بررسی نسخه است.':'VPS is checking the update.',backing_up:fa?'VPS در حال پشتیبان‌گیری دیتابیس است.':'VPS is backing up the database.',building:fa?'VPS در حال ساخت نسخه جدید است.':'VPS is building the update.',restarting:fa?'VPS در حال راه‌اندازی مجدد ربات است.':'VPS is restarting the bot.',completed:fa?'آپدیت VPS کامل شد.':'VPS update completed.',failed:fa?'آپدیت VPS ناموفق بود.':'VPS update failed.'};
+ const jobLabels:Record<string,string>={switching_source:fa?'در حال تعویض سورس با نسخه تأییدشده':'Switching to the verified source',preparing_recovery:fa?'در حال نگهداری ایمیج سالم قبلی برای بازیابی':'Retaining healthy images for recovery',refreshing_agent:fa?'در حال به‌روزرسانی اجراکننده میزبان':'Refreshing the host worker',queued:fa?'درخواست تأیید و برای VPS ثبت شد؛ در صف اجرا است.':'Update confirmed and sent to the VPS; queued for execution.',checking:fa?'VPS در حال بررسی نسخه است.':'VPS is checking the update.',backing_up:fa?'VPS در حال پشتیبان‌گیری دیتابیس است.':'VPS is backing up the database.',building:fa?'VPS در حال ساخت نسخه جدید است.':'VPS is building the update.',restarting:fa?'VPS در حال راه‌اندازی مجدد ربات است.':'VPS is restarting the bot.',completed:fa?'آپدیت VPS کامل شد.':'VPS update completed.',failed:fa?'آپدیت VPS ناموفق بود.':'VPS update failed.'};
  const hostMessages:Record<string,string>={worker_missing:fa?'اجراکننده آپدیت روی این VPS نصب یا فعال نشده است.':'The update worker has not been installed or enabled on this VPS.',worker_offline:fa?'ارتباط اجراکننده VPS قطع است.':'The VPS update worker is offline.',queue_not_writable:fa?'پنل به پوشه مشترک اجراکننده VPS دسترسی نوشتن ندارد.':'The panel cannot write to the shared VPS update directory.'};
  const confirmDisabled=busy||checking||running||!info?.available||!info?.commit||!!info?.check_error;
  return <section className="panel version-card" data-no-i18n="true" dir={fa?'rtl':'ltr'}>
@@ -36,6 +36,13 @@ export function SystemUpdate(){
    {info?.job&&jobLabels[info.job.state]&&<p role="status">{jobLabels[info.job.state]}</p>}
    {running&&fetchError&&<p className="muted">{fa?'در انتظار برقراری دوباره پنل پس از راه‌اندازی VPS…':'Waiting for the panel to reconnect after VPS restart…'}</p>}
    {info?.job.backup&&<p className="muted version-notes">{fa?'پشتیبان:':'Backup:'} {info.job.backup}</p>}
+   {info?.job.state==='failed'&&<div className="version-failure-details">
+    {info.job.phase&&<p>{fa?'مرحله شکست:':'Failed stage:'} {jobLabels[info.job.phase]||info.job.phase}</p>}
+    {info.job.exit_code!=null&&<p>{fa?'کد خروج فرمان:':'Command exit code:'} {info.job.exit_code}</p>}
+    {info.job.recovery&&<p>{({not_needed:fa?'نسخه قبلی جایگزین نشده است.':'The previous version was not replaced.',restored:fa?'نسخه قبلی بدون ساخت مجدد بازیابی شد.':'Previous images were restored without rebuilding.',failed:fa?'سلامت نسخه بازیابی‌شده تأیید نشد.':'Recovery health could not be verified.'} as Record<string,string>)[info.job.recovery]}</p>}
+    {info.job.log_file&&<p className="version-notes">{fa?'فایل جزئیات روی VPS در پوشه .web-update:':'Detail file in the VPS .web-update directory:'} <code>{info.job.log_file}</code></p>}
+   </div>}
+
    {(error||(!running&&fetchError)||info?.job.error||info?.check_error)&&<p className="settings-error" role="alert">{error||(!running&&fetchError)||info?.job.error||info?.check_error}</p>}
    {!info?.available&&!running&&<p className="muted">{fa?'آپدیت جدیدی برای نصب موجود نیست.':'No new update is available to install.'}</p>}
    <div className="settings-actions"><button type="button" className="btn primary" disabled={confirmDisabled} onClick={()=>void start()}><Download size={16}/>{busy?(fa?'در حال ثبت درخواست…':'Sending request…'):running?(fa?'آپدیت در حال اجرا است':'Update in progress'):(fa?'تأیید و آپدیت VPS':'Confirm and update VPS')}</button><button type="button" className="btn" onClick={()=>setOpen(false)} disabled={busy}>{fa?'بستن':'Close'}</button></div>

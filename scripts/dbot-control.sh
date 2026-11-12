@@ -3,6 +3,7 @@ set -e
 APP_DIR="${DBOT_APP_DIR:-/opt/d-bot}"
 BACKUP_KEEP_DIR="${DBOT_BACKUP_KEEP_DIR:-/root/d-bot-backups}"
 ENV_FILE="$APP_DIR/.env"
+export COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT:-1}"
 
 if docker compose version >/dev/null 2>&1; then COMPOSE="docker compose"; else COMPOSE="docker-compose"; fi
 
@@ -1184,6 +1185,7 @@ case "${1}" in
   backup-keys) cd_app; $COMPOSE exec -T api python scripts/backup_crypto_cli.py recovery-keys ;;
   backups|backup-manager|delete-backup|delete-backups) backup_manager ;;
   backup-list|list-backups) header; show_backup_inventory || true ;;
+  memory|diagnose-memory) cd_app; python3 "$APP_DIR/scripts/dbot-memory-report.py" ;;
   status) show_status ;;
   secrets|credentials) credentials_center ;;
   remove|uninstall) uninstall_app "${2:-}" ;;

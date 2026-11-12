@@ -529,7 +529,7 @@ async def build_telegram_session(runtime: RuntimeConnection) -> AiohttpSession:
     return AiohttpSession(
         proxy=runtime.proxy_url,
         timeout=max(float(settings.TELEGRAM_HTTP_TIMEOUT_SECONDS or 20.0), 5.0),
-        limit=max(int(settings.TELEGRAM_HTTP_CONNECTION_LIMIT or 100), 20),
+        limit=max(int(settings.TELEGRAM_HTTP_CONNECTION_LIMIT or 30), 20),
     )
 
 

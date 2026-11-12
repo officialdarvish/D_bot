@@ -109,8 +109,8 @@ class XUIClient:
                 verify=verify_tls,
                 headers=headers,
                 limits=httpx.Limits(
-                    max_connections=max(int(getattr(settings, "XUI_MAX_CONNECTIONS", 40) or 40), 4),
-                    max_keepalive_connections=max(int(getattr(settings, "XUI_MAX_KEEPALIVE_CONNECTIONS", 20) or 20), 2),
+                    max_connections=max(int(getattr(settings, "XUI_MAX_CONNECTIONS", 12) or 12), 4),
+                    max_keepalive_connections=max(int(getattr(settings, "XUI_MAX_KEEPALIVE_CONNECTIONS", 4) or 4), 2),
                     keepalive_expiry=max(float(getattr(settings, "XUI_KEEPALIVE_EXPIRY_SECONDS", 30.0) or 30.0), 5.0),
                 ),
             )

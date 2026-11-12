@@ -427,14 +427,20 @@ async def tutorial_video(app_id: str, uid: int, expires: int, token: str):
         if not user or user.is_blocked or not (await read_config(session))['enabled'] or not (await capabilities(session))['tutorials'] or not (await get_user_button('tutorials'))[1]:raise HTTPException(403)
         app=next((r for r in await load_apps(session) if r['id']==app_id and r.get('enabled',True)),None)
     if not app or not app.get('video_file_id'):raise HTTPException(404)
-    async with telegram_bot() as bot:
-        file=await bot.get_file(app['video_file_id'])
-        if not file.file_size or file.file_size>MAX_TUTORIAL_VIDEO_BYTES:raise HTTPException(413)
-        output=io.BytesIO()
-        await bot.download_file(file.file_path,destination=output)
-    if output.getbuffer().nbytes>MAX_TUTORIAL_VIDEO_BYTES:raise HTTPException(413)
-    output.seek(0)
-    return StreamingResponse(output,media_type='video/mp4',headers={'Cache-Control':'no-store, private','Referrer-Policy':'no-referrer','Content-Length':str(output.getbuffer().nbytes)})
+    from app.services.media_stream import MediaFile
+    from starlette.background import BackgroundTask
+    output=MediaFile(MAX_TUTORIAL_VIDEO_BYTES)
+    try:
+        async with telegram_bot() as bot:
+            file=await bot.get_file(app['video_file_id'])
+            if not file.file_size or file.file_size>MAX_TUTORIAL_VIDEO_BYTES:raise HTTPException(413)
+            try:await bot.download_file(file.file_path,destination=output)
+            except ValueError:raise HTTPException(413) from None
+        size=output.seek(0,2);output.seek(0)
+        return StreamingResponse(output.chunks(),media_type='video/mp4',background=BackgroundTask(output.close),headers={'Cache-Control':'no-store, private','Referrer-Policy':'no-referrer','Content-Length':str(size)})
+    except BaseException:
+        output.close();raise
+
 
 
 @router.get('/services/{sid}/nx-configs')
