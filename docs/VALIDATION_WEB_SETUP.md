@@ -76,3 +76,10 @@ Bridge settings now live under Payments, including a payment-method chooser and 
 The update confirmation now uses the existing admin dialog system, acknowledges queued jobs immediately and shows host connection diagnostics. Publishing a request uses a temporary file plus an exclusive atomic link, so the worker cannot read partial JSON or accept duplicate jobs. The systemd installer checks actual readiness. After a healthy web update, the host worker is replaced from the new source before a deferred restart, after request cleanup. The queue is excluded from Docker build context.
 
 An old installation with no host agent still requires `sudo dbot update` once on that same VPS; a web container cannot install a privileged service on an inaccessible host. No user VPS connection, SSH/Docker/systemd deployment, live Bridge payment or graphical Chromium check was performed. Existing v1.4.0 release assets/tag are preserved; update.json advances to build 3.
+
+
+## 1.4.0 build 4 — horizontal dashboard statistics
+
+The four dashboard statistic cards now form a single horizontal row with line icons next to their labels/values, distinct accent colors and correct negative trend coloring. Narrow screens retain the row with horizontal scroll/snap and a visible next-card edge; logical CSS supports Persian RTL. The scrollable list can receive keyboard focus. Other dashboard sections and data sources are unchanged.
+
+Next.js production build, final TypeScript check and git diff whitespace validation passed. This is a reversible presentation change; backend tests were not rerun, and no interactive graphical browser/VPS validation was performed. Build metadata advances to 4; the v1.4.0 release assets/tag remain unchanged.

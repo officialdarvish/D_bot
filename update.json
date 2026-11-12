@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 3,
+  "build": 4,
   "channel": "main",
   "notes": {
-    "fa": "تنظیم Darvish Bridge از Payments و اصلاح تأیید، صف و اتصال آپدیت به اجراکننده VPS",
-    "en": "Configure Darvish Bridge from Payments; fix update confirmation, atomic queue and VPS worker connection"
+    "fa": "بازطراحی افقی آیکن‌ها و کارت‌های آماری داشبورد با چیدمان راست‌به‌چپ و اسکرول موبایل",
+    "en": "Horizontal dashboard statistic cards with line icons, RTL layout and mobile scrolling"
   }
 }
