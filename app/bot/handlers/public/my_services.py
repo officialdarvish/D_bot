@@ -236,7 +236,7 @@ def detail_kb(svc, plan, server_type: str = 'xui', actor_telegram_id: int | None
     normalized_server_type = (server_type or '').lower()
     is_mikrotik = normalized_server_type == 'mikrotik'
     is_xui = normalized_server_type == 'xui'
-    is_pasarguard = normalized_server_type == 'pasarguard'
+    is_pasarguard = normalized_server_type in {'pasarguard','nx'}
     rows = []
     if is_mikrotik:
         toggle_text = '⛔ غیرفعال کردن سرویس' if svc.is_active else '✅ فعال کردن سرویس'
@@ -304,7 +304,7 @@ def service_detail_text(svc, plan, server_type: str = 'xui', server=None, hwid_s
         '',
     ]
 
-    if (server_type or '').lower() in {'xui', 'pasarguard'}:
+    if (server_type or '').lower() in {'xui', 'pasarguard', 'nx'}:
         plan_limit = max(int(getattr(plan, 'hwid_limit', 0) or 0), 0) if plan else 0
         status = hwid_status if isinstance(hwid_status, dict) else None
         limit = int(status.get('limit') or 0) if status else plan_limit
@@ -421,12 +421,12 @@ async def _render_hwid_devices(callback: CallbackQuery, sid: int) -> bool:
             await _deny_not_owned(callback)
             return False
         server_type = (server.server_type or '').lower()
-        if server_type not in {'xui', 'pasarguard'}:
+        if server_type not in {'xui', 'pasarguard', 'nx'}:
             await callback.answer('مدیریت HWID فقط برای سرویس‌های 3x-ui و PasarGuard فعال است.', show_alert=True)
             return False
         email = svc.xui_email or svc.client_username
     try:
-        if server_type == 'pasarguard':
+        if server_type in {'pasarguard','nx'}:
             status = await PasarGuardService().get_user_hwids(server, email)
         else:
             status = await XuiService().get_client_hwids(server, email)
@@ -450,7 +450,7 @@ async def _render_hwid_devices(callback: CallbackQuery, sid: int) -> bool:
         '🖥 وضعیت دستگاه‌های HWID',
         '━━━━━━━━━━━━━━',
         f'👤 سرویس: {email}',
-        f'🛡 پنل: {"PasarGuard" if server_type == "pasarguard" else "3x-ui"}',
+        '🛡 پنل: ' + ('NX' if server_type=='nx' else 'PasarGuard' if server_type=='pasarguard' else '3x-ui'),
         f'🔒 سقف دستگاه: {"نامحدود" if limit <= 0 else limit}',
         f'📱 دستگاه ثبت‌شده: {used}',
         f'🟢 ظرفیت باقی‌مانده: {"نامحدود" if limit <= 0 else max(int(remaining or 0), 0)}',
@@ -485,13 +485,13 @@ async def _get_service_hwid_status(server, svc) -> dict | None:
     if not server or not svc:
         return None
     server_type = (getattr(server, 'server_type', '') or '').lower()
-    if server_type not in {'xui', 'pasarguard'}:
+    if server_type not in {'xui', 'pasarguard', 'nx'}:
         return None
     email = svc.xui_email or svc.client_username
     if not email:
         return None
     try:
-        if server_type == 'pasarguard':
+        if server_type in {'pasarguard','nx'}:
             return await PasarGuardService().get_user_hwids(server, email)
         return await XuiService().get_client_hwids(server, email)
     except Exception:
@@ -530,7 +530,7 @@ async def render_detail(callback: CallbackQuery, sid: int) -> bool:
         if server_type == 'xui':
             await XuiService().resolve_service_subscription(session, server, svc, plan, refresh_happ=True)
             await session.commit()
-    hwid_status = await _get_service_hwid_status(server, svc) if (server_type or '').lower() in {'xui', 'pasarguard'} else None
+    hwid_status = await _get_service_hwid_status(server, svc) if (server_type or '').lower() in {'xui', 'pasarguard', 'nx'} else None
     await edit_or_answer(
         callback,
         service_detail_text(svc, plan, server_type, server, hwid_status=hwid_status) + ("\n\n⚠️ ارتباط با پنل برقرار نشد؛ اطلاعات نمایش‌داده‌شده آخرین اطلاعات ذخیره‌شده است." if sync_result is None else ""),
@@ -716,7 +716,7 @@ async def service_hwid_clear_confirm(callback: CallbackQuery):
         if not ok_owner or not svc or not server:
             await _deny_not_owned(callback)
             return
-        if (server.server_type or '').lower() not in {'xui', 'pasarguard'}:
+        if (server.server_type or '').lower() not in {'xui', 'pasarguard', 'nx'}:
             await callback.answer('ریست HWID فقط برای سرویس‌های 3x-ui و PasarGuard فعال است.', show_alert=True)
             return
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -746,12 +746,12 @@ async def service_hwid_clear(callback: CallbackQuery):
             await _deny_not_owned(callback)
             return
         server_type = (server.server_type or '').lower()
-        if server_type not in {'xui', 'pasarguard'}:
+        if server_type not in {'xui', 'pasarguard', 'nx'}:
             await callback.answer('ریست HWID فقط برای سرویس‌های 3x-ui و PasarGuard فعال است.', show_alert=True)
             return
         email = svc.xui_email or svc.client_username
     try:
-        if server_type == 'pasarguard':
+        if server_type in {'pasarguard','nx'}:
             rotated = await PasarGuardService().reset_hwid_and_rotate(server, email)
         else:
             rotated = await XuiService().reset_hwid_and_rotate(server, email)
@@ -766,7 +766,7 @@ async def service_hwid_clear(callback: CallbackQuery):
         svc.sub_link = rotated.get('sub_link') or rotated.get('subscription_url')
         if rotated.get('uuid'): svc.xui_uuid = str(rotated['uuid'])
         plan = await session.get(Plan, svc.plan_id) if svc.plan_id else None
-        if server_type != 'pasarguard':
+        if server_type not in {'pasarguard','nx'}:
             svc.sub_link = await XuiService().resolve_service_subscription(session, server, svc, plan, refresh_happ=True)
         await session.commit()
     if callback.message:
@@ -801,7 +801,7 @@ async def revoke_service(callback: CallbackQuery):
                 svc.xui_uuid=new_password or svc.xui_uuid or ''
                 svc.sub_link=None
             else:
-                if server.server_type == 'pasarguard':
+                if server.server_type in {'pasarguard','nx'}:
                     new = await PasarGuardService().revoke_subscription(server, svc.xui_email or svc.client_username)
                 else:
                     new = await XuiService().revoke_and_new_link(server, svc.xui_email or svc.client_username)
@@ -1204,7 +1204,7 @@ async def _apply_service_renewal(session, svc: ClientService, user: User, plan: 
             previous_used_bytes=svc.used_bytes,
         )
         svc.traffic_baseline_bytes = int(renew_result.get('_traffic_baseline_bytes') or 0)
-    elif server.server_type == 'pasarguard':
+    elif server.server_type in {'pasarguard','nx'}:
         renew_result = await PasarGuardService().renew_user_on_plan(
             server, plan, svc.xui_email or svc.client_username
         )
@@ -1223,6 +1223,8 @@ async def _apply_service_renewal(session, svc: ClientService, user: User, plan: 
     svc.plan_id = plan.id
     svc.total_bytes = 0 if bool(getattr(plan,'is_unlimited',False)) else plan.volume_gb * 1024**3
     svc.used_bytes = 0
+    if server.server_type=='nx':
+        svc.total_bytes=int(renew_result['data_limit']);svc.used_bytes=int(renew_result['used_traffic'])
     if server.server_type != 'mikrotik':
         svc.traffic_baseline_bytes = 0
     svc.expires_at = datetime.utcnow() + timedelta(days=plan.duration_days) if plan.duration_days else None
@@ -1651,6 +1653,17 @@ async def send_openvpn_profile(callback: CallbackQuery):
         if not ok_owner or not server:
             await callback.message.answer('این سرویس برای شما نیست یا پیدا نشد.', reply_markup=back_main_inline())
             return
+        if server.server_type=='nx':
+            from app.services.nx_service import NxService
+            from aiogram.types import BufferedInputFile
+            try:files=await NxService().app_configs(server,svc.xui_email or svc.client_username)
+            except Exception:
+                await callback.message.answer('دریافت فایل اتصال NX ممکن نشد؛ دوباره تلاش کنید.',reply_markup=back_main_inline())
+                return
+            for file in files:
+                await callback.message.bot.send_document(callback.from_user.id,BufferedInputFile(file['content'].encode(),filename=file['file_name']))
+            if not files:await callback.message.answer('برای این سرویس فایل اتصال اختصاصی موجود نیست؛ از لینک اشتراک استفاده کنید.',reply_markup=back_main_inline())
+            return
         if (server.server_type or '').lower() != 'mikrotik':
             await callback.message.answer('دریافت پروفایل سرور فقط برای سرویس‌های MikroTik / OpenVPN فعال است.', reply_markup=back_main_inline())
             return
@@ -1735,7 +1748,7 @@ async def delete_service(callback: CallbackQuery, *, notification_bot=None):
                     )
                     deletion_task_id = deletion_task.id
                     panel_delete_queued = True
-        elif server and server.server_type == 'pasarguard':
+        elif server and server.server_type in {'pasarguard','nx'}:
             try:
                 await PasarGuardService().delete_user(server, svc.xui_email or svc.client_username)
             except Exception as e:
@@ -1770,7 +1783,7 @@ async def delete_service(callback: CallbackQuery, *, notification_bot=None):
             # so only the local tombstone/history cleanup remains.
             panel_status = (
                 'already_missing' if panel_already_missing else
-                'deleted' if server and server.server_type in ('xui', 'pasarguard', 'mikrotik', 'openvpn', 'l2tp') else
+                'deleted' if server and server.server_type in ('xui', 'pasarguard', 'nx', 'mikrotik', 'openvpn', 'l2tp') else
                 'local_deleted'
             )
             deletion_task = await record_completed_service_deletion(

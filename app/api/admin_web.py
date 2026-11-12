@@ -2351,7 +2351,7 @@ async def _setup_response(request,values,error='',status_code=200):
     try:
         draft=json.loads(m.get('setup_progress_v1','{}'));values['setup_step']=str(draft.get('step',0));values['web_path']=draft.get('web_path',values.get('web_path','dbot'))
     except (ValueError,TypeError):pass
-    for name in ('resellers','openvpn','trials','wallet','tutorials'):values['feature_'+name]=m.get('feature_'+name,'0')
+    for name in ('resellers','openvpn','trials','wallet','tutorials','xray'):values['feature_'+name]=m.get('feature_'+name,'0')
     return HTMLResponse(staged(_setup_wizard_html(request,values,error),values,str((request.scope.get('state') or {}).get('dbot_web_prefix') or ''),_session_csrf_token(request),servers),status_code=status_code)
 
 
@@ -2374,7 +2374,7 @@ async def setup_progress(request: Request, _: str = Depends(_auth_user)):
     keys={'force_join_enabled','channel_url','rules_enabled','rules_text','welcome_text','bot_name','support_username','admin_description'}
     updates={key:str(form[key]).strip() for key in keys if key in form}
     if any(len(value)>16000 for value in updates.values()):raise HTTPException(400,'Value too long')
-    for name in ('resellers','openvpn','trials','wallet','tutorials'):
+    for name in ('resellers','openvpn','trials','wallet','tutorials','xray'):
         if 'feature_'+name in form:updates['feature_'+name]='1' if form['feature_'+name]=='1' else '0'
     async with SessionLocal() as session:
         for key,value in updates.items():await session.merge(Setting(key=key,value=value))
@@ -2387,6 +2387,9 @@ async def setup_progress(request: Request, _: str = Depends(_auth_user)):
         await session.commit()
     from app.bot.keyboards.common import invalidate_button_settings_cache
     invalidate_button_settings_cache()
+    if 'feature_xray' in form:
+        from app.services.runtime_dependencies import request_runtime
+        request_runtime(form['feature_xray']=='1')
     return {'ok':True,'step':step}
 
 
@@ -2405,7 +2408,7 @@ async def setup_wizard_save(
     _: str = Depends(_auth_user),
 ):
     form=await request.form()
-    feature_values={'feature_'+name:'1' if form.get('feature_'+name)=='1' else '0' for name in ('resellers','openvpn','trials','wallet','tutorials')}
+    feature_values={'feature_'+name:'1' if form.get('feature_'+name)=='1' else '0' for name in ('resellers','openvpn','trials','wallet','tutorials','xray')}
     async with SessionLocal() as session:
         if not await session.scalar(select(Server.id).where(Server.is_active.is_(True)).limit(1)):
             return await _setup_response(request,await _setup_values(),'Add and verify a server first / ابتدا سرور اضافه کنید',400)
@@ -2754,7 +2757,7 @@ async def service_types(request: Request, _: str = Depends(_auth_user)):
         provider_map={str(x.key): str(x.value or '') for x in provider_items}
         order_row=await s.get(Setting, 'service_type_order')
         items=_ordered_service_types([x for x in all_items if _is_service_type_row(x)], order_row.value if order_row else '')
-    provider_select = '<div><label>Backend provider</label><select name="server_type"><option value="auto">Auto detect</option><option value="v2ray">V2Ray (Sanaei + PasarGuard)</option><option value="xui">X-UI / 3x-ui (legacy)</option><option value="pasarguard">PasarGuard</option><option value="mikrotik">MikroTik / OpenVPN / L2TP</option></select></div>'
+    provider_select = '<div><label>Backend provider</label><select name="server_type"><option value="auto">Auto detect</option><option value="v2ray">V2Ray (Sanaei + PasarGuard)</option><option value="xui">X-UI / 3x-ui (legacy)</option><option value="pasarguard">PasarGuard</option><option value="nx">NX Panel</option><option value="mikrotik">MikroTik / OpenVPN / L2TP</option></select></div>'
     form='<form method="post" action="/admin/service-types/add" class="formgrid">'+field('name','Service name')+provider_select+'<div class="full"><button class="btn primary">Save</button></div></form>'
     cards=''
     for x in items:
@@ -3102,7 +3105,7 @@ async def servers(request: Request, _: str = Depends(_auth_user)):
         items=(await s.execute(select(Server).order_by(Server.id.desc()))).scalars().all()
         counts=dict((await s.execute(select(ClientService.server_id,func.count(ClientService.id)).group_by(ClientService.server_id))).all())
     scope_select = select_field('scope','Show for',[('public','Public sales'),('reseller','Reseller'),('all','Public + Reseller')],'public')
-    add_form='<form method="post" action="/admin/servers/add" class="formgrid"><div><label>Profile</label><select name="server_type"><option value="xui">Sanaei / 3x-ui</option><option value="pasarguard">PasarGuard</option><option value="mikrotik">MikroTik / Custom</option></select></div>'+scope_select+field('name','Server name')+field('display_name','Display name')+field('panel_url','Panel URL / Origin')+field('panel_path','Panel Web Path','text','/')+field('subscription_url','Subscription URL')+field('username','Username')+field('password','Password','password')+field('api_key','API Token Panel','password')+field('badge_label','Service badge text','text','')+field('badge_color','Service badge color','color','#2563eb')+field('badge_emoji','Bot circle emoji','text','')+field('l2tp_server','L2TP Server','text','vpn.example.com')+field('l2tp_ipsec_secret','L2TP Secret','text','CHANGE_ME_IPSEC_SECRET')+'<div class="full"><button class="btn primary">Save</button></div></form>'
+    add_form='<form method="post" action="/admin/servers/add" class="formgrid"><div><label>Profile</label><select name="server_type"><option value="xui">Sanaei / 3x-ui</option><option value="pasarguard">PasarGuard</option><option value="nx">NX Panel</option><option value="mikrotik">MikroTik / Custom</option></select></div>'+scope_select+field('name','Server name')+field('display_name','Display name')+field('panel_url','Panel URL / Origin')+field('panel_path','Panel Web Path','text','/')+field('subscription_url','Subscription URL')+field('username','Username')+field('password','Password','password')+field('api_key','API Token Panel','password')+field('badge_label','Service badge text','text','')+field('badge_color','Service badge color','color','#2563eb')+field('badge_emoji','Bot circle emoji','text','')+field('l2tp_server','L2TP Server','text','vpn.example.com')+field('l2tp_ipsec_secret','L2TP Secret','text','CHANGE_ME_IPSEC_SECRET')+'<div class="full"><button class="btn primary">Save</button></div></form>'
     cards=[]
     for sv in items:
         m=sv.meta or {}; inbs=m.get('inbound_ids') or []
@@ -3112,6 +3115,14 @@ async def servers(request: Request, _: str = Depends(_auth_user)):
 
 @router.post('/admin/servers/test')
 async def server_test(request: Request, server_type:str=Form('xui'), panel_url:str=Form(...), panel_path:str=Form('/'), username:str=Form(''), password:str=Form(''), api_key:str=Form(''), router_name:str=Form(''), _: str = Depends(_auth_user)):
+    if server_type=='nx':
+        from app.services.nx_service import NxService
+        if not api_key: return fail(request,'NX API token is required',400)
+        candidate=Server(name='NX probe',server_type='nx',panel_url=panel_url.strip().rstrip('/'),username='api-token',password_encrypted=encrypt_text(api_key))
+        try:probe=await NxService().probe_server(candidate)
+        except Exception as exc:return fail(request,str(exc),400)
+        if not probe['ok']:return fail(request,'No visible NX templates',400)
+        return JSONResponse({'ok':True,'message':'NX connected','auto_fill':{'panel_path':'/','username':'api-token'},'inbounds':probe['groups']})
     if server_type == 'mikrotik':
         try:
             origin, routers, _secret_to_save = await _test_custom_panel_connection(panel_url, username, password, api_key)
@@ -3343,6 +3354,22 @@ async def server_add(request: Request, server_type:str=Form('xui'), scope:str=Fo
     try: billing_policy = validate_policy(reseller_billing_modes or 'volume', reseller_payg_rate_irt, server_type)
     except ValueError as exc: return fail(request, str(exc))
     async with SessionLocal() as s:
+        if server_type=='nx':
+            from app.services.nx_service import NxService
+            from app.services.server_connections import add_shared_connection
+            if not name.strip() or not api_key:return fail(request,'NX name and API token are required',400)
+            candidate=Server(name=name.strip(),server_type='nx',panel_url=panel_url.strip().rstrip('/'),username='api-token',password_encrypted=encrypt_text(api_key),subscription_url=subscription_url or None,is_active=True,meta={'scope':scope if scope in {'public','reseller','all'} else 'public','display_name':display_name or name,**billing_policy,'badge_label':'NX','badge_color':badge_color or '#8b5cf6'})
+            try:
+                probe=await NxService().probe_server(candidate)
+                if not probe['ok']:raise ValueError('No visible NX templates')
+                candidate.meta={**candidate.meta,**PasarGuardService.probe_meta(probe)}
+                candidate=await add_shared_connection(s,candidate)
+            except Exception as exc:return fail(request,str(exc),400)
+            if not await s.get(Setting,'service_type:custom:nx'):
+                await s.merge(Setting(key='service_type:custom:nx',value='NX'))
+                await s.merge(Setting(key='service_type_provider:nx',value='nx'))
+            await s.commit()
+            return ok(request,'/admin/servers','NX saved')
         if server_type == 'mikrotik':
             if not ((display_name or name or '').strip()):
                 return fail(request, 'Server name is required for MikroTik / Custom servers.', 400)
@@ -3427,7 +3454,9 @@ async def server_add(request: Request, server_type:str=Form('xui'), scope:str=Fo
                 return fail(request, 'PasarGuard authenticated, but setup is incomplete: ' + missing, 400)
             meta.update(PasarGuardService().probe_meta(probe))
             srv.meta = meta
-            s.add(srv)
+            from app.services.server_connections import add_shared_connection
+            try:srv=await add_shared_connection(s,srv)
+            except ValueError as exc:return fail(request,str(exc),400)
             await s.commit(); await s.refresh(srv)
             role_name = str((probe.get('access') or {}).get('role_name') or 'custom')
             restricted = bool((probe.get('access') or {}).get('restricted'))
@@ -3443,7 +3472,10 @@ async def server_add(request: Request, server_type:str=Form('xui'), scope:str=Fo
         base_url, web_path, final_url = _normalize_panel_parts(panel_url, panel_path)
         srv=Server(name=name,server_type=server_type,panel_url=final_url,subscription_url=subscription_url or None,username=xui_username,password_encrypted=encrypt_text(xui_secret),is_active=True,meta={**{'display_name':display_name or name,'inbound_ids':[],'inbounds':[],'scope':scope if scope in ('public','reseller','all') else 'public','panel_base_url':base_url,'panel_path':web_path,'auth_mode':xui_auth_mode}, **_server_badge_meta('xui', badge_color, badge_label, badge_emoji)})
         srv.meta = {**(srv.meta or {}), **billing_policy}
-        s.add(srv); await s.commit(); await s.refresh(srv)
+        from app.services.server_connections import add_shared_connection
+        try:srv=await add_shared_connection(s,srv)
+        except ValueError as exc:return fail(request,str(exc),400)
+        await s.commit(); await s.refresh(srv)
         ok_sync, old_ids, new_ids, err = await refresh_server_inbounds(s,srv,force_plan_update=True)
         await s.commit()
         if not ok_sync:
@@ -3461,6 +3493,17 @@ async def server_edit(request: Request, sid:int, name:str=Form(...), scope:str=F
             try: await update_server_policy(s, srv, reseller_billing_modes, reseller_payg_rate_irt)
             except ValueError as exc: return fail(request, str(exc))
 
+        if srv.server_type=='nx':
+            from app.services.nx_service import NxService
+            srv.name=name or srv.name;srv.panel_url=panel_url.strip().rstrip('/');srv.subscription_url=subscription_url or None
+            if api_key:srv.password_encrypted=encrypt_text(api_key)
+            try:
+                probe=await NxService().probe_server(srv)
+                if not probe['ok']:raise ValueError('No visible NX templates')
+            except Exception as exc:return fail(request,str(exc),400)
+            srv.meta={**(srv.meta or {}),**billing_policy,**PasarGuardService.probe_meta(probe),'scope':scope if scope in {'public','reseller','all'} else 'public','display_name':display_name or name,'badge_label':badge_label or 'NX','badge_color':badge_color or '#8b5cf6'}
+            await s.commit()
+            return ok(request,'/admin/servers','NX updated')
         if server_type == 'mikrotik':
             meta=dict(srv.meta or {})
             router=(router_name or meta.get('router_name') or srv.username or '').strip()
@@ -3881,7 +3924,7 @@ def _plan_group_name(plan_or_meta) -> str:
 
 
 def _server_available_inbound_ids(server: Server | None) -> list[int]:
-    if not server or server.server_type not in {'xui', 'pasarguard'}:
+    if not server or server.server_type not in {'xui', 'pasarguard','nx'}:
         return []
     meta = server.meta or {}
     rows = meta.get('inbounds') or meta.get('inbound_ids') or []
@@ -3900,7 +3943,7 @@ def _server_available_inbound_ids(server: Server | None) -> list[int]:
 
 
 def _resolve_plan_inbound_config(server: Server, inbound_mode: str, inbound_ids) -> tuple[str, list[int], str | None]:
-    if server.server_type not in {'xui', 'pasarguard'}:
+    if server.server_type not in {'xui', 'pasarguard','nx'}:
         return 'automatic', [], None
     mode = 'manual' if str(inbound_mode or '').strip().lower() == 'manual' else 'automatic'
     available = _server_available_inbound_ids(server)
@@ -3930,7 +3973,7 @@ def _validate_plan_hwid_limit(server: Server, hwid_limit) -> tuple[int, str | No
         limit = max(int(hwid_limit or 0), 0)
     except Exception:
         return 0, 'HWID device limit must be a non-negative integer.'
-    if server.server_type not in {'xui', 'pasarguard'}:
+    if server.server_type not in {'xui', 'pasarguard','nx'}:
         return 0, None
     if server.server_type != 'pasarguard':
         return limit, None
@@ -3994,7 +4037,7 @@ async def _reseller_package_inbound_meta(request, server, meta):
     if 'inbound_mode' not in form and 'inbound_ids' not in form: return result
     mode=str(form.get('inbound_mode','automatic'))
     if mode not in {'manual','automatic'}: raise ValueError('Invalid inbound selection mode.')
-    if server.server_type not in {'xui','pasarguard'}:
+    if server.server_type not in {'xui','pasarguard','nx'}:
         if mode=='manual': raise ValueError('This server does not support inbound/group restrictions.')
         mode,ids='automatic',[]
     elif mode=='manual':
@@ -6380,7 +6423,7 @@ async def api_v2_conversion_rules(_: str = Depends(_auth_user)):
         servers = (await session.execute(select(Server))).scalars().all()
         plans = (await session.execute(select(Plan).where(Plan.is_active.is_(True)))).scalars().all()
         conversion_history = (await session.execute(select(ServiceConversion).order_by(ServiceConversion.id.desc()).limit(20))).scalars().all()
-    by_id = {srv.id: srv for srv in servers if srv.is_active and srv.server_type in ('xui', 'pasarguard') and (srv.meta or {}).get('scope') != 'reseller'}
+    by_id = {srv.id: srv for srv in servers if srv.is_active and srv.server_type in ('xui', 'pasarguard','nx') and (srv.meta or {}).get('scope') != 'reseller'}
     return {'ok': True, 'rules': rules, 'history': [
         {'id': row.id, 'source_service_id': row.source_service_id, 'target_service_id': row.target_service_id,
          'user_id': row.user_id, 'status': row.status, 'error': (row.error or '')[:220],
@@ -6422,7 +6465,7 @@ async def save_conversion_rules(request: Request, rules_json: str = Form('{}'), 
                 return fail(request, 'Unknown/inactive category in conversion rules')
             for sid in rule['server_ids']:
                 server = servers.get(sid)
-                if (not server or server.server_type not in ('xui', 'pasarguard') or (server.meta or {}).get('scope') == 'reseller' or
+                if (not server or server.server_type not in ('xui', 'pasarguard','nx') or (server.meta or {}).get('scope') == 'reseller' or
                     not any(p.category_id == int(cid) and p.server_id == sid for p in plans)):
                     return fail(request, f'Server {sid} has no active plan in category {cid}')
         row = await session.get(Setting, RULES_KEY)
@@ -6699,7 +6742,7 @@ def _parse_reseller_inbound_policies(raw: str | None, server_by_id: dict[int, Se
         if not str(key).isdigit() or int(key) not in selected_ids:
             raise ValueError('Inbound selection contains a server not assigned to this reseller.')
         server = server_by_id.get(int(key))
-        if not server or server.server_type not in {'xui', 'pasarguard'}:
+        if not server or server.server_type not in {'xui', 'pasarguard','nx'}:
             raise ValueError('Only Sanaei/PasarGuard servers support inbound/group restrictions.')
         if not isinstance(entry, dict):
             raise ValueError('Invalid server inbound configuration.')
@@ -6747,7 +6790,7 @@ async def _validate_reseller_server_ids(session, raw: str) -> list[int]:
     if not ids:
         raise ValueError('Select at least one server for this reseller.')
     available = (await session.execute(select(Server).where(Server.id.in_(ids), Server.is_active.is_(True)))).scalars().all()
-    if len(available) != len(ids) or any(item.server_type not in {'xui', 'pasarguard', 'mikrotik'} or (item.meta or {}).get('scope') not in {'reseller','all'} for item in available):
+    if len(available) != len(ids) or any(item.server_type not in {'xui', 'pasarguard','nx', 'mikrotik'} or (item.meta or {}).get('scope') not in {'reseller','all'} for item in available):
         raise ValueError('Choose active servers explicitly configured as Reseller. Public/Default servers are not available here.')
     return ids
 
@@ -7456,4 +7499,7 @@ async def save_modules(request: Request, _: str = Depends(_auth_user)):
         await session.commit()
     from app.bot.keyboards.common import invalidate_button_settings_cache
     invalidate_button_settings_cache()
+    if 'xray' in form:
+        from app.services.runtime_dependencies import request_runtime
+        request_runtime(form['xray']=='1')
     return {'ok':True}

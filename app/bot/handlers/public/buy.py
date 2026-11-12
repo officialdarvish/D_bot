@@ -280,7 +280,7 @@ async def service_username_exists(session, server, username: str) -> bool:
             return bool(await MikroTikService().get_user(server, username))
         except Exception as exc:
             raise RuntimeError('Could not verify username on OpenVPN/MikroTik panel; please retry.') from exc
-    if server.server_type == 'pasarguard':
+    if server.server_type in {'pasarguard','nx'}:
         try:
             return bool(await PasarGuardService().get_user(server, username))
         except Exception as exc:
@@ -341,7 +341,7 @@ async def resolve_service_username(session, server, requested: str, *, force_dup
     username limit accepted by the bot and supported panels.
     """
     requested = normalize_service_username(requested)
-    is_pasarguard = getattr(server, 'server_type', None) == 'pasarguard'
+    is_pasarguard = getattr(server, 'server_type', None) in {'pasarguard','nx'}
     if is_pasarguard and len(requested) >= 3:
         error = pasarguard_username_error(requested)
         if error:raise ValueError(error)
@@ -349,7 +349,7 @@ async def resolve_service_username(session, server, requested: str, *, force_dup
         raise ValueError(USERNAME_FORMAT_ERROR_TEXT)
     # Already-paid orders created by older versions may contain one/two-letter
     # names. Allocate a valid unique name without charging or creating twice.
-    if getattr(server, 'server_type', None) == 'pasarguard' and len(requested) < 3:
+    if getattr(server, 'server_type', None) in {'pasarguard','nx'} and len(requested) < 3:
         force_duplicate = True
     if not force_duplicate and not await service_username_exists(session, server, requested):
         return requested, False
@@ -364,7 +364,7 @@ async def resolve_service_username(session, server, requested: str, *, force_dup
 
 
 async def get_service_username_error(session, server, username: str) -> str | None:
-    is_pasarguard = getattr(server, 'server_type', None) == 'pasarguard'
+    is_pasarguard = getattr(server, 'server_type', None) in {'pasarguard','nx'}
     if is_pasarguard:
         error = pasarguard_username_error(username)
         if error:return error
@@ -1083,7 +1083,7 @@ async def build_service(session, user, server, plan, username, password: str | N
         created=await MikroTikService().create_user_on_plan(server, plan, username, password=password)
         service.sub_link=None
         service.xui_uuid=str(created.get('password') or password or '')
-    elif server.server_type == 'pasarguard':
+    elif server.server_type in {'pasarguard','nx'}:
         provider = PasarGuardService()
         for attempt in range(8):
             try:
@@ -1434,7 +1434,7 @@ async def process_approved_order_background(
                             previous_used_bytes=service.used_bytes,
                         )
                         service.traffic_baseline_bytes = int(renew_result.get('_traffic_baseline_bytes') or 0)
-                    if server.server_type == 'pasarguard':
+                    if server.server_type in {'pasarguard','nx'}:
                         renewed = await PasarGuardService().renew_user_on_plan(server, plan, service.xui_email or service.client_username)
                         if renewed.get('sub_link'):service.sub_link=renewed['sub_link']
                         if renewed.get('uuid'):service.xui_uuid=str(renewed['uuid'])
@@ -1442,6 +1442,8 @@ async def process_approved_order_background(
                     service.plan_id = plan.id
                     service.total_bytes = 0 if bool(getattr(plan,'is_unlimited',False)) else plan.volume_gb * 1024**3
                     service.used_bytes = 0
+                    if server.server_type=='nx':
+                        service.total_bytes=int(renewed['data_limit']);service.used_bytes=int(renewed['used_traffic'])
                     if server.server_type != 'mikrotik':
                         service.traffic_baseline_bytes = 0
                     service.expires_at = datetime.utcnow() + timedelta(days=plan.duration_days) if plan.duration_days else None
@@ -1917,7 +1919,7 @@ async def _render_local_query_service(session, server: Server, local: ClientServ
     total = int(local.total_bytes or 0)
     active = bool(local.is_active)
     uuid = local.xui_uuid or None
-    if server.server_type == 'pasarguard':
+    if server.server_type in {'pasarguard','nx'}:
         try:
             pg_user = await PasarGuardService().get_user(server, local.client_username or username)
         except Exception:
@@ -1996,7 +1998,7 @@ async def _process_query_lookup(message: Message, state: FSMContext, password: s
                         break
                     continue
 
-                if server.server_type == 'pasarguard':
+                if server.server_type in {'pasarguard','nx'}:
                     try:
                         pg_user = await PasarGuardService().get_user(server, username)
                     except Exception:

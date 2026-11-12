@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from typing import Iterable
+import re
 
-VALID_SERVICE_PROVIDERS = {'xui', 'pasarguard', 'mikrotik'}
+VALID_SERVICE_PROVIDERS = {'xui', 'pasarguard', 'nx', 'mikrotik'}
 V2RAY_SERVICE_MODE = 'v2ray'  # Public catalogue: X-UI/Sanaei + PasarGuard
 
 
@@ -10,6 +11,7 @@ def normalize_service_provider(value: str | None) -> str:
     raw = (value or '').strip().lower()
     if raw in {'xui', 'x-ui', '3x-ui', '3xui', 'sanaei', 'v2ray', 'vless', 'vmess'}:
         return 'xui'
+    if raw in {'nx','nx-panel','nxpanel'}:return 'nx'
     if raw in {'pasarguard', 'pasar guard', 'pasar_guard', 'پاسارگارد', 'پاسار گارد'}:
         return 'pasarguard'
     if raw in {'mikrotik', 'microtik', 'openvpn', 'l2tp', 'openvpn-l2tp', 'routeros', 'میکروتیک'}:
@@ -31,7 +33,7 @@ def normalize_service_type_mode(value: str | None) -> str:
 
 def provider_members_for_service_type(mode: str | None) -> set[str]:
     mode = normalize_service_type_mode(mode)
-    return {'xui', 'pasarguard'} if mode == V2RAY_SERVICE_MODE else ({mode} if mode else set())
+    return {'xui', 'pasarguard','nx'} if mode == V2RAY_SERVICE_MODE else ({mode} if mode else set())
 
 
 def public_service_type_provider(
@@ -63,6 +65,7 @@ def public_service_type_provider(
 
 def infer_service_provider(text: str | None) -> str:
     raw = (text or '').strip().lower()
+    if re.search(r'(^|[^a-z])nx([^a-z]|$)',raw):return 'nx'
     if any(token in raw for token in ('pasarguard', 'pasar guard', 'pasar_guard', 'پاسارگارد', 'پاسار گارد')):
         return 'pasarguard'
     if any(token in raw for token in ('mikrotik', 'microtik', 'openvpn', 'l2tp', 'routeros', 'میکروتیک', 'اوپن')):
@@ -114,5 +117,6 @@ def service_provider_label(provider: str | None) -> str:
         'v2ray': 'V2Ray (Sanaei / 3x-ui + PasarGuard)',
         'xui': 'X-UI / 3x-ui',
         'pasarguard': 'PasarGuard',
+        'nx':'NX Panel',
         'mikrotik': 'MikroTik / OpenVPN / L2TP',
     }.get(provider, 'Auto')

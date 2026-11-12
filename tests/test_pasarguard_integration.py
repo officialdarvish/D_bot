@@ -88,8 +88,8 @@ def test_source_wiring_contains_pasarguard_paths():
     admin = (root / 'app/api/admin_web.py').read_text()
     frontend = (root / 'frontend/components/admin-dashboard.tsx').read_text()
     server_admin_bot = (root / 'app/bot/handlers/admin/servers.py').read_text()
-    assert "server.server_type == 'pasarguard'" in buy
-    assert "server.server_type == 'pasarguard'" in renew
+    assert "server.server_type in {'pasarguard','nx'}" in buy
+    assert "server.server_type in {'pasarguard','nx'}" in renew
     assert "server_type == 'pasarguard'" in admin
     assert "value: 'pasarguard'" in frontend
     assert 'API Token Panel' in frontend
@@ -317,7 +317,7 @@ def test_pasarguard_plan_group_resolver_accepts_pasarguard_servers():
     root = Path(__file__).resolve().parents[1]
     admin = (root / 'app/api/admin_web.py').read_text()
     frontend = (root / 'frontend/components/admin-dashboard.tsx').read_text()
-    assert "server.server_type not in {'xui', 'pasarguard'}" in admin
+    assert "server.server_type not in {'xui', 'pasarguard','nx'}" in admin
     assert "m.get('inbound_ids')" in admin
     assert 'PasarGuard allowed / fallback group IDs' not in frontend
     assert 'PasarGuard template ID' not in frontend

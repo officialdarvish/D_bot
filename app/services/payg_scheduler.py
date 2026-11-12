@@ -36,7 +36,7 @@ async def reseller_ids(s):
         if sid:assigned[rid].add(sid)
     ids=set().union(*assigned.values())
     if not ids:return []
-    servers=(await s.execute(select(Server.id,Server.meta).where(Server.id.in_(ids),Server.is_active.is_(True),Server.server_type.in_(['xui','pasarguard'])))).all()
+    servers=(await s.execute(select(Server.id,Server.meta).where(Server.id.in_(ids),Server.is_active.is_(True),Server.server_type.in_(['xui','pasarguard','nx'])))).all()
     from app.services.reseller_billing import policy
     from types import SimpleNamespace
     eligible={sid for sid,meta in servers if 'payg' in policy(SimpleNamespace(meta=meta))[0] and policy(SimpleNamespace(meta=meta))[1]>0}

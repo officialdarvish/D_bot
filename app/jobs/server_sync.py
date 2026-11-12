@@ -137,12 +137,12 @@ def _clean_inbound_ids(value) -> list[int]:
     return ids
 
 async def refresh_server_inbounds(session, server: Server, *, force_plan_update: bool = True) -> tuple[bool, list[int], list[int], str]:
-    if not server or server.server_type not in {"xui", "pasarguard"}:
+    if not server or server.server_type not in {"xui", "pasarguard", "nx"}:
         return True, [], [], ""
     old_ids = _clean_inbound_ids((server.meta or {}).get("inbound_ids") or [])
     probe = None
     try:
-        if server.server_type == "pasarguard":
+        if server.server_type in {'pasarguard','nx'}:
             probe = await PasarGuardService().probe_server(server)
             ok = bool(probe.get('ok'))
             rows = list(probe.get('groups') or [])
@@ -151,11 +151,11 @@ async def refresh_server_inbounds(session, server: Server, *, force_plan_update:
     except Exception as exc:
         return False, old_ids, old_ids, str(exc)
     if not ok:
-        if server.server_type == "pasarguard" and probe:
+        if server.server_type in {'pasarguard','nx'} and probe:
             missing = ', '.join(str(x) for x in (probe.get('missing') or []))
             return False, old_ids, old_ids, missing or "PasarGuard reseller permissions/group access are insufficient"
-        return False, old_ids, old_ids, "Login/List groups failed" if server.server_type == "pasarguard" else "Login/List inbounds failed"
-    if server.server_type == "pasarguard":
+        return False, old_ids, old_ids, "Login/List groups failed" if server.server_type in {'pasarguard','nx'} else "Login/List inbounds failed"
+    if server.server_type in {'pasarguard','nx'}:
         inbound_rows = [
             {"id": int(r.get("id")), "remark": r.get("name") or f"Group {r.get('id')}", "protocol": "group", "enable": True}
             for r in (rows or []) if isinstance(r, dict) and str(r.get("id") or "").isdigit()
@@ -172,10 +172,10 @@ async def refresh_server_inbounds(session, server: Server, *, force_plan_update:
         # directly selectable group because the allowed template owns the group
         # configuration. Other PasarGuard roles must expose at least one usable
         # group through API, role.allowed_group_ids or manual D Bot fallback.
-        if not (server.server_type == 'pasarguard' and probe and (probe.get('access') or {}).get('require_template')):
+        if not (server.server_type in {'pasarguard','nx'} and probe and (probe.get('access') or {}).get('require_template')):
             return False, old_ids, old_ids, "No active inbound/group was returned by panel"
     meta = dict(server.meta or {})
-    if server.server_type == 'pasarguard' and probe:
+    if server.server_type in {'pasarguard','nx'} and probe:
         meta.update(PasarGuardService().probe_meta(probe))
     old_rows = meta.get("inbounds") or []
     changed = old_ids != new_ids or old_rows != inbound_rows
@@ -183,7 +183,7 @@ async def refresh_server_inbounds(session, server: Server, *, force_plan_update:
         meta["inbound_ids"] = new_ids
         meta["inbounds"] = inbound_rows
         meta["last_inbound_sync_at"] = datetime.utcnow().isoformat(timespec="seconds")
-    if changed or (server.server_type == 'pasarguard' and probe):
+    if changed or (server.server_type in {'pasarguard','nx'} and probe):
         server.meta = meta
     scope = meta.get("scope")
     # Always refresh public customer plans tied to this server when the current
@@ -192,7 +192,7 @@ async def refresh_server_inbounds(session, server: Server, *, force_plan_update:
     if force_plan_update:
         plans = (await session.execute(select(Plan).where(Plan.server_id == server.id))).scalars().all()
         for plan in plans:
-            if server.server_type not in {"xui", "pasarguard"}:
+            if server.server_type not in {"xui", "pasarguard", "nx"}:
                 continue
             mode = str((plan.meta or {}).get('inbound_mode') or 'automatic').strip().lower()
             # Automatic plans follow the live server list. Manual plans must keep
@@ -251,7 +251,7 @@ async def sync_all_servers() -> None:
                         ok, err = await refresh_mikrotik_server(session, server)
                         await session.commit()
                         return server_id, 'mikrotik', ok, err
-                    if server.server_type == 'pasarguard':
+                    if server.server_type in {'pasarguard','nx'}:
                         ok, old_ids, new_ids, err = await refresh_server_inbounds(session, server)
                         await session.commit()
                         return server_id, 'pasarguard', ok, err

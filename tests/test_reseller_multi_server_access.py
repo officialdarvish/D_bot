@@ -34,7 +34,7 @@ def test_reseller_bot_checks_explicit_allowlist_before_provisioning():
     assert "if server_id_value not in allowed_now" in text or "server_id_value not in allowed_now" in text
     assert "reseller_target_server_id" in text
     assert "callback_data=f'reseller:buildserver:{sv.id}'" in text
-    assert "server.server_type == 'pasarguard'" in text
+    assert "server.server_type in {'pasarguard','nx'}" in text
     assert "server.server_type == 'mikrotik'" in text
 
 

@@ -871,7 +871,7 @@ async def _approval_inbound_screen(callback: CallbackQuery, state: FSMContext):
     policies = data.get('aw_policies') or {}
     policy = policies.get(str(sid), {'mode': 'automatic', 'inbound_ids': []})
     rows = []
-    if server.server_type in {'xui', 'pasarguard'}:
+    if server.server_type in {'xui', 'pasarguard', 'nx'}:
         for iid, label in options[:60]:
             chosen = policy.get('mode') == 'manual' and iid in policy.get('inbound_ids', [])
             rows.append([InlineKeyboardButton(text=f"{'✅' if chosen else '▫️'} {label[:35]} (#{iid})",

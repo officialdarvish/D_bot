@@ -104,7 +104,7 @@ class XuiService:
 
     async def resolve_service_subscription(self, db, server, service, plan=None, *, refresh_happ=False):
         """Resolve the same exact link for Telegram captions, QR and Mini App copy."""
-        if server is not None and str(server.server_type or '').lower() == 'pasarguard':
+        if server is not None and str(server.server_type or '').lower() in {'pasarguard','nx'}:
             from app.services.pasarguard_service import PasarGuardService
             # Repair previously stored links from the authoritative panel read.
             link = await PasarGuardService().current_subscription_link(

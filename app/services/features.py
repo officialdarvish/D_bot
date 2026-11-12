@@ -1,7 +1,7 @@
 """Shared module gates. Upgrades preserve existing behaviour until explicitly changed."""
 from sqlalchemy import select
 from app.database.models import Setting, Server
-FEATURES=('resellers','openvpn','trials','wallet','tutorials')
+FEATURES=('resellers','openvpn','trials','wallet','tutorials','xray')
 async def capabilities(session):
     rows=(await session.execute(select(Setting).where(Setting.key.in_(['feature_'+x for x in FEATURES])))).scalars().all()
     values={r.key:r.value for r in rows}

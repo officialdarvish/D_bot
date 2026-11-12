@@ -125,8 +125,8 @@ async def catalog(user=Depends(customer)):
         packages=(await s.execute(select(ResellerPackage).where(ResellerPackage.is_active.is_(True)))).scalars().all()
         from app.services.reseller_management import profile
         personal_rate=int((await profile(s,f'account:{account.id}')).get('volume_rate',0))
-        return dict(servers=[dict(id=x.id,name=x.name,provider=x.server_type) for x in rows if server_allows(account,x) and (x.meta or {}).get('scope')=='reseller'],
-            packages=[dict(id=p.id,title=p.title,server_id=p.server_id,volume_gb=p.volume_gb,days=p.reseller_validity_days,price=f'{personal_rate*int(p.volume_gb):,} تومان' if personal_rate else plan_price_label(p)) for p in packages if p.server_id in {x.id for x in rows if server_allows(account,x) and (x.meta or {}).get('scope')=='reseller'}],default_server_id=next((x.id for x in rows if x.id==account.server_id and server_allows(account,x)),next((x.id for x in rows if server_allows(account,x)),None)))
+        return dict(servers=[dict(id=x.id,name=x.name,provider=x.server_type) for x in rows if server_allows(account,x) and (x.meta or {}).get('scope') in {'reseller','all'}],
+            packages=[dict(id=p.id,title=p.title,server_id=p.server_id,volume_gb=p.volume_gb,days=p.reseller_validity_days,price=f'{personal_rate*int(p.volume_gb):,} تومان' if personal_rate else plan_price_label(p)) for p in packages if p.server_id in {x.id for x in rows if server_allows(account,x) and (x.meta or {}).get('scope') in {'reseller','all'}}],default_server_id=next((x.id for x in rows if x.id==account.server_id and server_allows(account,x)),next((x.id for x in rows if server_allows(account,x)),None)))
 
 @router.post('/reseller/actions')
 async def reseller_action(body:Action,user=Depends(customer)):
@@ -290,25 +290,25 @@ async def configuration_control(s,user,sid,action,*,reseller=False):
     from app.services.mikrotik_service import MikroTikService
     email=svc.xui_email or svc.client_username
     if action=='hwid':
-        if server.server_type=='pasarguard':result=await PasarGuardService().reset_hwid_and_rotate(server,email)
+        if server.server_type in {'pasarguard','nx'}:result=await PasarGuardService().reset_hwid_and_rotate(server,email)
         elif server.server_type=='xui':result=await XuiService().reset_hwid_and_rotate(server,email)
         else:raise ValueError('این پنل قابلیت ریست HWID ندارد.')
         svc.sub_link=result.get('sub_link') or result.get('subscription_url')
         if result.get('uuid'):svc.xui_uuid=str(result['uuid'])
         plan=await s.get(Plan,svc.plan_id) if svc.plan_id else None
-        if server.server_type!='pasarguard':
+        if server.server_type not in {'pasarguard','nx'}:
             svc.sub_link=await XuiService().resolve_service_subscription(s,server,svc,plan,refresh_happ=True)
     elif server.server_type=='mikrotik':
         result=await MikroTikService().rotate_password(server,email);svc.xui_uuid=str(result.get('password') or svc.xui_uuid or '')
-    elif server.server_type in {'xui','pasarguard'}:
-        if server.server_type=='pasarguard':
+    elif server.server_type in {'xui','pasarguard','nx'}:
+        if server.server_type in {'pasarguard','nx'}:
             # Sanaei subscription rotation must never be used for other providers.
             result=await PasarGuardService().revoke_subscription(server,email)
         else:result=await XuiService().revoke_and_new_link(server,email)
         svc.sub_link=result.get('sub_link') or result.get('subscription_url')
         if result.get('uuid'):svc.xui_uuid=str(result['uuid'])
         plan=await s.get(Plan,svc.plan_id) if svc.plan_id else None
-        if server.server_type!='pasarguard':
+        if server.server_type not in {'pasarguard','nx'}:
             svc.sub_link=await XuiService().resolve_service_subscription(s,server,svc,plan,refresh_happ=True)
     else:raise ValueError('این پنل پشتیبانی نمی‌شود.')
     await s.commit()

@@ -35,7 +35,45 @@ def healthy():
             run(['docker','compose','exec','-T','api','curl','-fsS','http://localhost:8000/health'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=15);return True
         except subprocess.SubprocessError:time.sleep(2)
     return False
+def write_env(content):
+    fd,name=tempfile.mkstemp(prefix='.runtime-env-',dir=APP)
+    try:
+        with os.fdopen(fd,'w') as out:out.write(content);out.flush();os.fsync(out.fileno())
+        os.replace(name,APP/'.env')
+    finally:Path(name).unlink(missing_ok=True)
+def apply_runtime():
+    desired=QUEUE/'desired-runtime.json'
+    if not desired.exists():return
+    value=read_json(desired)
+    if set(value)!={'id','xray'} or type(value['xray']) is not bool or not re.fullmatch('[0-9a-f]{32}',str(value['id'])):raise ValueError('Invalid runtime selection')
+    applied=QUEUE/'applied-runtime.json'
+    if applied.exists() and read_json(applied).get('id')==value['id']:return
+    old=(APP/'.env').read_text();source='image' if value['xray'] else 'disabled'
+    line='XRAY_SOURCE='+source
+    existing=re.search(r'^XRAY_SOURCE=(.*)$',old,re.M)
+    changed=not existing or existing.group(1)!=source
+    state({'id':value['id'],'kind':'runtime'},'building')
+    try:
+        if changed:
+            content=re.sub(r'^XRAY_SOURCE=.*$',line,old,flags=re.M) if existing else old.rstrip()+'\n'+line+'\n'
+            write_env(content)
+            run(['docker','compose','build'],timeout=3600);run(['docker','compose','up','-d'])
+            if not healthy():raise RuntimeError('Optional runtime health check failed')
+        write_json(applied,value)
+        state({'id':value['id'],'kind':'runtime'},'completed',finished_at=time.time())
+    except Exception:
+        write_env(old)
+        try:run(['docker','compose','up','-d','--build'],timeout=3600)
+        finally:
+            # Do not rebuild endlessly after a failed selection; the admin can submit again.
+            write_json(applied,value)
+            state({'id':value['id'],'kind':'runtime'},'failed',error='Optional runtime failed; inspect the host journal.',finished_at=time.time())
+        raise
+
 while True:
+    try:apply_runtime()
+    except Exception:
+        import traceback;traceback.print_exc()
     request=QUEUE/'request.json'
     if not request.exists():time.sleep(3);continue
     job={};previous=None;switched=False;started=time.time()

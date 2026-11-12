@@ -435,3 +435,22 @@ async def tutorial_video(app_id: str, uid: int, expires: int, token: str):
     if output.getbuffer().nbytes>MAX_TUTORIAL_VIDEO_BYTES:raise HTTPException(413)
     output.seek(0)
     return StreamingResponse(output,media_type='video/mp4',headers={'Cache-Control':'no-store, private','Referrer-Policy':'no-referrer','Content-Length':str(output.getbuffer().nbytes)})
+
+
+@router.get('/services/{sid}/nx-configs')
+async def nx_configs(sid: int, user=Depends(customer)):
+    from app.services.nx_service import NxService
+    async with SessionLocal() as session:
+        svc=await session.get(ClientService,sid)
+        if not svc:raise HTTPException(404)
+        if svc.reseller_id:
+            from app.services.features import require_feature
+            await require_feature('resellers',session)
+            account=await session.get(ResellerAccount,svc.reseller_id)
+            if not account or account.user_id!=user.id:raise HTTPException(404)
+        elif svc.user_id!=user.id:raise HTTPException(404)
+        server=await session.get(Server,svc.server_id)
+        if not server or server.server_type!='nx':raise HTTPException(404)
+        try:files=await NxService().app_configs(server,svc.xui_email or svc.client_username)
+        except Exception:raise HTTPException(409,'دریافت فایل اتصال از NX ممکن نشد؛ دوباره تلاش کنید.')
+    return {'files':files}

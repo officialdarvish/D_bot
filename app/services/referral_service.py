@@ -100,7 +100,7 @@ async def maybe_grant_invite_reward(session, bot, invited_user: User) -> None:
             sub_link = created.get('sub_link')
             service.sub_link = sub_link
             service.xui_uuid = (str(created.get('uuid')) if isinstance(created, dict) and created.get('uuid') is not None else None)
-    elif server.server_type == 'pasarguard':
+    elif server.server_type in {'pasarguard','nx'}:
         _Plan = type('ReferralPasarGuardPlan', (), {'volume_gb': volume_gb, 'duration_days': days, 'inbound_ids': inbound_ids, 'hwid_limit': 0})
         created = await PasarGuardService().create_user_on_plan(server, _Plan, username)
         if isinstance(created, dict):

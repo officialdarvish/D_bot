@@ -519,7 +519,7 @@ async def edit_plan_field(callback: CallbackQuery, state: FSMContext):
         async with SessionLocal() as session:
             plan = await session.get(Plan, pid)
             server = await session.get(Server, plan.server_id) if plan and plan.server_id else None
-        if not plan or not server or str(server.server_type or '').lower() not in {'xui', 'pasarguard'}:
+        if not plan or not server or str(server.server_type or '').lower() not in {'xui', 'pasarguard', 'nx'}:
             await state.clear()
             await callback.answer("HWID فقط برای پلن‌های 3x-ui و PasarGuard قابل تنظیم است.", show_alert=True)
             return
@@ -673,7 +673,7 @@ async def save_plan_edit(message: Message, state: FSMContext):
                 if value < 0:
                     raise ValueError
                 server = await session.get(Server, p.server_id) if p.server_id else None
-                if not server or str(server.server_type or '').lower() not in {'xui', 'pasarguard'}:
+                if not server or str(server.server_type or '').lower() not in {'xui', 'pasarguard', 'nx'}:
                     await state.clear()
                     await ui_message(message, "❌ HWID فقط برای پلن‌های 3x-ui و PasarGuard قابل تنظیم است.", reply_markup=plan_detail_keyboard(pid))
                     return

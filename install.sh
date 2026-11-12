@@ -355,6 +355,7 @@ setup_wizard(){
 write_config_env(){
   cat > "${APP_DIR}/.env" <<EOFENV
 BOT_TOKEN=${BOT_TOKEN}
+XRAY_SOURCE=${XRAY_SOURCE:-disabled}
 ADMIN_IDS=${ADMIN_IDS}
 OWNER_IDS=${ADMIN_IDS}
 SELLER_IDS=

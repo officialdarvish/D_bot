@@ -355,7 +355,7 @@ async def _create_test_account_on_target(*, user_id: int, target: dict, volume_g
             mt_password = created.get('password') if isinstance(created, dict) else None
             service.sub_link = None
             service.xui_uuid = str(mt_password or '')
-        elif server.server_type == 'pasarguard':
+        elif server.server_type in {'pasarguard','nx'}:
             _Plan = type('PasarGuardTestPlan', (), {'volume_gb': volume_gb, 'duration_days': duration_days, 'inbound_ids': inbound_ids, 'hwid_limit': 0, 'is_test_account': True})
             created = await PasarGuardService().create_user_on_plan(server, _Plan, client_name)
             client_name = str(created.get('username') or client_name)

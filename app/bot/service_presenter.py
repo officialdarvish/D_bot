@@ -286,7 +286,7 @@ async def send_service_info(
     # button used by admin-created services). MikroTik also needs its profile
     # action, so merge both keyboards instead of silently replacing one.
     markup = reply_markup
-    if (server_type or '').lower() == 'mikrotik' and service_id:
+    if (server_type or '').lower() in {'mikrotik','nx'} and service_id:
         rows = [[InlineKeyboardButton(text='📥 دریافت پروفایل سرور', callback_data=f'svc:profile:{service_id}')]]
         if reply_markup is not None:
             rows.extend(list(getattr(reply_markup, 'inline_keyboard', []) or []))
@@ -324,7 +324,7 @@ async def send_service_info(
                 pass
     else:
         await send_config_text(bot, chat_id, caption, reply_markup=markup)
-        if (server_type or '').lower() == 'mikrotik' and service_id:
+        if (server_type or '').lower() in {'mikrotik','nx'} and service_id:
             try:
                 from app.bot.profile_delivery import send_openvpn_profile_document
                 await send_openvpn_profile_document(

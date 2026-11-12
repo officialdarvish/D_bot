@@ -427,7 +427,8 @@ async def server_confirm(callback: CallbackQuery, state: FSMContext):
             target.meta = dict(server.meta or {'scope': 'public', 'inbound_ids': inbound_ids, 'panel_base_url': data.get('panel_url'), 'panel_path': data.get('panel_path')})
             server_id = target.id; success_text = '✅ اطلاعات سرور فروش با موفقیت تغییر کرد.'
         else:
-            session.add(server); await session.flush(); server_id = server.id; success_text = '✅ سرور فروش با موفقیت اضافه شد.'
+            from app.services.server_connections import add_shared_connection
+            server=await add_shared_connection(session,server); await session.flush(); server_id = server.id; success_text = '✅ سرور فروش با موفقیت اضافه شد.'
         await session.commit()
     await state.clear()
     await edit_or_answer(callback, f'{success_text}\n\n🖥 سرور: {data["name"]}\n🆔 ID: {server_id}\n🔢 اینباندها: {", ".join(map(str, inbound_ids)) if inbound_ids else "-"}\n\n📋 لیست سرورها بروزرسانی شد:', reply_markup=await servers_keyboard())

@@ -23,7 +23,7 @@ from app.bot.service_presenter import send_service_info
 
 logger = logging.getLogger(__name__)
 router = Router()
-SUPPORTED = {'xui', 'pasarguard'}
+SUPPORTED = {'xui', 'pasarguard','nx'}
 
 
 def kb(rows):

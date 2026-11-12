@@ -1,0 +1,28 @@
+name: Public source origin report
+on:
+  fork:
+  workflow_dispatch:
+  schedule:
+    - cron: '21 * * * *'
+permissions:
+  contents: read
+jobs:
+  report:
+    if: github.repository == 'officialdarvish/D_bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python scripts/check_source_origin.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-origin-report
+          path: source-origin-report.json
+          retention-days: 30
