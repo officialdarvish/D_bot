@@ -13,7 +13,7 @@ from app.database.models import (Server,Setting,ClientService,ResellerAccount,Pa
 from app.services.server_connections import identity
 from app.core.security import decrypt_text
 
-REPORT_KEY='server_connection_migration_v1'
+REPORT_KEY='server_connection_migration_v2'
 MODELS=(ClientService,ResellerAccount,PaymentCard,Plan,ServerCategory,DiscountCode,ResellerPackage,PasarGuardPanelOrder,OpenVPNProfile,ResellerBuildConfig,ServiceDeletionTask,ResellerUsageMeter,Order,MiniAppOperation)
 
 
@@ -35,7 +35,7 @@ async def consolidate(session):
     previous=await session.get(Setting,REPORT_KEY)
     if previous:return json.loads(previous.value)
     servers=(await session.execute(select(Server).order_by(Server.id).with_for_update())).scalars().all()
-    report={'schema':1,'merged':[],'conflicts':[]}
+    report={'schema':2,'merged':[],'conflicts':[]}
     if not servers:return report # A fresh database stays raw.
     if session.get_bind().dialect.name=='postgresql':
         names=sorted({m.__table__.name for m in MODELS}|{'servers','settings'})
@@ -68,16 +68,23 @@ async def consolidate(session):
                 account_policies[str(account.server_id)]={'mode':'manual','inbound_ids':list(account.inbound_ids or [])}
             policies=[v for k,v in account_policies.items() if str(k).isdigit() and int(k) in ids]
             if len({json.dumps(v,sort_keys=True) for v in policies})>1:reason='reseller inbound policies conflict'
-        cards=(await session.execute(select(PaymentCard).where(PaymentCard.server_id.in_(ids),PaymentCard.is_active.is_(True)))).scalars().all()
-        if any(c.server_type!=rows[0].server_type for c in cards):reason='role-specific payment routing requires review'
-        signatures={(c.card_number,c.owner_name,c.reviewer_telegram_id) for c in cards}
-        if len(signatures)>1:reason='receipt reviewer or payment card differs'
-        # A formerly unbound public route must not acquire a different recipient.
+        # Compare effective recipients within each sales role before/after remapping.
+        # Different public/reseller cards are intentional, not a connection conflict.
+        from types import SimpleNamespace
+        from app.services.payment_cards import choose_payment_card
+        cards=(await session.scalars(select(PaymentCard).where(PaymentCard.is_active.is_(True)))).all()
         public_rows=[r for r in rows if (r.meta or {}).get('scope','public') in {'public','all'}]
-        bound={c.server_id for c in cards}
-        if cards and any(r.id not in bound for r in public_rows):
-            fallback=await session.scalar(select(PaymentCard).where(PaymentCard.server_type==rows[0].server_type,PaymentCard.server_id.is_(None),PaymentCard.is_active.is_(True)).order_by(PaymentCard.id.desc()).limit(1))
-            if not fallback or (fallback.card_number,fallback.owner_name,fallback.reviewer_telegram_id) not in signatures:reason='public fallback payment recipient would change'
+        canonical=min(public_rows or rows,key=lambda r:r.id)
+        moved=[SimpleNamespace(id=c.id,server_id=canonical.id if c.server_id in ids else c.server_id,
+               server_type=c.server_type,is_active=c.is_active,card_number=c.card_number,
+               owner_name=c.owner_name,reviewer_telegram_id=c.reviewer_telegram_id) for c in cards]
+        signature=lambda c:(c.card_number,c.owner_name,c.reviewer_telegram_id) if c else None
+        for row in rows:
+            roles=(['public'] if row in public_rows else []) + (['reseller','panel'] if row in reseller_rows else [])
+            for role in roles:
+                before=choose_payment_card(cards,row.id,provider=row.server_type,role=role)
+                after=choose_payment_card(moved,canonical.id,provider=row.server_type,role=role)
+                if signature(before)!=signature(after):reason=f'{role} payment recipient would change'
         if reason:
             report['conflicts'].append({'server_ids':sorted(ids),'reason':reason});continue
         canonical=min(public_rows or rows,key=lambda r:r.id)
@@ -104,7 +111,7 @@ async def consolidate(session):
                     mapped=remap_json(value,mapping,name)
                     if mapped!=value:setattr(row,name,mapped)
         for setting in (await session.execute(select(Setting))).scalars().all():
-            if setting.key==REPORT_KEY:continue
+            if setting.key.startswith('server_connection_migration_'):continue
             if setting.key.endswith('_server_id') and str(setting.value).isdigit() and int(setting.value) in mapping:
                 setting.value=str(mapping[int(setting.value)])
             elif setting.value and setting.value[:1] in '[{':

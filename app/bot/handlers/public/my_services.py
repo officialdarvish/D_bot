@@ -773,11 +773,11 @@ async def service_hwid_clear(callback: CallbackQuery):
         try:await callback.message.edit_reply_markup(reply_markup=None)
         except Exception:pass
     await callback.answer('✅ ریست انجام شد؛ اطلاعات جدید ارسال می‌شود.')
-    from app.bot.service_presenter import send_service_info
+    from app.bot.service_presenter import send_service_info, is_trial_service
     await send_service_info(callback.bot, callback.from_user.id, svc.client_username,
-        plan.title if plan else 'اشتراک', svc.total_bytes / 1024**3,
+        plan.title if plan else ('اکانت تست' if is_trial_service(svc) else 'اشتراک'), svc.total_bytes / 1024**3,
         max(0, ((svc.expires_at or datetime.utcnow()) - datetime.utcnow()).days), svc.sub_link,
-        service_id=svc.id, server_type=server_type, allow_happ=not bool(svc.reseller_id))
+        is_test=is_trial_service(svc), service_id=svc.id, server_type=server_type, allow_happ=not bool(svc.reseller_id) and not is_trial_service(svc))
 
 
 @router.callback_query(F.data.startswith('svc:revoke:'))
@@ -1480,28 +1480,8 @@ async def renew_pay(callback: CallbackQuery, state: FSMContext):
             return
 
         if method == 'card':
-            card = (
-                await session.execute(
-                    select(PaymentCard)
-                    .where(
-                        PaymentCard.server_id == server.id,
-                        PaymentCard.is_active == True,  # noqa: E712
-                    )
-                    .order_by(PaymentCard.id.desc())
-                )
-            ).scalars().first()
-            if not card:
-                card = (
-                    await session.execute(
-                        select(PaymentCard)
-                        .where(
-                            PaymentCard.server_type == server.server_type,
-                            PaymentCard.server_id.is_(None),
-                            PaymentCard.is_active == True,  # noqa: E712
-                        )
-                        .order_by(PaymentCard.id.desc())
-                    )
-                ).scalars().first()
+            from app.services.payment_cards import public_payment_card
+            card = await public_payment_card(session, server)
             if not card:
                 await edit_or_answer(
                     callback,

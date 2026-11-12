@@ -44,3 +44,18 @@ Compatible duplicate connections are consolidated transactionally. Conflicting t
 Public-source detection finds GitHub forks and indexed copies retaining the marker. It cannot guarantee detection of private, unindexed or marker-removed copies. The workflow becomes active only after publication on the repository's default branch.
 
 The release notes retain these test discrepancies and operational limits. The maintainer explicitly requested publishing PR #33 as version 1.4.0.
+
+
+## 1.4.0 build 2 — settings, trial customization and dashboard version
+
+Date: 2026-11-12.
+
+- Full D BOT suite: **1223 passed, 12 failed, 3 subtests passed** (119.72 seconds). The failed test names are exactly the twelve previously documented above; no new full-suite failure was observed.
+- Related regression suite: **108 passed** across Custom/delivery templates, shared-server migration and payment binding, module/update controls, fractional/multi-server trials, Mini App trials and reseller onboarding.
+- Final delivery/migration checks: **31 passed**, including saving and reading trial overrides through the API, actual service delivery through a plain mock bot, long captions, all supported trial provider layouts, reset, media edits/albums/buttons, role-specific recipient preservation, old v1 conflict retry and alias payment routing.
+- Frontend TypeScript check and production static build: **passed**. Generated frontend/out files were restored; Docker builds the source export.
+- The historical trial-input test now accepts subsequent semantic versions instead of requiring the obsolete literal 1.3.0.
+
+Bot modules now use shared settings styles and bilingual switch cards. The Version card sits below System Status and retains the host update confirmation flow; manual recheck bypasses the five-minute update metadata cache. The legacy migration banner and Servers subtitle were removed. Build 2 changes only update.json metadata, so it does not overwrite the v1.4.0 release tag or assets.
+
+Operational limits above still apply. Chromium could not launch in this environment, so no interactive visual/browser check was completed. The role-aware v2 consolidation runs on application startup after installation; the user's live server IDs #5/#8 were not directly inspected or modified. Genuine changes to a role's payment recipient still prevent automatic consolidation.
