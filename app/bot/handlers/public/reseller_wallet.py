@@ -134,7 +134,9 @@ async def wallet_review(callback:CallbackQuery):
     if approve:
         from app.services.reseller_billing import reconcile_suspensions
         await reconcile_suspensions()
-    try: await callback.message.edit_reply_markup(reply_markup=None)
+    try:
+        from aiogram.types import InlineKeyboardButton,InlineKeyboardMarkup
+        await callback.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='✅ تایید شد' if approve else '❌ رد شد',callback_data='noop')]]))
     except Exception: pass
     await callback.answer('تایید شد' if approve else 'رد شد')
     try:

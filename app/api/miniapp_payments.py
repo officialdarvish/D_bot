@@ -27,6 +27,8 @@ class Funding(BaseModel):
     amount:int=Field(default=10000,ge=1,le=10**10)
     method:str='card'
     discount_code:str=Field(default='',max_length=64)
+    volume_gb:int|None=Field(default=None,ge=1,le=1000000)
+    duration_days:int|None=Field(default=None,ge=1,le=3650)
     expected_amount:int|None=Field(default=None,ge=0)
 
 async def funding_quote(s,user,body):
@@ -48,6 +50,9 @@ async def funding_quote(s,user,body):
         server=await s.get(Server,target_id) if target_id else None
         if not server or not server.is_active or target_id not in reseller_package_server_ids(account) or not server_allows(account,server) or (server.meta or {}).get('scope') not in {'reseller','all'} or package.server_id!=target_id:
             raise HTTPException(403,'بسته حجمی متعلق به سرور انتخاب‌شده و مجاز نمایندگی نیست.')
+        from app.services.custom_tariff import reseller_selection
+        try:package=reseller_selection(package,body.volume_gb,body.duration_days)
+        except ValueError as exc:raise HTTPException(422,str(exc))
         from app.services.reseller_management import quote_package
         try:quote=await quote_package(s,account,package)
         except LivePricingError:raise HTTPException(503,'دریافت قیمت لحظه‌ای ناموفق بود؛ دوباره تلاش کنید.')
@@ -96,6 +101,8 @@ async def create(body:Funding,user=Depends(customer)):
         u=await s.get(User,user.id,with_for_update=True)
         prior=await s.scalar(select(MiniAppOperation).where(MiniAppOperation.key==str(body.key)))
         request=body.model_dump(mode='json');request.pop('key')
+        for optional in ('volume_gb','duration_days'):
+            if request.get(optional) is None:request.pop(optional,None)
         if prior:
             if prior.user_id!=user.id or (prior.payload or {}).get('request')!=request:raise HTTPException(409,'شناسهٔ خرید قبلاً استفاده شده است.')
             return await funding_view(s,prior)
@@ -103,7 +110,9 @@ async def create(body:Funding,user=Depends(customer)):
         if amount!=body.expected_amount:raise HTTPException(409,'قیمت تغییر کرده؛ مبلغ را دوباره بررسی کنید.')
         if body.method=='wallet' and not account:raise HTTPException(422,'روش پرداخت معتبر نیست.')
         if body.method=='card' and not card:raise HTTPException(409,'شماره کارت ثبت نشده است.')
-        op=MiniAppOperation(user_id=user.id,key=str(body.key),kind=body.kind,status='waiting_receipt',payload=dict(request=request,title=pkg.title if pkg else 'شارژ کیف پول پنل نمایندگی' if body.kind=='panel_wallet' else 'شارژ کیف پول نمایندگی' if account else 'شارژ کیف پول',final_amount=amount,package_id=body.package_id,volume_bytes=int(pkg.volume_gb*1024**3) if pkg else 0,card=dict(number=card.card_number,owner=card.owner_name,id=card.id,reviewer=card.reviewer_telegram_id) if card else None))
+        from app.services.custom_tariff import reseller_snapshot
+        if pkg:pkg=await reseller_snapshot(s,pkg,user.telegram_id)
+        op=MiniAppOperation(user_id=user.id,key=str(body.key),kind=body.kind,status='waiting_receipt',payload=dict(request=request,title=pkg.title if pkg else 'شارژ کیف پول پنل نمایندگی' if body.kind=='panel_wallet' else 'شارژ کیف پول نمایندگی' if account else 'شارژ کیف پول',final_amount=amount,package_id=pkg.id if pkg else body.package_id,volume_bytes=int(pkg.volume_gb*1024**3) if pkg else 0,card=dict(number=card.card_number,owner=card.owner_name,id=card.id,reviewer=card.reviewer_telegram_id) if card else None))
         s.add(op);await s.flush()
         if body.method=='wallet':
             if int(u.wallet_balance or 0)<amount:raise HTTPException(409,'موجودی کیف پول شخصی کافی نیست.')

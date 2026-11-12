@@ -126,7 +126,7 @@ async def catalog(user=Depends(customer)):
         from app.services.reseller_management import profile
         personal_rate=int((await profile(s,f'account:{account.id}')).get('volume_rate',0))
         return dict(servers=[dict(id=x.id,name=x.name,provider=x.server_type) for x in rows if server_allows(account,x) and (x.meta or {}).get('scope') in {'reseller','all'}],
-            packages=[dict(id=p.id,title=p.title,server_id=p.server_id,volume_gb=p.volume_gb,days=p.reseller_validity_days,price=f'{personal_rate*int(p.volume_gb):,} تومان' if personal_rate else plan_price_label(p)) for p in packages if p.server_id in {x.id for x in rows if server_allows(account,x) and (x.meta or {}).get('scope') in {'reseller','all'}}],default_server_id=next((x.id for x in rows if x.id==account.server_id and server_allows(account,x)),next((x.id for x in rows if server_allows(account,x)),None)))
+            packages=[dict(custom_tariff=(p.meta or {}).get('custom_tariff'),id=p.id,title=p.title,server_id=p.server_id,volume_gb=p.volume_gb,days=p.reseller_validity_days,price=f'{personal_rate*int(p.volume_gb):,} تومان' if personal_rate else plan_price_label(p)) for p in packages if p.server_id in {x.id for x in rows if server_allows(account,x) and (x.meta or {}).get('scope') in {'reseller','all'}}],default_server_id=next((x.id for x in rows if x.id==account.server_id and server_allows(account,x)),next((x.id for x in rows if server_allows(account,x)),None)))
 
 @router.post('/reseller/actions')
 async def reseller_action(body:Action,user=Depends(customer)):

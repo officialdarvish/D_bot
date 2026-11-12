@@ -9,6 +9,8 @@ import { DiskCleanup } from '@/components/disk-cleanup';
 import { ResellerOnboardingSettings } from '@/components/reseller-onboarding-settings';
 import { ErrorLogSettings } from '@/components/error-log-settings';
 import { BackupProtectionSettings } from '@/components/backup-protection-settings';
+import { UserHistory } from '@/components/user-history';
+import { InstallationCount } from '@/components/installation-count';
 import { BotHomeSettings } from '@/components/bot-home-settings';
 import { ResellerFinanceManager } from '@/components/reseller-finance-manager';
 
@@ -229,7 +231,7 @@ function internalAdminPath(pathname: string): string {
 }
 
 const sectionTitles: Record<SectionKey, { title: string; subtitle: string }> = {
-  dashboard: { title: 'Dashboard 👋', subtitle: '' },
+  dashboard: { title: 'Dashboard', subtitle: '' },
   'service-types': { title: 'Service Types', subtitle: 'Create and manage the service categories visible inside the bot.' },
   'test-account': { title: 'Test Account', subtitle: 'Configure the trial account users can receive from the Telegram bot.' },
   'openvpn-profiles': { title: 'Profile OpenVPN', subtitle: 'Upload, edit, view and bind .ovpn server profiles for MikroTik / Custom plans.' },
@@ -321,15 +323,17 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
   const collapsed = !mobileOpen && !sidebarHovered && !sidebarFocused;
   const [globalQuery, setGlobalQuery] = useState('');
   const searchInput = useRef<HTMLInputElement>(null);
+  const searchable = section === 'users' || section === 'resellers';
+  useEffect(() => { setGlobalQuery(''); }, [section]);
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && !document.querySelector('[aria-modal="true"]')) {
+      if (searchable && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && !document.querySelector('[aria-modal="true"]')) {
         event.preventDefault();searchInput.current?.focus();searchInput.current?.select();
       }
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, []);
+  }, [searchable]);
   const [modal, setModal] = useState<ModalForm | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileAvatar, setProfileAvatar] = useState<string>('');
@@ -486,6 +490,7 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
             <span className="sidebar-language-label">Language</span>
             <LanguageSwitch compact />
           </div>
+          <InstallationCount/>
           <a
             className="sidebar-github"
             href="https://github.com/officialdarvish/D_bot"
@@ -511,7 +516,7 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
         <header className="topbar">
           <div className="top-left">
             <button className="menu-btn" type="button" aria-label="Open navigation" aria-controls="admin-navigation" aria-expanded={mobileOpen} onClick={() => setMobileOpen((x) => !x)}><Menu /></button>
-            <label className="searchbox"><Search size={18} /><input ref={searchInput} aria-label="Search admin panel" value={globalQuery} onChange={(e) => setGlobalQuery(e.target.value)} placeholder="Search anything..." /><span className="kbd" aria-hidden="true">Ctrl / ⌘ K</span></label>
+            {searchable && <label className="searchbox"><Search size={18} /><input ref={searchInput} aria-label="Search admin panel" value={globalQuery} onChange={(e) => setGlobalQuery(e.target.value)} placeholder="Search anything..." /><span className="kbd" aria-hidden="true">Ctrl / ⌘ K</span></label>}
           </div>
           <div className="top-actions only-profile">
             <button className="profile profile-button" onClick={() => setProfileOpen(true)}>
@@ -529,7 +534,7 @@ export function AdminDashboard({ initialSection }: { initialSection: SectionKey 
             </div>
           </div>
 
-          <SectionRenderer section={section} query={globalQuery} reloadKey={reloadKey} setAuthRequired={setAuthRequired} openModal={setModal} runAction={runAction} show={show} />
+          <SectionRenderer section={section} query={searchable ? globalQuery : ''} reloadKey={reloadKey} setAuthRequired={setAuthRequired} openModal={setModal} runAction={runAction} show={show} />
         </div>
       </main>
       {modal && <FormModal onAuthRequired={() => setAuthRequired(true)} modal={modal} onClose={() => setModal(null)} onSubmit={submitModal} show={show} />}
@@ -621,7 +626,7 @@ function DashboardSection({ reloadKey, setAuthRequired, show }: any) {
   }, []);
   const rawChartData = data?.chart_ranges?.[0]?.data || [];
   const chartData = rawChartData;
-  const chartTicks = chartData.filter((_, index) => index % 3 === 0).map((row) => row.label);
+  const chartTicks = Array.from(new Set([...chartData.filter((_, index) => index % 3 === 0).map((row) => row.label), ...(chartData.length ? [chartData[chartData.length - 1].label] : [])]));
   const stats = data?.stats || {};
   if (loading) return <SkeletonGrid />;
   if (!data) return <EmptyState message={error || 'Dashboard could not be loaded.'} />;
@@ -650,7 +655,7 @@ function DashboardSection({ reloadKey, setAuthRequired, show }: any) {
             </div>
           </div>
           <div className="panel-title-value"><strong>{toman(displaySales)}</strong><span className="stat-trend">{pct(displayTrend)} vs previous range</span></div>
-          <div className="chart-wrap">
+          <div className="chart-wrap" dir="ltr">
             <RevenueChart data={chartData} ticks={chartTicks} />
           </div>
       </section>
@@ -719,6 +724,7 @@ function RecentOrders({ orders }: { orders: OrderItem[] }) {
 
 function UsersSection({ query, reloadKey, setAuthRequired }: any) {
   const [page, setPage] = useState(1);
+  const [historyUser, setHistoryUser] = useState<UserItem | null>(null);
   const pageSize = 100;
   useEffect(() => { setPage(1); }, [query]);
   const q = encodeURIComponent(query || '');
@@ -727,8 +733,8 @@ function UsersSection({ query, reloadKey, setAuthRequired }: any) {
   if (error || !data) return <EmptyState message={error || 'Users could not be loaded.'} />;
   const total = Number(data.total || data.items.length || 0);
   const totalPages = Math.max(1, Math.ceil(total / Number(data.page_size || pageSize)));
-  const table = <DataTable title={`Users (${money(total)})`} columns={['User', 'Telegram ID', 'Reseller', 'Referral', 'Purchases', 'Wallet', 'Status', 'Joined']} rows={data.items.map((u) => [<div className="row-left" key="u"><span className="tiny-avatar">{firstLetter(u.full_name || u.username)}</span><div><b>{u.full_name || u.username || 'Unknown'}</b><div className="muted">@{u.username || '-'}</div></div></div>, u.telegram_id, <span key="r" className={`status-icon ${u.is_reseller ? 'ok' : 'no'}`}>{u.is_reseller ? <CheckCircle2 size={18} /> : <XCircle size={18} />}</span>, u.referral_code || '-', u.purchases, toman(u.wallet_total), <span key="s" className={`badge ${u.is_blocked ? 'red' : 'green'}`}>{u.is_blocked ? 'Blocked' : 'Active'}</span>, shortDate(u.joined_at)] )} />;
-  return <>{table}{totalPages > 1 && <div className="pagination-card"><button className="btn" disabled={page <= 1} onClick={() => setPage((x) => Math.max(1, x - 1))}>Previous</button><span className="badge">Page {page} / {totalPages}</span><button className="btn primary" disabled={page >= totalPages} onClick={() => setPage((x) => Math.min(totalPages, x + 1))}>Next</button></div>}</>;
+  const table = <DataTable title={`Users (${money(total)})`} columns={['User', 'Telegram ID', 'Reseller', 'Referral', 'Purchases', 'Wallet', 'Status', 'Joined', 'Actions']} rows={data.items.map((u) => [<div className="row-left" key="u"><span className="tiny-avatar">{firstLetter(u.full_name || u.username)}</span><div><b>{u.full_name || u.username || 'Unknown'}</b><div className="muted">@{u.username || '-'}</div></div></div>, u.telegram_id, <span key="r" className={`status-icon ${u.is_reseller ? 'ok' : 'no'}`}>{u.is_reseller ? <CheckCircle2 size={18} /> : <XCircle size={18} />}</span>, u.referral_code || '-', u.purchases, toman(u.wallet_total), <span key="s" className={`badge ${u.is_blocked ? 'red' : 'green'}`}>{u.is_blocked ? 'Blocked' : 'Active'}</span>, shortDate(u.joined_at), <button key="list" className="btn mini" onClick={() => setHistoryUser(u)}>List</button>] )} />;
+  return <>{historyUser && <UserHistory user={historyUser} onClose={() => setHistoryUser(null)} setAuthRequired={setAuthRequired}/ >}{table}{totalPages > 1 && <div className="pagination-card"><button className="btn" disabled={page <= 1} onClick={() => setPage((x) => Math.max(1, x - 1))}>Previous</button><span className="badge">Page {page} / {totalPages}</span><button className="btn primary" disabled={page >= totalPages} onClick={() => setPage((x) => Math.min(totalPages, x + 1))}>Next</button></div>}</>;
 }
 
 
@@ -1493,7 +1499,7 @@ function SettingsSection({ reloadKey, setAuthRequired, openModal, show }: any) {
 
   return <div className="section-grid settings-grid" data-no-i18n="true" dir={language === 'fa' ? 'rtl' : 'ltr'}>
     <ModuleSettings/>
-    <BotHomeSettings map={map} show={show} setAuthRequired={setAuthRequired} />
+    <BotHomeSettings map={map} show={show} setAuthRequired={setAuthRequired} section="panel" />
 
     <EntityCard
       title={s('Website & SSL','وب‌سایت و SSL')}
@@ -1964,6 +1970,7 @@ function FormModal({ modal, onClose, onSubmit, show, onAuthRequired }: { onAuthR
     setValues((prev) => {
       const next = { ...prev, [name]: value };
       if (name === 'badge_color') next.badge_emoji = circleEmojiForColor(String(value || ''));
+      if (name === 'custom_enabled' && value === 'yes') next.pricing_currency = 'IRT';
       if (name === 'show_for') next.server_id = '0';
       if (name === 'server_id') { next.inbound_ids = ''; next.group_name = ''; }
       if (name === 'inbound_mode' && String(value) === 'automatic') next.inbound_ids = '';
@@ -2007,7 +2014,7 @@ function FormModal({ modal, onClose, onSubmit, show, onAuthRequired }: { onAuthR
     const omitted = new Set(modal.fields.filter(f => !f.hidden && !visible(f)).map(f => f.name));
     for (const field of modal.fields.filter(f => f.hidden || visible(f))) omitted.delete(field.name);
     savePending.current = true;setSaving(true);
-    try { await onSubmit(Object.fromEntries(Object.entries(values).filter(([key]) => !omitted.has(key)))); }
+    try { const payload=Object.fromEntries(Object.entries(values).filter(([key]) => !omitted.has(key)));if(payload.custom_enabled==='yes')payload.pricing_currency='IRT';await onSubmit(payload); }
     finally { savePending.current = false;setSaving(false); }
   }
   function mergeUser(user: UserItem) { setValues((prev) => ({ ...prev, telegram_id: String(user.telegram_id), full_name: user.full_name || '', username: user.username || '' })); }
@@ -2022,7 +2029,7 @@ function FormModal({ modal, onClose, onSubmit, show, onAuthRequired }: { onAuthR
       if (!selectedServerId || selectedServerId === '0') return false;
       current = label.includes('mikrotik') || label.includes('microtik') || label.includes('mikrotik / custom')
         ? 'mikrotik'
-        : label.includes('pasarguard') ? 'pasarguard'
+        : label.includes('nx') ? 'nx' : label.includes('pasarguard') ? 'pasarguard'
         : label.includes('openvpn') ? 'openvpn' : 'xui';
     }
     if (condition.values) return condition.values.includes(current);
@@ -2053,7 +2060,7 @@ function FormModal({ modal, onClose, onSubmit, show, onAuthRequired }: { onAuthR
     } finally { setTesting(false); }
   }
   const isNewServer = modal.action === '/admin/servers/add' || modal.action.startsWith('/admin/servers/');
-  return <AdminDialog label={modal.title} onClose={onClose} busy={saving}><motion.div className="modal-card" initial={{ scale: .96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}><div className="modal-head"><h2>{modal.title}</h2><button type="button" className="icon-btn" aria-label="Close dialog" disabled={saving} onClick={onClose}><X size={18} /></button></div><form className="form-grid" aria-busy={saving} onSubmit={submitCurrentForm}>{modal.fields.filter((f) => !f.hidden).filter(visible).map((field) => { const grouped = ['user-search','reseller-inbounds','checkbox-group','multiselect'].includes(field.type || ''); const FieldTag = grouped ? 'div' : 'label'; return <FieldTag role={grouped ? 'group' : undefined} aria-label={grouped ? field.label : undefined} key={field.name} className={`form-field ${field.full ? 'full' : ''}`}><span>{field.label}</span>{field.type === 'user-search' ? <UserSearchField onPick={mergeUser} /> : field.type === 'textarea' ? <textarea required={field.required} placeholder={field.placeholder} value={values[field.name] || ''} onChange={(e) => change(field.name, e.target.value)} /> : field.type === 'reseller-inbounds' ? <div className="multi-picker">{csvValues('allowed_server_ids').map((sid) => {
+  return <AdminDialog label={modal.title} onClose={onClose} busy={saving}><motion.div className="modal-card" initial={{ scale: .96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}><div className="modal-head"><h2>{modal.title}</h2><button type="button" className="icon-btn" aria-label="Close dialog" disabled={saving} onClick={onClose}><X size={18} /></button></div><form className={`form-grid ${modal.action.startsWith('/admin/plans')?'plan-form':''}`} aria-busy={saving} onSubmit={submitCurrentForm}>{modal.fields.filter((f) => !f.hidden).filter(visible).map((field) => { const grouped = ['user-search','reseller-inbounds','checkbox-group','multiselect'].includes(field.type || ''); const FieldTag = grouped ? 'div' : 'label'; return <FieldTag role={grouped ? 'group' : undefined} aria-label={grouped ? field.label : undefined} key={field.name} className={`form-field field-${field.name} ${field.full ? 'full' : ''}`}><span>{field.label}</span>{field.type === 'user-search' ? <UserSearchField onPick={mergeUser} /> : field.type === 'textarea' ? <textarea required={field.required} placeholder={field.placeholder} value={values[field.name] || ''} onChange={(e) => change(field.name, e.target.value)} /> : field.type === 'reseller-inbounds' ? <div className="multi-picker">{csvValues('allowed_server_ids').map((sid) => {
     const configs = field.optionsBy?.map[sid] || [];
     const groupOptions=field.groupOptionsBy?.[sid]||[];
     if (!configs.length&&!groupOptions.length) return <div key={sid} className="muted" style={{padding:8}}>Server #{sid}: no inbound/group selection available (OpenVPN or not synchronized)</div>;
@@ -2215,29 +2222,29 @@ function planForm(catOptions: any[], servers: ServerItem[], p?: PlanItem): Modal
   return {
     title: p ? 'Edit Public Plan' : 'Add Plan',
     action: p ? `/admin/plans/${p.id}/edit` : '/admin/plans/add',
-    defaults: p ? { ...p,...Object.fromEntries(Object.entries(p.custom_tariff||{}).map(([k,v])=>['custom_'+k,k==='enabled'?(v?'yes':'no'):v])), plan_kind: 'public', pricing_currency: p.pricing_currency || 'IRT', price_usd: p.price_usd || '', inbound_mode: inboundMode, group_name: p.group_name || '', hwid_limit: Number(p.hwid_limit || 0), happ_encrypted_sub: p.happ_encrypted_sub ? 'yes' : 'no' } : { plan_kind: 'public', pricing_currency: 'IRT', price_irt: 0, price_usd: '', category_id: 0, server_id: 0, reseller_validity_days: 365, inbound_mode: 'automatic', inbound_ids: [], group_name: '', hwid_limit: 0, happ_encrypted_sub: 'no' },
+    defaults: p ? { custom_enabled: 'no', ...p,...Object.fromEntries(Object.entries(p.custom_tariff||{}).map(([k,v])=>['custom_'+k,k==='enabled'?(v?'yes':'no'):v])), plan_kind: 'public', pricing_currency: p.pricing_currency || 'IRT', price_usd: p.price_usd || '', inbound_mode: inboundMode, group_name: p.group_name || '', hwid_limit: Number(p.hwid_limit || 0), happ_encrypted_sub: p.happ_encrypted_sub ? 'yes' : 'no' } : { custom_enabled: 'no', plan_kind: 'public', pricing_currency: 'IRT', price_irt: 0, price_usd: '', category_id: 0, server_id: 0, reseller_validity_days: 365, inbound_mode: 'automatic', inbound_ids: [], group_name: '', hwid_limit: 0, happ_encrypted_sub: 'no' },
     fields: [
       { name: 'plan_kind', label: 'Plan is for', type: 'select', options: [{ value: 'public', label: 'Public' }, { value: 'reseller', label: 'Resellers' }], hidden: !!p },
-      { name: 'title', label: 'Plan title', required: true },
-      { name: 'pricing_currency', label: 'Pricing currency', type: 'select', options: [{ value: 'IRT', label: 'Toman — fixed price' }, { value: 'USD', label: 'USD — live Wallex rate at checkout' }], required: true },
-      { name: 'price_irt', label: 'Price (Toman)', type: 'number', required: true, min: 0, showWhen: { name: 'pricing_currency', value: 'IRT' } },
-      { name: 'price_usd', label: 'Price (USD)', type: 'number', required: true, min: 0.01, step: 0.01, placeholder: 'Example: 4.99', showWhen: { name: 'pricing_currency', value: 'USD' } },
       {name:'custom_enabled',label:'Custom volume and days',type:'select',options:[{value:'no',label:'No'},{value:'yes',label:'Yes'}]},
+      { name: 'pricing_currency', label: 'Pricing currency', full: true, type: 'select', optionsBy: {name:'custom_enabled',map:{yes:[{value:'IRT',label:'Toman'}],no:[{ value: 'IRT', label: 'Toman — fixed price' }, { value: 'USD', label: 'USD — live Wallex rate at checkout' }]}}, required: true },
+      { name: 'title', label: 'Plan title', required: true, full: true },
+      { name: 'price_irt', label: 'Price (Toman)', type: 'number', required: true, min: 0, showWhenAll: [{ name: 'pricing_currency', value: 'IRT' }, { name: 'custom_enabled', value: 'no' }] },
+      { name: 'price_usd', label: 'Price (USD)', type: 'number', required: true, min: 0.01, step: 0.01, placeholder: 'Example: 4.99', showWhenAll: [{ name: 'pricing_currency', value: 'USD' }, { name: 'custom_enabled', value: 'no' }] },
       {name:'custom_min_gb',label:'Minimum GB',type:'number',min:1,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
       {name:'custom_max_gb',label:'Maximum GB',type:'number',min:1,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
       {name:'custom_min_days',label:'Minimum days',type:'number',min:1,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
       {name:'custom_max_days',label:'Maximum days',type:'number',min:1,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
       {name:'custom_price_gb',label:'Price per GB (Toman)',type:'number',min:0,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
       {name:'custom_price_day',label:'Price per day (Toman)',type:'number',min:0,required:true,showWhen:{name:'custom_enabled',value:'yes'}},
-      { name: 'volume_gb', label: 'Volume GB', type: 'number', required: true },
-      { name: 'duration_days', label: 'Duration days', type: 'number', required: true, showWhen: { name: 'plan_kind', value: 'public' } },
-      { name: 'reseller_validity_days', label: 'Reseller validity days', type: 'number', required: true, showWhen: { name: 'plan_kind', value: 'reseller' } },
+      { name: 'volume_gb', label: 'Volume GB', type: 'number', required: true, showWhen: {name:'custom_enabled',value:'no'} },
+      { name: 'duration_days', label: 'Duration days', type: 'number', required: true, showWhenAll: [{ name: 'plan_kind', value: 'public' },{name:'custom_enabled',value:'no'}] },
+      { name: 'reseller_validity_days', label: 'Reseller validity days', type: 'number', required: true, showWhenAll: [{ name: 'plan_kind', value: 'reseller' },{name:'custom_enabled',value:'no'}] },
       { name: 'category_id', label: 'Select category', type: 'select', options: catOptions, required: true, showWhen: { name: 'plan_kind', value: 'public' } },
       { name: 'server_id', label: 'Select server', type: 'select', options: serverOptionsList, required: true },
       { name: 'hwid_limit', label: 'HWID device limit (0 = unlimited)', type: 'number', required: true, min: 0, step: 1, placeholder: 'Example: 1 device', showWhenAll: [{ name: 'plan_kind', value: 'public' }, { name: '__selected_server_type', values: ['xui','pasarguard','nx'] }] },
+      { name: 'inbound_mode', label: 'Inbound / group selection mode', type: 'select', options: [{ value: 'automatic', label: 'Automatic — use all active inbounds / groups' }, { value: 'manual', label: 'Manual — choose specific inbounds / groups' }], required: true, full: true, showWhenAll: [{ name: '__selected_server_type', values: ['xui','pasarguard','nx'] }] },
       { name: 'happ_encrypted_sub', label: 'Send Happ Encrypted Link (normal sales only)', type: 'select', options: [{value: 'no', label: 'No — normal subscription'}, {value: 'yes', label: 'Yes — Happ encrypted link'}], required: true, full: true, showWhenAll: [{name: 'plan_kind', value: 'public'}, {name: '__selected_server_type', value: 'xui'}] },
       { name: 'group_name', label: 'Sanaei client group', type: 'select', optionsBy: { name: 'server_id', map: groupOptionsByServer }, full: true, showWhenAll: [{ name: 'plan_kind', value: 'public' }, { name: '__selected_server_type', value: 'xui' }] },
-      { name: 'inbound_mode', label: 'Inbound / group selection mode', type: 'select', options: [{ value: 'automatic', label: 'Automatic — use all active inbounds / groups' }, { value: 'manual', label: 'Manual — choose specific inbounds / groups' }], required: true, full: true, showWhenAll: [{ name: '__selected_server_type', values: ['xui','pasarguard','nx'] }] },
       { name: 'inbound_ids', label: 'Inbounds / PasarGuard groups included in this plan', type: 'multiselect', optionsBy: { name: 'server_id', map: inboundOptionsByServer }, required: true, full: true, showWhenAll: [{ name: '__selected_server_type', values: ['xui','pasarguard','nx'] }, { name: 'inbound_mode', value: 'manual' }] }
     ]
   };
@@ -2245,7 +2252,7 @@ function planForm(catOptions: any[], servers: ServerItem[], p?: PlanItem): Modal
 function resellerPlanForm(categories: any[], servers: ServerItem[], p?: ResellerPackage): ModalForm {
  const form=planForm(categories,servers);
  return {...form,title:p?'Edit Reseller Plan':'Add Reseller Plan',action:p?`/admin/plans/reseller/${p.id}/edit`:'/admin/plans/add',
- defaults:{...form.defaults,...p,plan_kind:'reseller',inbound_mode:p?.inbound_mode||'automatic',inbound_ids:p?.inbound_ids||[]},
+ defaults:{...form.defaults,...p,...Object.fromEntries(Object.entries((p as any)?.custom_tariff||{}).map(([k,v])=>['custom_'+k,k==='enabled'?(v?'yes':'no'):v])),plan_kind:'reseller',inbound_mode:p?.inbound_mode||'automatic',inbound_ids:p?.inbound_ids||[]},
  fields:form.fields.map(field=>field.name==='plan_kind'?{...field,hidden:true}:field)};
 }
 

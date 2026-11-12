@@ -418,6 +418,8 @@ async def main():
     scheduler.add_job(process_panel_recharges, 'interval', minutes=1, args=[bot], id='panel_recharge_recovery', replace_existing=True)
     scheduler.add_job(reconcile_payg_jobs, 'interval', minutes=1, args=[scheduler], id='payg_job_gate', replace_existing=True)
     await reconcile_payg_jobs(scheduler)
+    from app.services.installation_counter import heartbeat
+    scheduler.add_job(heartbeat, 'interval', minutes=5, id='anonymous_installation_heartbeat', replace_existing=True, next_run_time=datetime.now(scheduler.timezone))
     scheduler.start()
     secondary_stop = asyncio.Event()
     secondary_task = asyncio.create_task(backup_bot_supervisor(secondary_stop))

@@ -32,6 +32,8 @@ MAX_HISTORY = 20
 _context = ContextVar('dbot_ui_context', default=None)
 _role = ContextVar('dbot_ui_role', default=None)
 _bypass = ContextVar('dbot_ui_internal_transport', default=False)
+_receipt_flow = ContextVar('dbot_receipt_flow', default=False)
+RECEIPT_ACTIONS=('order:approve:','order:reject:','wallet_topup:approve:','wallet_topup:reject:','resadmin:req_approve:','resadmin:req_reject:','pgadmin:approve:','pgadmin:reject:','paygwallet:review:')
 logger = logging.getLogger(__name__)
 CALLBACK_ACK_TIMEOUT = 3
 _redis = None
@@ -63,6 +65,14 @@ def navigation_page(fn):
             return await fn(*args, **kwargs)
     return wrapped
 
+
+def receipt_message(fn):
+    @wraps(fn)
+    async def wrapped(*args,**kwargs):
+        token=_receipt_flow.set(True)
+        try:return await fn(*args,**kwargs)
+        finally:_receipt_flow.reset(token)
+    return wrapped
 
 def terminal_delivery(fn):
     @wraps(fn)
@@ -336,7 +346,16 @@ async def _send_callback_answer(method, send):
 
 
 async def dispatch_ui_method(bot, method, send):
-    """One interception point covers both helpers and direct Message.answer calls."""
+    """One interception point covers helpers and direct Message.answer calls."""
+    if _receipt_flow.get():
+        name=getattr(method,'__api_method__','')
+        if name=='answerCallbackQuery':return await _send_callback_answer(method,send)
+        if name=='deleteMessage':return True
+        if name in ('editMessageText','editMessageCaption','editMessageMedia'):
+            text=getattr(method,'text',None) or getattr(method,'caption',None) or getattr(getattr(method,'media',None),'caption',None)
+            if text:return await send(SendMessage(chat_id=method.chat_id,text=text,reply_markup=getattr(method,'reply_markup',None),**_clean_kwargs(method,('parse_mode',))))
+            return _message(method.chat_id,method.message_id).as_(bot)
+        return await send(method)
     if _bypass.get():
         if getattr(method,'__api_method__','')=='answerCallbackQuery':return await _send_callback_answer(method,send)
         return await send(method)
@@ -616,6 +635,9 @@ class UnifiedUiMiddleware(BaseMiddleware):
     async def _run(self,handler,event,data,bot,chat,state):
         message=event.message if isinstance(event,CallbackQuery) else event
         record=await load_ui(bot,chat);route=event.data or '' if isinstance(event,CallbackQuery) else ''
+        initial_state=await state.get_state()
+        if isinstance(event,CallbackQuery) and (route=='noop' or route.startswith('noop:closed:')):
+            await event.answer();return
         if isinstance(event,CallbackQuery):
             active=record['active']
             if route.startswith('u:'):
@@ -630,6 +652,14 @@ class UnifiedUiMiddleware(BaseMiddleware):
                 await _expired_callback(bot,event,record,'این فرآیند تکمیل شده و دکمه‌های آن منقضی است.');return
             elif route!=RESTART and (event.message.message_id in record.get('retired',[]) or (active and event.message.message_id==active['id'] and active.get('nonce'))):
                 await _expired_callback(bot,event,record,'این دکمه قدیمی است؛ از دکمه‌های پیام فعلی استفاده کنید.');return
+        if (isinstance(event,CallbackQuery) and route.startswith(RECEIPT_ACTIONS)) or (isinstance(event,Message) and initial_state and 'receipt' in initial_state.lower()):
+            # Receipts are immutable artifacts, not navigation pages. Follow-up
+            # prompts/results get new messages; only their keyboard may change.
+            if isinstance(event,CallbackQuery) and record.get('active') and record['active']['id']==message.message_id:
+                record['active']=None;record['history']=[];await save_ui(bot,chat,record)
+            token=_receipt_flow.set(True)
+            try:return await handler(event,data)
+            finally:_receipt_flow.reset(token)
         if isinstance(event,CallbackQuery) and route!=RESTART and not (event.data or '').startswith('u:') and (not record['active'] or event.message.message_id!=record['active']['id']):
             old=record['active']
             if old:

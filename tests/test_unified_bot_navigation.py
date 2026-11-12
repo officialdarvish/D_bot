@@ -36,6 +36,8 @@ class Telegram(BaseSession):
   caption=getattr(method,'caption',None)
   photo=None
   if name=='sendPhoto':photo=[PhotoSize(file_id='photo-id',file_unique_id='photo-u',width=300,height=300)]
+  if name=='editMessageReplyMarkup' and previous:
+   caption=previous.caption;photo=previous.photo
   if name=='editMessageMedia':
    caption=method.media.caption;photo=[PhotoSize(file_id='photo-id',file_unique_id='photo-u',width=300,height=300)]
   msg=Message(message_id=mid,date=datetime.now(timezone.utc),chat=Chat(id=method.chat_id,type='private'),text=text,caption=caption,photo=photo,reply_markup=getattr(method,'reply_markup',None)).as_(bot)
@@ -311,3 +313,45 @@ async def test_proactive_completed_notice_has_only_restart_without_interrupting_
  assert notice.reply_markup.inline_keyboard[0][0].callback_data=='restart:start'
  assert len(notice.reply_markup.inline_keyboard)==1
  assert (await ui.load_ui(bot,11))['active']['id']==mid
+
+
+async def test_receipt_review_keeps_original_media_caption_and_status_button(env):
+ bot,tg,dp,text,click,events=env
+ router=dp.sub_routers[0]
+ @router.callback_query(F.data=='order:approve:999')
+ async def review(c):
+  status=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Approved',callback_data='noop')]])
+  await c.message.edit_reply_markup(reply_markup=status)
+  await c.message.edit_caption(caption='Next approval step')
+  await c.message.delete()
+  await c.message.answer('Buyer delivery result')
+ receipt=await bot.send_photo(11,'receipt-file',caption='Original receipt caption',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Approve',callback_data='order:approve:999')]]))
+ begin=len(tg.calls);await click('Approve',msg=receipt)
+ mutations=[m for m in tg.calls[begin:] if getattr(m,'message_id',None)==receipt.message_id]
+ assert [m.__api_method__ for m in mutations]==['editMessageReplyMarkup']
+ assert tg.messages[receipt.message_id].caption=='Original receipt caption'
+ assert tg.messages[receipt.message_id].reply_markup.inline_keyboard[0][0].text=='Approved'
+ assert any(m.__api_method__=='sendMessage' and m.text=='Next approval step' for m in tg.calls[begin:])
+ assert any(m.__api_method__=='sendMessage' and m.text=='Buyer delivery result' for m in tg.calls[begin:])
+
+
+async def test_customer_receipt_upload_is_not_deleted_by_navigation_cleanup(env):
+ bot,tg,dp,text,click,events=env
+ class ReceiptSubmit(StatesGroup):receipt=State()
+ @dp.sub_routers[0].message(ReceiptSubmit.receipt,F.photo)
+ async def receive(m,state):await state.clear();await m.answer('Receipt received')
+ state=dp.fsm.get_context(bot=bot,chat_id=11,user_id=11);await state.set_state(ReceiptSubmit.receipt)
+ incoming=Message(message_id=77,date=datetime.now(timezone.utc),chat=Chat(id=11,type='private'),from_user=User(id=11,is_bot=False,first_name='Buyer'),photo=[PhotoSize(file_id='original',file_unique_id='original-u',width=100,height=100)],caption='User receipt').as_(bot)
+ tg.messages[77]=incoming
+ await dp.feed_update(bot,Update(update_id=909,message=incoming))
+ assert 77 in tg.messages and tg.messages[77].caption=='User receipt'
+ assert not any(m.__api_method__=='deleteMessage' and m.message_id==77 for m in tg.calls)
+
+async def test_waiting_for_receipt_still_allows_normal_back_navigation(env):
+ bot,tg,dp,text,click,events=env
+ class AwaitReceipt(StatesGroup):receipt=State()
+ await text('/start');await click('Admin');await click('Form')
+ state=dp.fsm.get_context(bot=bot,chat_id=11,user_id=11)
+ await state.set_state(AwaitReceipt.receipt)
+ await click('🔙 بازگشت')
+ assert tg.messages[(await ui.load_ui(bot,11))['active']['id']].text=='Admin'

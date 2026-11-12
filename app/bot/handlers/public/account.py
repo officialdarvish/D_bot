@@ -1,3 +1,4 @@
+from app.bot.ui_navigation import receipt_message
 from datetime import datetime
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
@@ -33,6 +34,7 @@ def status_only_keyboard(text: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=text, callback_data='noop')]
     ])
 
+@receipt_message
 async def mark_message_status(callback: CallbackQuery, text: str) -> None:
     try:
         await callback.message.edit_reply_markup(reply_markup=status_only_keyboard(text))
@@ -45,6 +47,7 @@ def approved_only_keyboard(text: str = '✅ تایید شد') -> InlineKeyboardM
         [InlineKeyboardButton(text=text, callback_data='noop')]
     ])
 
+@receipt_message
 async def replace_admin_receipt_buttons(callback: CallbackQuery, text: str = '✅ تایید شد') -> None:
     try:
         await callback.message.edit_reply_markup(reply_markup=approved_only_keyboard(text))

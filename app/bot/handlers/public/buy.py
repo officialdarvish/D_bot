@@ -1,3 +1,4 @@
+from app.bot.ui_navigation import receipt_message
 from app.bot.ui_navigation import terminal_delivery
 from datetime import datetime, timedelta
 import asyncio
@@ -104,6 +105,7 @@ def status_only_keyboard(text: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=text, callback_data='noop')]
     ])
 
+@receipt_message
 async def mark_message_status(callback: CallbackQuery, text: str) -> None:
     try:
         await callback.message.edit_reply_markup(reply_markup=status_only_keyboard(text))
@@ -128,12 +130,14 @@ def failed_retry_keyboard(order_id: int, *, is_renewal: bool = False) -> InlineK
         [InlineKeyboardButton(text='❌ رد رسید', callback_data=f'order:reject:{order_id}')],
     ])
 
+@receipt_message
 async def replace_admin_receipt_buttons(callback: CallbackQuery, text: str = '✅ تایید شد') -> None:
     try:
         await callback.message.edit_reply_markup(reply_markup=approved_only_keyboard(text))
     except Exception:
         pass
 
+@receipt_message
 async def edit_admin_receipt_keyboard(bot, chat_id: int | None, message_id: int | None, reply_markup: InlineKeyboardMarkup) -> None:
     if not bot or chat_id is None or message_id is None:
         return
@@ -142,6 +146,7 @@ async def edit_admin_receipt_keyboard(bot, chat_id: int | None, message_id: int 
     except Exception:
         pass
 
+@receipt_message
 async def send_admin_notice(bot, chat_id: int | None, text: str, reply_markup: InlineKeyboardMarkup | None = None) -> None:
     if not bot or chat_id is None:
         return

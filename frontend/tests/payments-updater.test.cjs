@@ -109,3 +109,48 @@ test('Failed updates show stage, exit code and accurate recovery even without a 
  assert.ok(text().includes('previous version was not replaced'));assert.ok(text().includes('update-job.log'));
  assert.ok(!text().includes('Previous source recovery: False'));
 });
+
+test('English Version never renders Persian from bilingual server errors or notes',async()=>{
+ global.fetch=async()=>response({...updateInfo(),check_error:'Update check unavailable / بررسی آپدیت در دسترس نیست',job:{state:'failed',error:'Host command failed / اجرای فرمان ناموفق بود; phase=building; Previous version retained / نسخه قبلی حفظ شد'}});
+ await render(React.createElement(SystemUpdate));
+ assert.equal(/[\u0600-\u06ff]/.test(document.querySelector('.version-card').textContent),false);
+ await click('Details and update');
+ assert.equal(/[\u0600-\u06ff]/.test(document.querySelector('[role="dialog"]').textContent),false);
+ assert.ok(text().includes('Host command failed'));
+});
+
+// Exercise the actual plan form and its renderer, without importing unrelated pages.
+function planComponents(){
+ const source=fs.readFileSync(path.join(frontend,'components/admin-dashboard.tsx'),'utf8');
+ const ast=ts.createSourceFile('dashboard.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+ const names=new Set(['serverOptions','planForm','resellerPlanForm','FormModal']);
+ const pieces=ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&names.has(n.name?.text)).map(n=>n.getText(ast)).join('\n');
+ const compiled=ts.transpileModule(pieces,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2020}}).outputText;
+ const {AdminDialog}=require('../components/admin-dialog.tsx'),{X,CheckCircle2}=require('lucide-react');
+ const motion={div:({children,initial,animate,...props})=>React.createElement('div',props,children)};
+ return new Function('exports','require','useState','useRef','motion','AdminDialog','X','CheckCircle2',compiled+';return {planForm,resellerPlanForm,FormModal};')({},require,React.useState,React.useRef,motion,AdminDialog,X,CheckCircle2);
+}
+for(const reseller of [false,true])test(`Plan switches between fixed and custom fields, omits hidden values (${reseller?'reseller':'public'})`,async()=>{
+ const {planForm,resellerPlanForm,FormModal}=planComponents();
+ const servers=[{id:1,name:'Sanaei',server_type:'xui',inbound_ids:[1]}];
+ const form=(reseller?resellerPlanForm:planForm)([{value:1,label:'Category'}],servers);
+ form.defaults={...form.defaults,title:'Custom',server_id:1,category_id:1,custom_min_gb:1,custom_max_gb:100,custom_min_days:1,custom_max_days:90,custom_price_gb:10000,custom_price_day:1000,volume_gb:50,duration_days:30};
+ const posted=[];
+ await render(React.createElement(FormModal,{modal:form,onClose:()=>{},onSubmit:async v=>posted.push(v),show:()=>{},onAuthRequired:()=>{}}));
+ const field=name=>document.querySelector(`.field-${name}`);
+ assert.ok(field('volume_gb'));assert.equal(field('custom_min_gb'),null);
+ await act(async()=>{const select=field('custom_enabled').querySelector('select');select.value='yes';select.dispatchEvent(new window.Event('change',{bubbles:true}))});
+ assert.equal(field('volume_gb'),null);assert.equal(field('duration_days'),null);assert.equal(field('price_irt'),null);assert.equal(field('price_usd'),null);assert.equal(field('reseller_validity_days'),null);
+ for(const name of ['custom_min_gb','custom_max_gb','custom_min_days','custom_max_days','custom_price_gb','custom_price_day','server_id','inbound_mode'])assert.ok(field(name),name);
+ assert.equal(field('pricing_currency').querySelectorAll('option').length,1);
+ await act(async()=>document.querySelector('form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));
+ assert.equal(posted.length,1);assert.equal(posted[0].custom_enabled,'yes');assert.equal(posted[0].pricing_currency,'IRT');
+ for(const name of ['volume_gb','duration_days','price_irt','price_usd','reseller_validity_days'])assert.equal(posted[0][name],undefined,name);
+ await act(async()=>{const select=field('custom_enabled').querySelector('select');select.value='no';select.dispatchEvent(new window.Event('change',{bubbles:true}))});
+ assert.ok(field('volume_gb'));assert.equal(field('custom_min_gb'),null);assert.ok(field(reseller?'reseller_validity_days':'duration_days'));
+});
+test('Editing custom plan preserves enabled mode and saved ranges',async()=>{
+ const {planForm,FormModal}=planComponents();const modal=planForm([],[{id:1,name:'NX',server_type:'nx',inbound_ids:[1]}],{id:2,title:'Custom',server_id:1,custom_tariff:{enabled:true,min_gb:4,max_gb:50,min_days:7,max_days:90,price_gb:100,price_day:10}});
+ await render(React.createElement(FormModal,{modal,onClose:()=>{},onSubmit:async()=>{},show:()=>{},onAuthRequired:()=>{}}));
+ assert.equal(document.querySelector('.field-custom_enabled select').value,'yes');assert.equal(document.querySelector('.field-custom_min_gb input').value,'4');assert.equal(document.querySelector('.field-volume_gb'),null);assert.ok(document.querySelector('.field-hwid_limit'));
+});

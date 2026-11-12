@@ -1,0 +1,15 @@
+services:
+  counter:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9080:8080"
+    volumes:
+      - counter_data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+volumes:
+  counter_data:

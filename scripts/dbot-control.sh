@@ -1185,6 +1185,7 @@ case "${1}" in
   backup-keys) cd_app; $COMPOSE exec -T api python scripts/backup_crypto_cli.py recovery-keys ;;
   backups|backup-manager|delete-backup|delete-backups) backup_manager ;;
   backup-list|list-backups) header; show_backup_inventory || true ;;
+  disk|diagnose-disk) cd_app; python3 "$APP_DIR/scripts/dbot-disk-report.py" ;;
   memory|diagnose-memory) cd_app; python3 "$APP_DIR/scripts/dbot-memory-report.py" ;;
   status) show_status ;;
   secrets|credentials) credentials_center ;;

@@ -7,6 +7,11 @@ import {fetchJson,submitForm} from '@/lib/api';
 import {useUiLanguage} from '@/lib/ui-language';
 type Job={id?:string;state:string;error?:string;backup?:string;phase?:string;exit_code?:number;recovery?:string;log_file?:string};
 type Info={installed:{version:string;build:number};latest?:{version:string;build:number;notes:{fa:string;en:string}};available:boolean;commit?:string;host_ready:boolean;host?:{reason:string;bootstrap_command:string};check_error?:string;job:Job};
+export function updateText(value:string|undefined,fa:boolean){
+ if(!value)return '';
+ const localized=value.split(';').map(part=>{const halves=part.split(' / ');return (fa?halves[halves.length-1]:halves[0]).trim()}).join('; ');
+ return !fa&&/[\u0600-\u06ff]/.test(localized)?'Update information is unavailable. Check the VPS connection and try again.':localized;
+}
 export function SystemUpdate(){
  const {language}=useUiLanguage(),fa=language==='fa';
  const [info,setInfo]=useState<Info|null>(null),[open,setOpen]=useState(false),[busy,setBusy]=useState(false),[checking,setChecking]=useState(false),[error,setError]=useState(''),[fetchError,setFetchError]=useState('');
@@ -25,12 +30,12 @@ export function SystemUpdate(){
   <div className="version-host"><Server size={15}/><span className={`badge ${info?.host_ready?'green':'yellow'}`}>{info?.host_ready?(fa?'متصل به VPS':'VPS connected'):(fa?'اجراکننده VPS آماده نیست':'VPS worker unavailable')}</span></div>
   {info?.available&&info.latest&&<p className="muted">{fa?'نسخه جدید:':'Latest:'} <b dir="ltr">v{info.latest.version} · {info.latest.build}</b></p>}
   {running&&<p role="status">{jobLabels[info!.job.state]}</p>}
-  {problem&&!running&&<p className="settings-error" role="alert">{problem}</p>}
+  {problem&&!running&&<p className="settings-error" role="alert">{fa?'بررسی آپدیت ناموفق بود؛ جزئیات را باز کنید.':'Update check failed. Open details.'}</p>}
   <div className="settings-actions"><button type="button" className={`btn ${info?.available?'primary':''}`} onClick={()=>setOpen(true)} disabled={!info}><Download size={16}/>{fa?'جزئیات و آپدیت':'Details and update'}</button><button type="button" className="btn" onClick={()=>{setError('');void load(true)}} disabled={busy||checking||running} aria-label={fa?'بررسی دوباره':'Check again'}><RefreshCw size={16}/></button></div>
   {open&&createPortal(<AdminDialog label={fa?'به‌روزرسانی D BOT':'Update D BOT'} onClose={()=>setOpen(false)} busy={busy}><section className="modal-card version-dialog" data-no-i18n="true" dir={fa?'rtl':'ltr'}>
    <div className="modal-head"><h2>{fa?'به‌روزرسانی D BOT':'Update D BOT'}</h2><button type="button" className="btn" onClick={()=>setOpen(false)} disabled={busy} aria-label={fa?'بستن':'Close'}><X size={18}/></button></div>
    <p>{fa?'نسخه نصب‌شده:':'Installed:'} <b dir="ltr">v{info?.installed.version} · {info?.installed.build}</b></p>
-   {info?.latest&&<><p>{fa?'آخرین نسخه:':'Latest:'} <b dir="ltr">v{info.latest.version} · {info.latest.build}</b></p><p className="version-notes">{info.latest.notes?.[fa?'fa':'en']}</p></>}
+   {info?.latest&&<><p>{fa?'آخرین نسخه:':'Latest:'} <b dir="ltr">v{info.latest.version} · {info.latest.build}</b></p><p className="version-notes">{updateText(info.latest.notes?.[fa?'fa':'en'],fa)}</p></>}
    <p className="muted">{fa?'با تأیید، درخواست به اجراکننده همین VPS ارسال می‌شود. ابتدا دیتابیس پشتیبان‌گیری، سپس ربات ساخته و راه‌اندازی مجدد می‌شود. پنل در زمان راه‌اندازی موقتاً قطع می‌شود.':'Confirmation sends the request to this VPS worker. It backs up the database, builds and restarts the bot. The panel is temporarily unavailable while restarting.'}</p>
    {!info?.host_ready&&!running&&<div className="settings-error" id="vps-update-help"><p>{hostMessages[info?.host?.reason||'worker_missing']||hostMessages.worker_offline}</p><p>{fa?'برای نصب یا بازیابی اتصال، یک‌بار روی همین VPS اجرا کنید؛ آپدیت‌های بعدی از همین پنل انجام می‌شوند.':'Run this once on this VPS to install or restore the connection. Future updates run from this panel.'}</p><code dir="ltr">{info?.host?.bootstrap_command||'sudo dbot update'}</code><button type="button" className="btn" disabled={checking} onClick={()=>void load(true)}>{fa?'بررسی اتصال VPS':'Check VPS connection'}</button></div>}
    {info?.job&&jobLabels[info.job.state]&&<p role="status">{jobLabels[info.job.state]}</p>}
@@ -43,7 +48,7 @@ export function SystemUpdate(){
     {info.job.log_file&&<p className="version-notes">{fa?'فایل جزئیات روی VPS در پوشه .web-update:':'Detail file in the VPS .web-update directory:'} <code>{info.job.log_file}</code></p>}
    </div>}
 
-   {(error||(!running&&fetchError)||info?.job.error||info?.check_error)&&<p className="settings-error" role="alert">{error||(!running&&fetchError)||info?.job.error||info?.check_error}</p>}
+   {(error||(!running&&fetchError)||info?.job.error||info?.check_error)&&<p className="settings-error" role="alert">{updateText(error||(!running&&fetchError)||info?.job.error||info?.check_error||'',fa)}</p>}
    {!info?.available&&!running&&<p className="muted">{fa?'آپدیت جدیدی برای نصب موجود نیست.':'No new update is available to install.'}</p>}
    <div className="settings-actions"><button type="button" className="btn primary" disabled={confirmDisabled} onClick={()=>void start()}><Download size={16}/>{busy?(fa?'در حال ثبت درخواست…':'Sending request…'):running?(fa?'آپدیت در حال اجرا است':'Update in progress'):(fa?'تأیید و آپدیت VPS':'Confirm and update VPS')}</button><button type="button" className="btn" onClick={()=>setOpen(false)} disabled={busy}>{fa?'بستن':'Close'}</button></div>
   </section></AdminDialog>,document.body)}
