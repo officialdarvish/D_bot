@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 2,
+  "build": 3,
   "channel": "main",
   "notes": {
-    "fa": "بازطراحی ماژول‌ها، کارت نسخه در داشبورد، اعمال متن سفارشی تست و اصلاح ادغام سرورها با حفظ مسیر پرداخت",
-    "en": "Redesigned module controls, dashboard version card, saved trial text delivery and role-aware server consolidation"
+    "fa": "تنظیم Darvish Bridge از Payments و اصلاح تأیید، صف و اتصال آپدیت به اجراکننده VPS",
+    "en": "Configure Darvish Bridge from Payments; fix update confirmation, atomic queue and VPS worker connection"
   }
 }

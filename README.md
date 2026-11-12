@@ -143,3 +143,5 @@ Built with ❤️ by [Darvish](https://github.com/officialdarvish)
 ## Version 1.4.0 — setup and integrations
 
 This branch adds manifest-based web updates, resumable bilingual setup, shared public/reseller connections, NX lifecycle/profiles and Darvish Bridge payments. Published as 1.4.0 at the maintainer’s request; live VPS/PostgreSQL and provider validation remains outstanding. See [status](docs/WEB_SETUP_UPDATE_STATUS_FA.md), [NX](docs/NX_PANEL_FA.md), [Bridge setup](docs/DARVISH_BRIDGE_CONNECTION_FA.md), [migration policy](docs/SERVER_CONNECTION_MIGRATION_FA.md) and [validation](docs/VALIDATION_WEB_SETUP.md).
+
+In **Payments → + Add Payment**, choose **Darvish Bridge** to configure its HTTPS URL, bot, currency and credentials. Existing connections are edited from their Payments card. The Version card shows whether the VPS worker is connected. Older installations need `sudo dbot update` once to install/repair the systemd worker; subsequent confirmations run the backup, build and restart on that VPS. See [web update status](docs/WEB_SETUP_UPDATE_STATUS_FA.md).

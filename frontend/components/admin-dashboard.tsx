@@ -1,5 +1,5 @@
 'use client';
-import {BridgeSettings} from '@/components/bridge-settings';
+import {PaymentMethods} from '@/components/payment-methods';
 import {ModuleSettings} from '@/components/module-settings';
 import {SystemUpdate} from '@/components/system-update';
 import { ResellerActivityCard } from '@/components/reseller-activity-card';
@@ -1098,7 +1098,7 @@ function PaymentsSection({ query, reloadKey, setAuthRequired, openModal, runActi
   if (payments.error || !payments.data) return <EmptyState message={payments.error || 'Payments could not be loaded.'} />;
   const paymentServers = (srvs.data?.items || []).filter((server) => server.is_active || payments.data?.items.some(p => p.server_id === server.id));
   const rows = filterItems(payments.data.items, query, ['owner_name', 'card_number', 'server_type']);
-  return <><div className="filterbar"><button className="btn primary" onClick={() => openModal(paymentForm(paymentServers))}><Plus size={16} /> Add Payment</button><span className="badge">{rows.length} accounts</span></div><div className="section-grid">{!rows.length && <EmptyState message="No items found. Add an item or clear the search." />}{rows.map((p) => <EntityCard key={p.id} title={p.owner_name} icon={<CreditCard />} badge={p.server_type === 'panel_reseller' ? 'Reseller panel' : p.server_type === 'reseller' ? 'Reseller' : 'Public'} badgeClass={p.is_active ? 'green' : 'red'} kvs={[["Card / Account", p.card_number], ['Server Type', p.server_type], ['Server ID', p.server_id || '-'], ['Receipt reviewer', p.reviewer_telegram_id || 'Main admins']]} actions={<><button className="btn" onClick={() => openModal(paymentForm(paymentServers, p))}>Edit</button><button className="btn danger" onClick={() => runAction(`/admin/payments/${p.id}/delete`, 'Payment account deleted')}>Delete</button></>} />)}</div></>;
+  return <PaymentMethods addCard={() => openModal(paymentForm(paymentServers))} accountCount={rows.length} query={query} reloadKey={reloadKey} setAuthRequired={setAuthRequired}>{rows.map((p) => <EntityCard key={p.id} title={p.owner_name} icon={<CreditCard />} badge={p.server_type === 'panel_reseller' ? 'Reseller panel' : p.server_type === 'reseller' ? 'Reseller' : 'Public'} badgeClass={p.is_active ? 'green' : 'red'} kvs={[["Card / Account", p.card_number], ['Server Type', p.server_type], ['Server ID', p.server_id || '-'], ['Receipt reviewer', p.reviewer_telegram_id || 'Main admins']]} actions={<><button className="btn" onClick={() => openModal(paymentForm(paymentServers, p))}>Edit</button><button className="btn danger" onClick={() => runAction(`/admin/payments/${p.id}/delete`, 'Payment account deleted')}>Delete</button></>} />)}</PaymentMethods>;
 }
 
 function DiscountsSection({ query, reloadKey, setAuthRequired, openModal, runAction }: any) {
@@ -1491,7 +1491,7 @@ function SettingsSection({ reloadKey, setAuthRequired, openModal, show }: any) {
   const loginUrl = map.web_login_url || (domain ? `${baseUrl}/${map.web_path || 'dbot'}/login` : '-');
 
   return <div className="section-grid settings-grid" data-no-i18n="true" dir={language === 'fa' ? 'rtl' : 'ltr'}>
-    <ModuleSettings/><BridgeSettings/>
+    <ModuleSettings/>
     <BotHomeSettings map={map} show={show} setAuthRequired={setAuthRequired} />
 
     <EntityCard
