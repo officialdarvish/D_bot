@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 6,
+  "build": 7,
   "channel": "main",
   "notes": {
-    "fa": "بازگشت ظاهر چهار کارت آماری و چیدمان افقی System Status کنار Version، سپس نمودار درآمد و سفارش‌های اخیر",
-    "en": "Restore summary card styling; System Status beside Version, followed by revenue and recent orders"
+    "fa": "سوابق کاربران، فرم شرطی پلن، انتقال پیام خانه به Custom، شمارنده نصب، حفظ رسیدها و پاک‌سازی دوره‌ای دیسک",
+    "en": "User history, conditional plan forms, home message in Custom, installation counter, receipt preservation and periodic disk maintenance"
   }
 }

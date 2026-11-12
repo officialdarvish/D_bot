@@ -107,3 +107,11 @@ The final updater also marks source switching before checkout so a partial check
 The first four summary cards are restored to their pre-build-4 markup and responsive styles. Below them, System Status renders four resource tiles horizontally alongside Version on desktop. Revenue Overview occupies the next full-width section; Recent Orders follows it. Narrow screens preserve the section order, stack Status/Version and use two resource columns when needed. The obsolete horizontal-summary-strip CSS and former status-column wrapper were removed.
 
 Next.js production build with TypeScript and whitespace checks passed. This reversible layout-only correction does not alter backend behavior; backend tests were not rerun. No graphical browser/VPS visual validation was performed. update.json advances to build 6 and existing v1.4.0 release assets/tag remain unchanged.
+
+## 1.4.0 build 7 — history, conditional plans, receipt and disk maintenance
+
+Full suite: **1260 passed, the same 12 baseline failures, 3 subtests passed**. After the final receipt Back-navigation guard, the focused run covering real aiogram dispatch, user history/auth/isolation, custom public/reseller checkout, receipt auditing/inbox, and disk maintenance passed **84 tests**. Frontend DOM interaction tests passed **11 tests**, including fixed/custom form switching and preserving saved custom bounds. Next.js production export and TypeScript checks passed; Python compilation, shell syntax, and `git diff --check` passed. Generated frontend exports are not committed.
+
+The counter's local tests cover deduplication, expiration, malformed/oversized requests, hash-only storage, absent list routes, disabled reporting and stable identity. Its separate service is prepared but has no configured/live HTTPS endpoint. No real VPS disk measurements, Docker/systemd cleanup or update/recovery execution, live Telegram/provider purchase, central counter deployment, or graphical browser validation was performed. Operational validation remains necessary on the actual host. See MAINTENANCE_AND_HISTORY_BUILD7.md and integrations/installation_counter/README.md.
+
+The manifest advances to build 7; the existing v1.4.0 release tag/assets remain unchanged.

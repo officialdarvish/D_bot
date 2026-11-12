@@ -97,3 +97,38 @@ def test_cleanup_requires_authentication_and_csrf(artifacts,monkeypatch):
         assert response.status_code==403
         response=c.post('/admin/api/v2/disk-cleanup',headers={'Accept':'application/json','X-CSRF-Token':'valid-token'})
         assert response.status_code==200
+
+
+def test_backup_temporaries_expire_at_24_hours_and_running_update_is_preserved(artifacts,tmp_path,monkeypatch):
+ import json
+ queue=tmp_path/'queue';queue.mkdir();monkeypatch.setattr(clean,'QUEUE_DIR',queue)
+ backup=artifacts/'dbot-artifact-old.dbot';backup.write_bytes(b'backup')
+ general=artifacts/'dbot-artifact-old.png';general.write_bytes(b'image')
+ expired=queue/'database-12345678-1234-1234-1234-123456789abc.sql';expired.write_bytes(b'dump')
+ current=queue/'database-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.sql';current.write_bytes(b'active')
+ (queue/'status.json').write_text(json.dumps({'id':'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','state':'building'}))
+ clock=max(p.stat().st_ctime for p in [backup,general,expired,current])+25*3600
+ monkeypatch.setattr(clean.time,'time',lambda:clock)
+ newer=artifacts/'dbot-artifact-new.json';newer.write_bytes(b'new');os.utime(newer,(clock,clock))
+ assert clean.cleanup_artifacts()['files']==2
+ result=clean.cleanup_artifacts(delete=True)
+ assert result['groups']['temporary_backups']['files']==1 and result['groups']['update_backups']['files']==1
+ assert not backup.exists() and not expired.exists() and current.exists() and general.exists() and newer.exists()
+
+
+def test_host_maintenance_runs_every_45_days_and_never_prunes_volumes(tmp_path):
+ import importlib.util,json
+ spec=importlib.util.spec_from_file_location('maintenance',Path('scripts/host-maintenance.py'));module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+ private=tmp_path/'private';private.mkdir();app=tmp_path/'app';app.mkdir();(app/'.web-update').mkdir()
+ for i in range(4):
+  ident=f'{i:08x}-1234-1234-1234-123456789abc'
+  path=private/f'recovery-{ident}.json';path.write_text(json.dumps({'services':{'api':{'image':'dbot-recovery-api:'+f'{i:032x}'}}}))
+  os.utime(path,(100+i,100+i))
+ clock=max(p.stat().st_ctime for p in private.glob('recovery-*'))+module.INTERVAL+60
+ calls=[];result=module.maintain(app,private,lambda args:calls.append(args),clock)
+ assert result['due'] and result['retired_recovery_files']==2
+ assert len(list(private.glob('recovery-*')))==2
+ assert any(c[:3]==['docker','builder','prune'] and 'until=1080h' in c for c in calls)
+ assert not any('volume' in c or 'system' in c or 'container' in c for c in calls)
+ count=len(calls);assert module.maintain(app,private,lambda args:calls.append(args),clock+module.INTERVAL-1)=={'due':False}
+ assert len(calls)==count

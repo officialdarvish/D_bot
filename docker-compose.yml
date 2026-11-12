@@ -1,6 +1,13 @@
+x-logging: &dbot_logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:16-alpine
+    logging: *dbot_logging
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-d_bot}
@@ -16,6 +23,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    logging: *dbot_logging
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
@@ -35,11 +43,7 @@ services:
         XRAY_SOURCE: ${XRAY_SOURCE:-image}
         XRAY_IMAGE: ${XRAY_IMAGE:-ghcr.io/xtls/xray-core:26.9.9@sha256:45338c4df61fda061c47ce62aafda6c5d7d59cbdefc33f2e335d8b0c748b748a}
         XRAY_VERSION: ${XRAY_VERSION:-26.9.9}
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *dbot_logging
     restart: unless-stopped
     env_file:
       - .env
@@ -69,11 +73,7 @@ services:
   bot:
     image: ${DBOT_IMAGE:-dbot-runtime:local}
     pull_policy: never
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *dbot_logging
     restart: unless-stopped
     env_file:
       - .env
@@ -83,6 +83,7 @@ services:
     volumes:
       # Same read-only mount for service creation/renew/delete from the bot.
       - /opt/mikrotik-panel:/host/opt/mikrotik-panel:ro
+      - installation_identity:/var/lib/dbot/installation
       - backup_keys:/var/lib/dbot/backup
       - disposable_artifacts:/tmp/dbot-artifacts
     depends_on:
@@ -96,3 +97,4 @@ volumes:
   redis_data:
   backup_keys:
   disposable_artifacts:
+  installation_identity:

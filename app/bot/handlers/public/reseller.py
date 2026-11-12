@@ -1,8 +1,10 @@
 from __future__ import annotations
+from app.bot.ui_navigation import receipt_message
 from app.bot.ui_navigation import terminal_delivery
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from aiogram import Router, F
+from aiogram.filters import StateFilter
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select, func, or_
@@ -72,6 +74,7 @@ def status_only_keyboard(text: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=text, callback_data='noop')]
     ])
 
+@receipt_message
 async def mark_message_status(callback: CallbackQuery, text: str) -> None:
     try:
         await callback.message.edit_reply_markup(reply_markup=status_only_keyboard(text))
@@ -278,7 +281,8 @@ async def _prepare_reseller_quote(state: FSMContext, package: ResellerPackage, *
             _,account=await get_user_reseller(s,telegram_id)
             if account:
                 from app.services.reseller_service import reseller_package_server_ids
-                if not package.is_active or not package.server_id or package.server_id not in reseller_package_server_ids(account):
+                from app.services.custom_tariff import package_available
+                if not package_available(package,telegram_id) or not package.server_id or package.server_id not in reseller_package_server_ids(account):
                     raise LivePricingError('بسته حجمی متعلق به سرور مجاز نمایندگی نیست.')
             personal=await profile(s,f'account:{account.id}') if account else {}
             if personal.get('volume_rate'):
@@ -909,8 +913,15 @@ async def reseller_pkg(callback: CallbackQuery, state: FSMContext):
     async with SessionLocal() as session:
         pkg = await session.get(ResellerPackage, pid)
         server = await session.get(Server, pkg.server_id) if pkg else None
-    if not pkg:
+    from app.services.custom_tariff import normalize,package_available
+    if not package_available(pkg,callback.from_user.id):
         await callback.answer('بسته پیدا نشد.', show_alert=True); return
+    policy=normalize((pkg.meta or {}).get('custom_tariff'))
+    if policy:
+        await state.set_state('reseller_custom_selection')
+        await state.update_data(custom_package_id=pid)
+        await edit_or_answer(callback,f"حجم و روز را با فاصله وارد کنید. مثال: 20 30\nGB: {policy['min_gb']}–{policy['max_gb']} | Days: {policy['min_days']}–{policy['max_days']}",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('reseller:topup')]]))
+        await callback.answer();return
     if callback.from_user.id in settings.admin_ids:
         async with SessionLocal() as session:
             user = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
@@ -950,6 +961,28 @@ async def reseller_pkg(callback: CallbackQuery, state: FSMContext):
         'اگر کد تخفیف دارید، ابتدا روی اعمال کد تخفیف بزنید.'
     )
     await edit_or_answer(callback, text, reply_markup=reseller_payment_kb(pid)); await callback.answer()
+
+@router.message(StateFilter('reseller_custom_selection'))
+async def reseller_custom_selection(message:Message,state:FSMContext):
+    from app.services.custom_tariff import reseller_selection,reseller_snapshot
+    data=await state.get_data()
+    try:
+        parts=(message.text or '').split()
+        if len(parts)!=2:raise ValueError('حجم و روز را با فاصله وارد کنید. مثال: 20 30')
+        async with SessionLocal() as session:
+            pkg=await session.get(ResellerPackage,int(data.get('custom_package_id') or 0))
+            if not pkg or not pkg.is_active:raise ValueError('بسته فعال نیست.')
+            _,account=await get_user_reseller(session,message.from_user.id)
+            from app.services.reseller_service import reseller_package_server_ids
+            if message.from_user.id not in settings.admin_ids and (not account or pkg.server_id not in reseller_package_server_ids(account)):raise ValueError('بسته در دسترس نیست.')
+            selected=reseller_selection(pkg,*parts)
+            row=await reseller_snapshot(session,selected,message.from_user.id)
+            await session.commit();pid=row.id
+        await state.set_state(None)
+        await ui_message(message,f'GB: {selected.volume_gb} | Days: {selected.reseller_validity_days}\n{selected.price_irt:,} تومان',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ادامه / Continue',callback_data=f'reseller:pkg:{pid}')],[back_button('reseller:topup')]]))
+    except (ValueError,TypeError) as exc:
+        await ui_message(message,str(exc))
+
 
 @router.callback_query(F.data == 'reseller:discount')
 async def reseller_discount_start(callback: CallbackQuery, state: FSMContext):

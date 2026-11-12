@@ -336,6 +336,6 @@ async def panel_account_limits(session,user_id,rows,available_bytes=0,*,hold=Fal
 async def quote_package(session,account,package,*,force_refresh=False):
     from app.services.live_pricing import PriceQuote,quote_plan
     p=await profile(session,f'account:{account.id}') if account else {}
-    rate=int(p.get('volume_rate',0))
+    rate=0 if (package.meta or {}).get('custom_selection') else int(p.get('volume_rate',0))
     if rate>0:return PriceQuote(currency='IRT',amount_irt=rate*int(package.volume_gb),source='reseller_volume_tariff')
     return await quote_plan(package,force_refresh=force_refresh)

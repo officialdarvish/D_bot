@@ -209,14 +209,18 @@ def main():
     fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     threading.Thread(target=heartbeat,daemon=True).start()
     while True:
-        if (QUEUE/'request.json').exists() or (QUEUE/'request.json').is_symlink():
-            if process_update():
-                run(['systemctl','restart','--no-block','dbot-web-update.service'],timeout=30)
-                return
-            continue
-        try:apply_runtime()
-        except Exception:
-            import traceback;traceback.print_exc()
+        refresh=False
+        with os.fdopen(os.open(PRIVATE/'operation.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600),'r+') as operation:
+            fcntl.flock(operation,fcntl.LOCK_EX)
+            if (QUEUE/'request.json').exists() or (QUEUE/'request.json').is_symlink():
+                refresh=process_update()
+            else:
+                try:apply_runtime()
+                except Exception:
+                    import traceback;traceback.print_exc()
+        if refresh:
+            run(['systemctl','restart','--no-block','dbot-web-update.service'],timeout=30)
+            return
         time.sleep(3)
 
 

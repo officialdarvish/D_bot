@@ -19,7 +19,28 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
+install -m 700 "$app_dir/scripts/host-maintenance.py" /usr/local/lib/dbot-host-maintenance.py
+cat > /etc/systemd/system/dbot-maintenance.service <<EOF
+[Unit]
+Description=D BOT disposable cache and temporary backup maintenance
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/dbot-host-maintenance.py "$app_dir"
+EOF
+cat > /etc/systemd/system/dbot-maintenance.timer <<'EOF'
+[Unit]
+Description=Check D BOT 45-day maintenance schedule
+[Timer]
+OnBootSec=10min
+OnCalendar=daily
+Persistent=true
+[Install]
+WantedBy=timers.target
+EOF
 systemctl daemon-reload
+systemctl enable --now dbot-maintenance.timer
 systemctl enable dbot-web-update.service
 if [ "${1:-}" != '--defer-restart' ]; then
   rm -f "$app_dir/.web-update/ready"

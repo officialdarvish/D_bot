@@ -304,7 +304,7 @@ async def panel_sale_approve(callback: CallbackQuery):
     await callback.message.answer('✅ پنل ساخته شد و مشخصات ورود ارسال شد.' if sent else
         f'⚠️ پنل ساخته شد اما ارسال تلگرام ناموفق بود؛ در سفارش #{oid} دکمه ارسال دوباره مشخصات موجود است.')
     try:
-        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='✅ تایید شد',callback_data='noop')]]))
     except Exception: pass
 
 
@@ -333,7 +333,7 @@ async def panel_sale_reject(callback: CallbackQuery):
         await callback.message.bot.send_message(destination, f'❌ رسید خرید پنل نمایندگی (سفارش #{oid}) تأیید نشد. برای پیگیری به پشتیبانی پیام دهید.')
     except Exception: logger.exception('Failed to notify rejected panel order %s', oid)
     try:
-        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='❌ رد شد',callback_data='noop')]]))
     except Exception: pass
     await callback.answer('سفارش رد شد.', show_alert=True)
 

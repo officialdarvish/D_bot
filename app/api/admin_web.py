@@ -4084,6 +4084,7 @@ async def plans(request: Request, _: str = Depends(_auth_user)):
     return layout('Plans','Plans',notice + '<div class="headrow"><h2>Plans</h2><div class="rowactions"><button class="btn primary" onclick="openModal(\'planAdd\')" data-fa="Add Plan" data-en="Add plan">Add Plan</button></div></div>'+modal('planAdd','Add Plan','Add Plan',form)+'<div class="tabs"><span class="badge">Public Plans</span><span class="badge">Reseller Plans</span></div><div class="gridcards">'+cards+reseller+'</div>','/admin/plans')
 @router.post('/admin/plans/add')
 async def plan_add(request: Request, plan_kind:str=Form('public'), title:str=Form(...), volume_gb:int=Form(0), duration_days:int=Form(0), reseller_validity_days:int=Form(365), price_irt:int=Form(0), pricing_currency:str=Form('IRT'), price_usd:str=Form('0'), category_id:int=Form(0), server_id:int=Form(0), inbound_mode:str=Form('automatic'), inbound_ids:str=Form(''), group_name:str=Form(''), hwid_limit:int=Form(0), happ_encrypted_sub:str=Form('no'), _: str = Depends(_auth_user)):
+    if str((await request.form()).get('custom_enabled','')).lower()=='yes':pricing_currency='IRT'
     if not server_id:
         return fail(request, 'Server is required to create a plan.')
     async with SessionLocal() as s:
@@ -4094,6 +4095,14 @@ async def plan_add(request: Request, plan_kind:str=Form('public'), title:str=For
             try:
                 reseller_meta = update_plan_pricing_meta({}, pricing_currency=pricing_currency, price_usd=price_usd)
                 reseller_meta = await _reseller_package_inbound_meta(request,srv,reseller_meta)
+                from app.services.custom_tariff import from_form,baseline
+                reseller_meta=await from_form(request,reseller_meta)
+                custom_base=baseline(reseller_meta)
+                if custom_base:
+                    volume_gb,reseller_validity_days,price_irt=custom_base
+                    pricing_currency='IRT'
+                    reseller_meta['pricing_currency']='IRT'
+                    reseller_meta.pop('price_usd',None)
             except ValueError as exc:
                 return fail(request, str(exc))
             reseller_price_irt = int(price_irt or 0) if str(pricing_currency or 'IRT').upper() != 'USD' else 0
@@ -4117,6 +4126,13 @@ async def plan_add(request: Request, plan_kind:str=Form('public'), title:str=For
             plan_meta = update_plan_pricing_meta(plan_meta, pricing_currency=pricing_currency, price_usd=price_usd)
             from app.services.custom_tariff import from_form
             plan_meta = await from_form(request,plan_meta)
+            from app.services.custom_tariff import baseline
+            custom_base=baseline(plan_meta)
+            if custom_base:
+                volume_gb,duration_days,price_irt=custom_base
+                pricing_currency='IRT'
+                plan_meta['pricing_currency']='IRT'
+                plan_meta.pop('price_usd',None)
         except ValueError as exc:
             return fail(request, str(exc))
         stored_price_irt = int(price_irt or 0) if str(pricing_currency or 'IRT').upper() != 'USD' else 0
@@ -4127,6 +4143,7 @@ async def plan_add(request: Request, plan_kind:str=Form('public'), title:str=For
     return ok(request, '/admin/plans', 'Public plan added')
 @router.post('/admin/plans/{pid}/edit')
 async def plan_edit(request: Request, pid:int, title:str=Form(...), volume_gb:int=Form(0), duration_days:int=Form(0), price_irt:int=Form(0), pricing_currency:str=Form('IRT'), price_usd:str=Form('0'), category_id:int=Form(0), server_id:int=Form(0), inbound_mode:str|None=Form(None), inbound_ids:str=Form(''), group_name:str|None=Form(None), hwid_limit:int=Form(0), happ_encrypted_sub:str|None=Form(None), _: str = Depends(_auth_user)):
+    if str((await request.form()).get('custom_enabled','')).lower()=='yes':pricing_currency='IRT'
     if not category_id:
         return fail(request, 'Category is required to edit the plan.')
     if not server_id:
@@ -4161,6 +4178,14 @@ async def plan_edit(request: Request, pid:int, title:str=Form(...), volume_gb:in
             meta = update_plan_pricing_meta(meta, pricing_currency=pricing_currency, price_usd=price_usd)
             from app.services.custom_tariff import from_form
             meta = await from_form(request,meta)
+            from app.services.custom_tariff import baseline
+            custom_base=baseline(meta)
+            if custom_base:
+                obj.volume_gb,obj.duration_days,price_irt=custom_base
+                obj.is_unlimited=False
+                pricing_currency='IRT'
+                meta['pricing_currency']='IRT'
+                meta.pop('price_usd',None)
         except ValueError as exc:
             return fail(request, str(exc))
         obj.price_irt = int(price_irt or 0) if str(pricing_currency or 'IRT').upper() != 'USD' else 0
@@ -4200,6 +4225,7 @@ async def plan_del(request: Request, pid:int, _: str = Depends(_auth_user)):
 
 @router.post('/admin/plans/reseller/add')
 async def reseller_plan_add(request: Request, title:str=Form(...), volume_gb:int=Form(0), reseller_validity_days:int=Form(365), price_irt:int=Form(0), pricing_currency:str=Form('IRT'), price_usd:str=Form('0'), server_id:int=Form(0), _: str = Depends(_auth_user)):
+    if str((await request.form()).get('custom_enabled','')).lower()=='yes':pricing_currency='IRT'
     if not server_id:
         return fail(request, 'Server is required to create reseller plan.')
     async with SessionLocal() as s:
@@ -4209,6 +4235,10 @@ async def reseller_plan_add(request: Request, title:str=Form(...), volume_gb:int
         try:
             reseller_meta = update_plan_pricing_meta({}, pricing_currency=pricing_currency, price_usd=price_usd)
             reseller_meta = await _reseller_package_inbound_meta(request,srv,reseller_meta)
+            from app.services.custom_tariff import from_form,baseline
+            reseller_meta=await from_form(request,reseller_meta)
+            custom_base=baseline(reseller_meta)
+            if custom_base:volume_gb,reseller_validity_days,price_irt=custom_base
         except ValueError as exc:
             return fail(request, str(exc))
         reseller_price_irt = int(price_irt or 0) if str(pricing_currency or 'IRT').upper() != 'USD' else 0
@@ -4218,6 +4248,7 @@ async def reseller_plan_add(request: Request, title:str=Form(...), volume_gb:int
 
 @router.post('/admin/plans/reseller/{pid}/edit')
 async def reseller_plan_edit(request: Request, pid:int, title:str=Form(...), volume_gb:int=Form(0), reseller_validity_days:int=Form(365), price_irt:int=Form(0), pricing_currency:str=Form('IRT'), price_usd:str=Form('0'), server_id:int=Form(0), _: str = Depends(_auth_user)):
+    if str((await request.form()).get('custom_enabled','')).lower()=='yes':pricing_currency='IRT'
     async with SessionLocal() as s:
         obj=await s.get(ResellerPackage,pid)
         if not obj:
@@ -4239,6 +4270,13 @@ async def reseller_plan_edit(request: Request, pid:int, title:str=Form(...), vol
             if obj.server_id!=server_id and 'inbound_mode' not in await request.form():
                 obj.meta={**(obj.meta or {}),'inbound_mode':'automatic','inbound_ids':[]}
             obj.meta=await _reseller_package_inbound_meta(request,srv,obj.meta)
+            from app.services.custom_tariff import from_form,baseline
+            obj.meta=await from_form(request,obj.meta)
+            custom_base=baseline(obj.meta)
+            if custom_base:
+                obj.volume_gb,obj.reseller_validity_days,obj.price_irt=custom_base
+                obj.meta={**obj.meta,'pricing_currency':'IRT'}
+                obj.meta.pop('price_usd',None)
             obj.server_id=server_id
             await s.commit()
         except ValueError as exc:
@@ -5821,9 +5859,12 @@ async def home_message_save(request: Request, welcome_text: str = Form(...), _: 
         return fail(request, 'متن صفحه اصلی نمی‌تواند خالی باشد.')
     if len(value.encode('utf-16-le')) // 2 > 4096:
         return fail(request, 'متن صفحه اصلی بیش از حد طولانی است؛ حداکثر ۴۰۹۶ نویسه تلگرام.')
-    from app.database.defaults import set_setting_value
-    await set_setting_value('welcome_text', value)
-    return ok(request, '/admin/settings', 'متن صفحه اصلی ربات ذخیره شد.')
+    from app.database.defaults import invalidate_settings_cache
+    async with SessionLocal() as session:
+        await session.merge(Setting(key='welcome_text',value=value))
+        await session.commit()
+    invalidate_settings_cache()
+    return ok(request, '/admin/custom', 'متن صفحه اصلی ربات ذخیره شد.')
 
 
 @router.post('/admin/settings/panel-sales-button')
@@ -6329,6 +6370,12 @@ async def api_v2_dashboard(start_date: str | None = None, end_date: str | None =
         'latest_orders': [order_json(o, users.get(o.user_id), plans.get(o.plan_id)) for o in recent]}
 
 
+@router.get('/admin/api/v2/installation-count')
+async def api_v2_installation_count(_:str=Depends(_auth_user)):
+    from app.services.installation_counter import aggregate
+    return {'ok':True,'count':await aggregate()}
+
+
 @router.get('/admin/api/v2/users')
 async def api_v2_users(page:int=1, page_size:int=50, q:str='', _: str = Depends(_auth_user)):
     page=max(1,page); page_size=max(1,min(page_size,200)); offset=(page-1)*page_size
@@ -6346,6 +6393,30 @@ async def api_v2_users(page:int=1, page_size:int=50, q:str='', _: str = Depends(
     for u in users:
         row=user_json(u,purchases.get(u.id,0)); row['is_reseller']=u.id in reseller_ids; items.append(row)
     return {'ok':True,'total':int(total),'page':page,'page_size':page_size,'items':items}
+
+
+@router.get('/admin/api/v2/users/{uid}/history')
+async def api_v2_user_history(uid:int, page:int=1, service_page:int=1, _:str=Depends(_auth_user)):
+    page=max(1,page); service_page=max(1,service_page); size=50
+    async with SessionLocal() as session:
+        user=await session.get(User,uid)
+        if not user:raise HTTPException(404,'User not found')
+        total=await session.scalar(select(func.count(Order.id)).where(Order.user_id==uid)) or 0
+        services_total=await session.scalar(select(func.count(ClientService.id)).where(ClientService.user_id==uid)) or 0
+        rows=(await session.execute(select(Order,Plan.title,ClientService,Server.name)
+            .outerjoin(Plan,Plan.id==Order.plan_id)
+            .outerjoin(ClientService,(ClientService.id==Order.service_id)&(ClientService.user_id==uid))
+            .outerjoin(Server,Server.id==ClientService.server_id)
+            .where(Order.user_id==uid).order_by(Order.created_at.desc(),Order.id.desc()).offset((page-1)*size).limit(size))).all()
+        items=[]; services={}
+        def stamp(value):return value.isoformat()+'Z' if value else None
+        for order,title,service,server_name in rows:
+            items.append(dict(id=order.id,kind='renewal' if str(order.payment_method or '').startswith('renew:') else 'purchase',plan=title,
+                username=service.client_username if service else None,server=server_name,amount_irt=order.amount_irt,status=order.status,created_at=stamp(order.created_at)))
+        service_rows=(await session.execute(select(ClientService,Server.name).outerjoin(Server,Server.id==ClientService.server_id).where(ClientService.user_id==uid).order_by(ClientService.created_at.desc(),ClientService.id.desc()).offset((service_page-1)*size).limit(size))).all()
+        for service,server_name in service_rows:
+            services[service.id]=dict(id=service.id,username=service.client_username,server=server_name,created_at=stamp(service.created_at),expires_at=stamp(service.expires_at),is_active=service.is_active)
+    return dict(ok=True,total=int(total),page=page,page_size=size,services_total=int(services_total),items=items,services=list(services.values()))
 
 
 @router.get('/admin/api/v2/servers')
@@ -6495,7 +6566,7 @@ async def api_v2_plans(_: str = Depends(_auth_user)):
     reseller = _sort_by_saved_order(reseller, reseller_order)
     return {
         'ok': True,
-        'plans': [plan_json(p) for p in plans],
+        'plans': [plan_json(p) for p in plans if not (p.meta or {}).get('custom_owner_id')],
         'reseller_packages': [
             {
                 'id': r.id,
@@ -6506,12 +6577,13 @@ async def api_v2_plans(_: str = Depends(_auth_user)):
                 'pricing_currency': plan_currency(r),
                 'price_usd': format_usd(plan_price_usd(r)),
                 'reseller_validity_days': r.reseller_validity_days,
+                'custom_tariff': (r.meta or {}).get('custom_tariff'),
                 'inbound_mode': (r.meta or {}).get('inbound_mode','automatic'),
                 'inbound_ids': (r.meta or {}).get('inbound_ids',[]),
                 'is_active': r.is_active,
                 'created_at': dt_iso(r.created_at),
             }
-            for r in reseller
+            for r in reseller if not (r.meta or {}).get('custom_selection')
         ],
     }
 

@@ -34,3 +34,27 @@ async def from_form(request,meta):
     result=dict(meta);result.pop(KEY,None)
     if policy:result[KEY]=policy
     return result
+
+def baseline(meta):
+    policy=normalize((meta or {}).get(KEY))
+    if not policy:return None
+    return policy['min_gb'],policy['min_days'],policy['min_gb']*policy['price_gb']+policy['min_days']*policy['price_day']
+
+def reseller_selection(package,gb,days):
+    policy=normalize((package.meta or {}).get(KEY))
+    if not policy:return package
+    try:volume=int(str(gb));duration=int(str(days))
+    except (ValueError,TypeError):raise ValueError('Choose GB and days / حجم و روز را انتخاب کنید')
+    if not policy['min_gb']<=volume<=policy['max_gb'] or not policy['min_days']<=duration<=policy['max_days']:raise ValueError('Outside allowed range / مقدار خارج از بازه مجاز است')
+    meta={**(package.meta or {}),'pricing_currency':'IRT','custom_selection':{'parent_id':package.id,'volume_gb':volume,'duration_days':duration}}
+    meta.pop(KEY,None);meta.pop('price_usd',None)
+    return SimpleNamespace(id=package.id,title=f'{package.title} | {volume}GB | {duration} Days',volume_gb=volume,reseller_validity_days=duration,price_irt=volume*policy['price_gb']+duration*policy['price_day'],server_id=package.server_id,is_active=True,meta=meta)
+
+async def reseller_snapshot(session,package,telegram_id):
+    if not (package.meta or {}).get('custom_selection'):return package
+    from app.database.models import ResellerPackage
+    row=ResellerPackage(title=package.title,volume_gb=package.volume_gb,reseller_validity_days=package.reseller_validity_days,price_irt=package.price_irt,server_id=package.server_id,is_active=False,meta={**package.meta,'custom_owner_telegram_id':telegram_id})
+    session.add(row);await session.flush();return row
+
+def package_available(package,telegram_id):
+    return bool(package and (package.is_active or ((package.meta or {}).get('custom_selection') and (package.meta or {}).get('custom_owner_telegram_id')==telegram_id)))
