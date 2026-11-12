@@ -4,7 +4,7 @@
 <p align="center"><a href="README.md">🇬🇧 English</a> · <a href="README_FA.md">🇮🇷 فارسی</a></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.3.0-7c3aed?style=flat-square" alt="Version 1.3.0" />
+  <img src="https://img.shields.io/badge/version-1.4.0-7c3aed?style=flat-square" alt="Version 1.4.0" />
   <img src="https://img.shields.io/badge/Mini_App-Telegram-26A5E4?style=flat-square&logo=telegram&logoColor=white" alt="Telegram Mini App" />
   <img src="https://img.shields.io/badge/Database-PostgreSQL_16-4169E1?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL 16" />
   <img src="https://img.shields.io/badge/Deploy-Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker deployment" />
@@ -140,6 +140,6 @@ Python / Aiogram / FastAPI و Next.js، با **PostgreSQL 16** برای داده
 Built with ❤️ by [Darvish](https://github.com/officialdarvish)
 
 
-## به‌روزرسانی پیش‌نویس راه‌اندازی و اتصال‌ها
+## نسخه 1.4.0 — راه‌اندازی و اتصال‌ها
 
-در این شاخه آپدیت وب با فایل نسخه، ویزارد قابل ادامه فارسی/انگلیسی، اتصال مشترک فروش عمومی/نمایندگی، مدیریت NX و پرداخت Darvish Bridge اضافه شده‌اند. وضعیت هنوز پیش‌نویس است و انتشار نهایی به تست زنده VPS، PostgreSQL و سرویس‌ها وابسته است. [وضعیت](docs/WEB_SETUP_UPDATE_STATUS_FA.md)، [NX](docs/NX_PANEL_FA.md)، [تنظیم بریج](docs/DARVISH_BRIDGE_CONNECTION_FA.md)، [سیاست مهاجرت](docs/SERVER_CONNECTION_MIGRATION_FA.md) و [نتیجه تست‌ها](docs/VALIDATION_WEB_SETUP.md) را ببینید.
+در این شاخه آپدیت وب با فایل نسخه، ویزارد قابل ادامه فارسی/انگلیسی، اتصال مشترک فروش عمومی/نمایندگی، مدیریت NX و پرداخت Darvish Bridge اضافه شده‌اند. این نسخه با درخواست نگهدارنده به شماره 1.4.0 منتشر می‌شود؛ تست زنده VPS، PostgreSQL و سرویس‌ها همچنان انجام نشده است. [وضعیت](docs/WEB_SETUP_UPDATE_STATUS_FA.md)، [NX](docs/NX_PANEL_FA.md)، [تنظیم بریج](docs/DARVISH_BRIDGE_CONNECTION_FA.md)، [سیاست مهاجرت](docs/SERVER_CONNECTION_MIGRATION_FA.md) و [نتیجه تست‌ها](docs/VALIDATION_WEB_SETUP.md) را ببینید.

@@ -1,6 +1,6 @@
-# Validation of the draft web setup and integrations update
+# Validation of the 1.4.0 web setup and integrations update
 
-Date: 2026-11-12. This is a draft, not a production release.
+Date: 2026-11-12. The maintainer requested publication as version 1.4.0 after receiving this validation status. Publication does not imply additional operational validation.
 
 ## Results
 
@@ -43,4 +43,4 @@ Compatible duplicate connections are consolidated transactionally. Conflicting t
 
 Public-source detection finds GitHub forks and indexed copies retaining the marker. It cannot guarantee detection of private, unindexed or marker-removed copies. The workflow becomes active only after publication on the repository's default branch.
 
-Keep PR #33 in draft until remaining test discrepancies and real deployment validation are addressed.
+The release notes retain these test discrepancies and operational limits. The maintainer explicitly requested publishing PR #33 as version 1.4.0.

@@ -1,0 +1,56 @@
+name: Publish version release
+on:
+  push:
+    branches: [main]
+    paths:
+      - VERSION
+      - .github/workflows/release.yml
+permissions:
+  contents: write
+concurrency:
+  group: publish-version-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'officialdarvish/D_bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate release metadata
+        id: version
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          version=Path('VERSION').read_text().strip()
+          assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+',version), 'Invalid release version'
+          assert json.loads(Path('update.json').read_text())['version']==version
+          assert json.loads(Path('frontend/package.json').read_text())['version']==version
+          lock=json.loads(Path('frontend/package-lock.json').read_text())
+          assert lock['version']==lock['packages']['']['version']==version
+          assert Path(f'docs/releases/v{version}.md').is_file(), 'Release notes missing'
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write(f'version={version}\n')
+          PY
+      - name: Package and publish exact source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; keeping the published release unchanged."
+            exit 0
+          fi
+          archive="D-Bot-v${VERSION}.zip"
+          git archive --format=zip --prefix="D-Bot-v${VERSION}/" --output="$archive" HEAD
+          sha256sum "$archive" > SHA256SUMS.txt
+          gh release create "$tag" "$archive" SHA256SUMS.txt \
+            --target "$GITHUB_SHA" \
+            --title "D BOT v${VERSION}" \
+            --notes-file "docs/releases/${tag}.md" \
+            --latest
