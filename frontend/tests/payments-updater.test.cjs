@@ -249,3 +249,22 @@ test('Receipt size/type validation runs before any upload or status requests',as
  for(const file of [new File([],'empty.png',{type:'image/png'}),new File(['bad'],'receipt.heic',{type:'image/heic'})])await assert.rejects(()=>uploadMiniAppReceipt(api,'/receipt','/status',file));
  const big=new File(['data'],'large.jpg',{type:'image/jpeg'});Object.defineProperty(big,'size',{value:8*1024**2+1});await assert.rejects(()=>uploadMiniAppReceipt(api,'/receipt','/status',big),/۸ مگابایت/);assert.equal(calls,0);
 });
+
+test('Tutorials use distinct cards, native disclosure controls and refreshable video URLs',async()=>{
+ const {MiniAppContent}=require('../components/miniapp-content.tsx');let calls=0,paused=0;
+ window.HTMLMediaElement.prototype.pause=function(){paused++};
+ const api=async(path)=>{assert.equal(path,'/content');calls++;return {rules:'Rules',tutorials:[{id:'happ-android',name:'Happ',platform:'android',text:'First instruction',download_url:'https://example.com/happ',video_url:`/api/miniapp/tutorial-video/happ-android?expires=2000000000&token=${calls}`},{id:'happ-ios',name:'Happ',platform:'ios',text:'iOS instruction',download_url:''}]}};
+ await render(React.createElement(MiniAppContent,{kind:'tutorials',api,onBack:()=>{}}));
+ const cards=document.querySelectorAll('details.ma-tutorial');assert.equal(cards.length,2);
+ const summary=cards[0].querySelector('summary'),video=cards[0].querySelector('video');
+ assert.ok(summary.querySelector('.ma-tutorial-icon'));assert.ok(summary.querySelector('.ma-tutorial-chevron'));assert.ok(summary.textContent.includes('برای مشاهده آموزش بزنید'));
+ assert.equal(video.preload,'none');assert.equal(video.controls,true);assert.ok(video.hasAttribute('playsinline'));
+ await act(async()=>{summary.click();await new Promise(resolve=>setTimeout(resolve,10))});
+ assert.equal(cards[0].open,true);assert.equal(video.preload,'metadata');assert.ok(summary.textContent.includes('بستن آموزش'));
+ assert.ok(cards[0].querySelector('a').rel.includes('noopener'));video.currentTime=95;
+ await act(async()=>video.dispatchEvent(new window.Event('error')));assert.ok(document.querySelector('[role=alert]'));
+ await click('بارگذاری دوباره ویدیو');assert.equal(calls,2);assert.ok(video.getAttribute('src').endsWith('token=2'));assert.equal(document.querySelector('[role=alert]'),null);
+ Object.defineProperty(video,'duration',{configurable:true,value:200});video.currentTime=0;
+ await act(async()=>video.dispatchEvent(new window.Event('loadedmetadata')));assert.equal(video.currentTime,95);
+ await act(async()=>{summary.click();await new Promise(resolve=>setTimeout(resolve,10))});assert.equal(cards[0].open,false);assert.equal(paused,1);
+});

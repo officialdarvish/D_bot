@@ -13,10 +13,12 @@ class MediaFile:
 
     def __getattr__(self,name):return getattr(self.file,name)
 
-    def chunks(self):
+    def chunks(self,length=None):
         try:
-            while True:
-                chunk=self.file.read(64*1024)
+            remaining=length
+            while remaining is None or remaining>0:
+                chunk=self.file.read(64*1024 if remaining is None else min(64*1024,remaining))
                 if not chunk:break
+                if remaining is not None:remaining-=len(chunk)
                 yield chunk
         finally:self.file.close()
