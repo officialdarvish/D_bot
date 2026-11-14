@@ -153,3 +153,5 @@ Build 7 adds Users → List history, conditional fixed/custom plan forms for pub
 Build 10 uses whole **Toman (IRT)** for new Bridge payments, without a separate FX or Rial conversion. Upgrade the central Bridge to advertise `IRT: 0`, create a Toman receiving account, then validate/save the connection in Payments. Legacy USD/USDT connections pause new checkout until revalidated; existing invoice currency/amount snapshots remain unchanged. The bundled Bridge adds IRT support.
 
 Build 11 unifies Mini App receipt uploads with authenticated multipart requests, handles non-JSON proxy errors, and reads the same reseller/public order after a lost upload response before offering an explicit retry. The receipt remains selected on failure. Proxy upload limits or upstream outages still require host-side correction when reported.
+
+Build 12 makes Mini App tutorials distinct expandable cards and adds HTTP byte-range support for video seeking. Expired video links can be refreshed inside the tutorial while retaining the viewing position. Signed access and disk-backed streaming remain enforced.

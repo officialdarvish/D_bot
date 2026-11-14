@@ -415,9 +415,9 @@ async def customer_content(user=Depends(customer)):
     return {'tutorials':[{**{k:r.get(k,'') for k in ('id','platform','name','download_url','text')},'video_url':url(r['id'],user.id) if r.get('video_file_id') else ''} for r in apps if r.get('enabled',True)],'rules':rules.value if rules and (await get_user_button('rules'))[1] else ''}
 
 
-@router.get('/tutorial-video/{app_id}')
-async def tutorial_video(app_id: str, uid: int, expires: int, token: str):
-    from app.services.tutorial_video import validate
+@router.api_route('/tutorial-video/{app_id}',methods=['GET','HEAD'])
+async def tutorial_video(request: Request, app_id: str, uid: int, expires: int, token: str):
+    from app.services.tutorial_video import validate,byte_range
     from app.services.user_content import load_apps,MAX_TUTORIAL_VIDEO_BYTES
     from app.services.features import capabilities
     from fastapi.responses import StreamingResponse
@@ -437,7 +437,22 @@ async def tutorial_video(app_id: str, uid: int, expires: int, token: str):
             try:await bot.download_file(file.file_path,destination=output)
             except ValueError:raise HTTPException(413) from None
         size=output.seek(0,2);output.seek(0)
-        return StreamingResponse(output.chunks(),media_type='video/mp4',background=BackgroundTask(output.close),headers={'Cache-Control':'no-store, private','Referrer-Policy':'no-referrer','Content-Length':str(size)})
+        headers={'Cache-Control':'no-store, private','Referrer-Policy':'no-referrer','Accept-Ranges':'bytes','Content-Encoding':'identity','X-Content-Type-Options':'nosniff'}
+        # Range offsets/lengths describe the uncompressed file. Explicit identity
+        # prevents application/proxy gzip from changing those bytes.
+        selected=None
+        if request.method=='GET' and not request.headers.get('if-range'):
+            try:selected=byte_range(request.headers.get('range'),size)
+            except ValueError:raise HTTPException(416,'Requested media range is not available',headers={**headers,'Content-Range':f'bytes */{size}'}) from None
+        start,end=selected if selected else (0,size-1)
+        length=max(0,end-start+1);headers['Content-Length']=str(length)
+        status=206 if selected else 200
+        if selected:headers['Content-Range']=f'bytes {start}-{end}/{size}'
+        if request.method=='HEAD':
+            output.close()
+            return Response(status_code=200,media_type='video/mp4',headers=headers)
+        output.seek(start)
+        return StreamingResponse(output.chunks(length),status_code=status,media_type='video/mp4',background=BackgroundTask(output.close),headers=headers)
     except BaseException:
         output.close();raise
 

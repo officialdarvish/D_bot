@@ -248,3 +248,55 @@ def test_native_tutorial_stream_handles_aiogram_default_rewind_and_closes_file(c
         assert response.status_code==200,response.text
         assert response.content==payload and response.headers['content-length']==str(len(payload))
         assert response.headers['cache-control']=='no-store, private'
+
+@pytest.mark.parametrize('value,expected',[(None,None),('items=0-2',None),('bytes=0-1,3-4',None),('bytes=0-1',(0,1)),('bytes=100-',(100,999)),('bytes=-64',(936,999)),('bytes=800-2000',(800,999)),('bytes=-2000',(0,999))])
+def test_tutorial_byte_range_bounds(value,expected):
+    from app.services.tutorial_video import byte_range
+    assert byte_range(value,1000)==expected
+
+@pytest.mark.parametrize('value',['bytes=','bytes=-','bytes=-0','bytes=1000-','bytes=500-499','bytes=garbage','bytes='+('9'*300)+'-'])
+def test_tutorial_invalid_or_unsatisfiable_ranges(value):
+    from app.services.tutorial_video import byte_range
+    with pytest.raises(ValueError):byte_range(value,1000)
+
+
+def test_tutorial_seek_serves_exact_ranges_without_gzip_and_closes_files(client,monkeypatch):
+    from app.services import tutorial_video,media_stream
+    from starlette.middleware.gzip import GZipMiddleware
+    _,sessions=client
+    monkeypatch.setattr(content,'load_apps',AsyncMock(return_value=[dict(id='video',video_file_id='BAAC_test',enabled=True)]))
+    monkeypatch.setattr(miniapp,'read_config',AsyncMock(return_value={'enabled':True}))
+    payload=bytes(range(256))*1000;tracked=[];original=media_stream.MediaFile
+    def create(limit):
+        result=original(limit);tracked.append(result);return result
+    monkeypatch.setattr(media_stream,'MediaFile',create)
+    async def download(path,destination):destination.write(payload);destination.seek(0)
+    bot=SimpleNamespace(get_file=AsyncMock(return_value=SimpleNamespace(file_size=len(payload),file_path='video')),download_file=download)
+    @asynccontextmanager
+    async def telegram():yield bot
+    monkeypatch.setattr(miniapp,'telegram_bot',telegram)
+    app=FastAPI();app.add_middleware(GZipMiddleware,minimum_size=1024);app.include_router(miniapp.router)
+    url=tutorial_video.url('video',1)
+    with TestClient(app) as c:
+        for value,start,end in [('bytes=0-1',0,1),('bytes=80000-120000',80000,120000),('bytes=-2048',len(payload)-2048,len(payload)-1),('bytes=200000-',200000,len(payload)-1)]:
+            r=c.get(url,headers={'Range':value,'Accept-Encoding':'gzip'})
+            assert r.status_code==206,r.text
+            assert r.content==payload[start:end+1]
+            assert r.headers['content-range']==f'bytes {start}-{end}/{len(payload)}'
+            assert r.headers['content-length']==str(end-start+1)
+            assert r.headers['accept-ranges']=='bytes' and r.headers['content-encoding']=='identity'
+            assert tracked[-1].closed
+        bad=c.get(url,headers={'Range':f'bytes={len(payload)}-'})
+        assert bad.status_code==416 and bad.headers['content-range']==f'bytes */{len(payload)}' and tracked[-1].closed
+        head=c.head(url,headers={'Range':'bytes=0-1'})
+        assert head.status_code==200 and head.content==b'' and head.headers['content-length']==str(len(payload)) and tracked[-1].closed
+        full=c.get(url,headers={'Range':'bytes=0-1','If-Range':'"unknown-validator"'})
+        assert full.status_code==200 and full.content==payload and tracked[-1].closed
+        before=len(tracked)
+        assert c.get(url.replace('token=','token=invalid'),headers={'Range':'bytes=0-1'}).status_code==403
+        assert len(tracked)==before
+        async def block():
+            async with sessions() as s:
+                user=await s.get(User,1);user.is_blocked=True;await s.commit()
+        asyncio.run(block())
+        assert c.get(url,headers={'Range':'bytes=0-1'}).status_code==403 and len(tracked)==before
