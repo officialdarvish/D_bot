@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 12,
+  "build": 13,
   "channel": "main",
   "notes": {
-    "fa": "کارت‌های واضح آموزش مینی‌اپ، اصلاح جلو و عقب بردن ویدیو و بارگذاری دوباره لینک منقضی‌شده",
-    "en": "Clear Mini App tutorial cards, seekable video byte ranges and expired video URL refresh"
+    "fa": "بازطراحی کاستوم با پیش‌نمایش منو و پیام‌ها، قالب‌های قابل ذخیره و بازیابی بک‌آپ در مرحله اول ویزارد",
+    "en": "Visual Custom menu and message editor, saved bot templates and first-stage setup backup restore"
   }
 }

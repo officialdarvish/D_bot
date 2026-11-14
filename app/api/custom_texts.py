@@ -108,6 +108,9 @@ async def save_custom_text(
             await _upsert(session, enabled_key, '1' if on else '0')
         await session.commit()
     invalidate_custom_text_cache()
+    from app.database.defaults import invalidate_settings_cache
+    from app.bot.keyboards.common import invalidate_button_settings_cache
+    invalidate_settings_cache();invalidate_button_settings_cache()
     return {'ok': True, 'message': 'Custom text saved successfully'}
 
 
@@ -130,6 +133,9 @@ async def reset_custom_text(key: str = Form(''), reset_all: str = Form('0')):
                     await session.delete(row)
         await session.commit()
     invalidate_custom_text_cache()
+    from app.database.defaults import invalidate_settings_cache
+    from app.bot.keyboards.common import invalidate_button_settings_cache
+    invalidate_settings_cache();invalidate_button_settings_cache()
     return {'ok': True, 'message': 'Custom text reset to default'}
 
 
@@ -171,3 +177,32 @@ async def preview_delivery_template(text: str = Form(...)):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {'ok': True, 'preview': plain_html(rendered)}
+
+
+@router.get('/admin/api/v2/custom-profiles', include_in_schema=False)
+async def list_custom_profiles():
+    from app.services.custom_profiles import profiles,LIMIT
+    async with SessionLocal() as session:return {'ok':True,'items':await profiles(session),'limit':LIMIT}
+
+
+@router.post('/admin/api/v2/custom-profiles', include_in_schema=False)
+async def create_custom_profile(name:str=Form(...)):
+    from app.services.custom_profiles import capture
+    async with SessionLocal() as session:key=await capture(session,name)
+    return {'ok':True,'id':key}
+
+
+@router.post('/admin/api/v2/custom-profiles/apply', include_in_schema=False)
+async def apply_custom_profile(profile_id:str=Form(...)):
+    from app.services.custom_profiles import apply
+    async with SessionLocal() as session:await apply(session,profile_id)
+    return {'ok':True}
+
+
+@router.post('/admin/api/v2/custom-profiles/delete', include_in_schema=False)
+async def delete_custom_profile(profile_id:str=Form(...)):
+    from app.services.custom_profiles import profile_key
+    async with SessionLocal() as session:
+        row=await session.get(Setting,profile_key(profile_id))
+        if row:await session.delete(row);await session.commit()
+    return {'ok':True}

@@ -578,6 +578,13 @@ def build_catalog(force: bool = False) -> list[TextEntry]:
             # Prefer explicit button/default symbols over anonymous fragments.
             if current is None or (entry.symbol and not current.symbol) or (entry.kind == 'button' and current.kind != 'button'):
                 by_default[entry.default] = entry
+    # Settings-backed entry points are read dynamically and cannot be found
+    # reliably by the source visitor. Expose their actual runtime settings too.
+    from app.database.defaults import WELCOME_TEXT_DEFAULT,RULES_TEXT_DEFAULT
+    for symbol,default in [('WELCOME_TEXT_DEFAULT',WELCOME_TEXT_DEFAULT),('RULES_TEXT_DEFAULT',RULES_TEXT_DEFAULT)]:
+        by_default[default]=TextEntry(key=CUSTOM_PREFIX+hashlib.sha1(default.encode('utf-8')).hexdigest()[:18],default=default,
+            category='شروع و صفحه اصلی',section='ورود، قوانین و منوی اصلی',kind='message',source='app/database/defaults.py',line=1,symbol=symbol,
+            placeholders=tuple(dict.fromkeys(re.findall(r'\{([a-zA-Z_][a-zA-Z0-9_]*)\}',default))))
     _catalog_cache = sorted(by_default.values(), key=lambda e: (e.category, e.section, e.kind != 'button', e.source, e.line, e.default))
     return _catalog_cache
 
