@@ -268,3 +268,61 @@ test('Tutorials use distinct cards, native disclosure controls and refreshable v
  await act(async()=>video.dispatchEvent(new window.Event('loadedmetadata')));assert.equal(video.currentTime,95);
  await act(async()=>{summary.click();await new Promise(resolve=>setTimeout(resolve,10))});assert.equal(cards[0].open,false);assert.equal(paused,1);
 });
+
+for(const language of ['en','fa'])test(`Custom journeys persist related button text and named templates (${language})`,async()=>{
+ const {CustomSection}=require('../components/custom-section.tsx');
+ const rows=[{key:'home',default:'Welcome',current:'Welcome',kind:'message',legacy_key:'welcome_text',category:'شروع و صفحه اصلی',section:'ورود، قوانین و منوی اصلی',source:'app/database/defaults.py',line:1,customized:false},
+ {key:'buy-button',default:'Buy',current:'Buy',kind:'button',legacy_key:'button_buy_text',category:'منو و دکمه‌های اصلی',section:'دکمه‌های قابل مشاهده کاربر',source:'app/bot/keyboards/common.py',line:1,customized:false,enabled:true},
+ {key:'buy-message',default:'Choose a plan',current:'Choose a plan',kind:'message',category:'خرید و پرداخت',section:'فرآیند خرید',source:'app/bot/handlers/public/buy.py',line:1,customized:false},
+ {key:'wallet-message',default:'Wallet balance',current:'Wallet balance',kind:'message',category:'حساب کاربری و کیف پول',section:'حساب کاربری',source:'app/bot/handlers/public/account.py',line:1,customized:false}];
+ let posted=null,profileName='';global.fetch=async(url,options={})=>{
+  if(options.method==='POST'){
+   const fields=Object.fromEntries(options.body.entries());
+   if(String(url).endsWith('/custom-profiles'))profileName=fields.name;
+   else{posted=fields;const row=rows.find(r=>r.key===fields.key);row.current=fields.value;row.customized=true}
+   return response({ok:true,id:'abc'});
+  }
+  if(String(url).endsWith('/custom-profiles'))return response({ok:true,items:profileName?[{id:'abc',name:profileName}]:[]});
+  return response({ok:true,items:rows,total:rows.length,modified:0});
+ };
+ await render(React.createElement(CustomSection,{reloadKey:0,show:()=>{},setAuthRequired:()=>{}}),language);
+ assert.ok(document.querySelector('.cj-message-name').textContent.includes(language==='fa'?'پیام صفحه اصلی ربات':'Bot home message'));
+ const menu=document.querySelector('.cj-menu .cj-keyboard button');await act(async()=>menu.click());
+ assert.ok(document.querySelector('.cj-flow').textContent.includes('Choose a plan'));assert.ok(!document.querySelector('.cj-flow').textContent.includes('Wallet balance'));
+ await act(async()=>document.querySelector('.cj-flow-buttons .cj-keyboard button').click());
+ const editor=document.querySelector('.cj-editor textarea');
+ await act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set.call(editor,'Shop plans');editor.dispatchEvent(new window.Event('input',{bubbles:true}))});
+ await click(language==='fa'?'ذخیره و اعمال':'Save and apply');assert.equal(posted.key,'buy-button');assert.equal(posted.value,'Shop plans');assert.equal(document.querySelector('[role=dialog]'),null);assert.ok(document.querySelector('.cj-menu').textContent.includes('Shop plans'));
+ await click(language==='fa'?'ذخیره به‌عنوان قالب':'Save as template');await input(document.querySelector('.cj-new-template input'),'Shop style');
+ await act(async()=>document.querySelector('.cj-new-template').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));
+ assert.equal(profileName,'Shop style');assert.ok(document.querySelector('.cj-template-actions select').textContent.includes('Shop style'));
+});
+
+test('Bot preview supports formatting without executing markup or opening links',async()=>{
+ const {BotTemplatePreview}=require('../components/bot-template-preview.tsx');
+ await render(React.createElement(BotTemplatePreview,{text:'<b>Bold</b> <i>Italic</i> <a href="javascript:alert(1)">Link</a> <img src="https://evil.test/x" onerror="alert(1)"><script>alert(1)</script> &lt;safe&gt;'}));
+ assert.equal(document.querySelector('b').textContent,'Bold');assert.equal(document.querySelector('i').textContent,'Italic');assert.equal(document.querySelectorAll('a,img,script').length,0);assert.ok(text().includes('<safe>'));
+});
+
+test('Every editable catalog item belongs to an accessible bot journey',()=>{
+ const {customJourney,journeys}=require('../lib/custom-journeys.ts');
+ for(const source of ['app/bot/handlers/public/buy.py','app/bot/handlers/public/test_account.py','unknown.py','app/jobs/service_alerts.py'])assert.ok(journeys.some(j=>j.id===customJourney({source,legacy_key:null})));
+});
+
+test('First setup stage offers a small restore entry without leaking keys into wizard saves',async()=>{
+ const {spawnSync}=require('node:child_process');
+ const source='<html><head></head><body><header class="setup-topbar"></header><main><form><div class="steps"><section class="step"></section></div><div class="actions"><button class="btn" type="submit">Save</button></div></form></main></body></html>';
+ const python=path.join(path.dirname(frontend),'.venv/bin/python');
+ const result=spawnSync(fs.existsSync(python)?python:'python3',['-c','from app.services.setup_steps import staged; print(staged('+JSON.stringify(source)+',{},"/private","csrf-demo",[]))'],{cwd:path.dirname(frontend),encoding:'utf8',env:{...process.env,BOT_TOKEN:'123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk',DATABASE_URL:'sqlite+aiosqlite:///:memory:'}});assert.equal(result.status,0,result.stderr);
+ let request=null;const wizard=new JSDOM(result.stdout,{url:'https://bot.example.com/private/setup',runScripts:'dangerously',beforeParse(window){window.confirm=()=>true;window.fetch=async(url,options)=>{request={url,options};return {ok:false,status:409,type:'basic',json:async()=>({ok:false,code:'backup_password_required'})}}}});
+ try{
+  const d=wizard.window.document;assert.equal(d.querySelectorAll('form').length,1);assert.ok(d.querySelector('.step.current .setup-restore'));
+  assert.equal(d.querySelectorAll('#setupServers li').length,0);
+  const file=d.querySelector('[data-setup-restore=file]'),password=d.querySelector('[data-setup-restore=aes_password]');
+  assert.equal(file.hasAttribute('name'),false);assert.equal(password.hasAttribute('name'),false);
+  Object.defineProperty(file,'files',{value:[new wizard.window.File(['encrypted'],'backup.dbot')],configurable:true});password.value='private-password';
+  d.getElementById('setupRestoreRun').click();await new Promise(resolve=>setTimeout(resolve,15));
+  assert.equal(request.url,'/private/admin/backup/restore');assert.equal(request.options.headers['X-CSRF-Token'],'csrf-demo');assert.equal(request.options.body.get('setup_restore'),'1');assert.equal(request.options.body.get('aes_password'),'private-password');
+  assert.ok(d.getElementById('setupRestoreStatus').textContent.includes('رمز اصلی'));assert.equal(file.disabled,false);assert.equal(password.value,'private-password');
+ }finally{wizard.window.close()}
+});

@@ -5125,11 +5125,15 @@ async def _telegram_send_backup(
     }
 
 
+SETUP_RESTORE_ACCESS_KEYS = {'web_admin_username','web_admin_password',WEB_ADMIN_PASSWORD_SECRET_KEY,'web_credentials_updated_at','web_credentials_updated_by','web_path','web_domain','web_login_url','web_token_timeout_minutes','web_ssl_status','web_ssl_message'}
+
+
 async def _restore_backup_payload(
     data: dict[str, Any],
     *,
     legacy_secret: str = '',
     legacy_secret_kind: str = 'auto',
+    preserve_web_access: bool = False,
 ) -> dict[str, int]:
     _validate_backup_payload(data)
     prepared = _prepare_backup_for_restore(
@@ -5142,7 +5146,11 @@ async def _restore_backup_payload(
     deferred_server_categories: list[tuple[int, int]] = []
     async with SessionLocal() as session:
         async with session.begin():
-            local_settings = (await session.execute(select(Setting).where(Setting.key.in_(BACKUP_LOCAL_SETTINGS)))).scalars().all()
+            local_keys=BACKUP_LOCAL_SETTINGS | (SETUP_RESTORE_ACCESS_KEYS if preserve_web_access else set())
+            if preserve_web_access:
+                prepared['settings']=[row for row in prepared.get('settings',[]) if row.get('key') not in local_keys|{'initial_setup_done','setup_progress_v1'}]
+                prepared['settings'].append({'key':'initial_setup_done','value':'1'})
+            local_settings = (await session.execute(select(Setting).where(Setting.key.in_(local_keys)))).scalars().all()
             prepared['settings'].extend({'key': row.key, 'value': row.value} for row in local_settings)
             # Break the only cyclic/self references before clearing an existing
             # destination database. This makes restore reliable even when both
@@ -5519,8 +5527,12 @@ async def backup_restore(
     legacy_secret_kind: str = Form('auto'),
     recovery_key: str = Form(''),
     aes_password: str = Form(''),
+    setup_restore: str = Form('0'),
     _: str = Depends(_auth_user),
 ):
+    from_setup=setup_restore=='1'
+    if from_setup and await db_setting('initial_setup_done','0')=='1':
+        return fail(request,'Initial setup is already complete',409)
     if not (file.filename or '').lower().endswith(('.json', '.dbot')):
         return fail(request, 'Choose a D BOT encrypted backup (.dbot) or legacy JSON file')
     raw = await file.read(max(1024, int(settings.BACKUP_MAX_UPLOAD_BYTES or 104_857_600)) + 1)
@@ -5538,6 +5550,7 @@ async def backup_restore(
             data,
             legacy_secret=legacy_secret,
             legacy_secret_kind=legacy_secret_kind,
+            **({'preserve_web_access':True} if from_setup else {}),
         )
     except BackupPasswordRequired as exc:
         return JSONResponse({'ok': False, 'code': 'backup_password_required', 'message': str(exc)}, status_code=409)
@@ -5571,7 +5584,11 @@ async def backup_restore(
         return fail(request, 'Restore failed because of an unexpected database or server error. Check API logs.', 500)
     total = sum(restored.values())
     await _save_settings_map({'backup_last_restore_at': datetime.utcnow().isoformat(), 'backup_last_restore_count': str(total)})
-    return ok(request, '/admin/backup', f'Restore completed. {total} rows synchronized and credentials re-encrypted for this installation.')
+    if from_setup:
+        from app.database.defaults import invalidate_settings_cache
+        from app.bot.custom_texts import invalidate_custom_text_cache
+        invalidate_settings_cache();invalidate_custom_text_cache();invalidate_button_settings_cache()
+    return ok(request, '/admin' if from_setup else '/admin/backup', f'Restore completed. {total} rows synchronized and credentials re-encrypted for this installation.')
 
 
 @router.post('/admin/reports/monthly-sales/run')
