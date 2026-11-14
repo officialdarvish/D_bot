@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 10,
+  "build": 11,
   "channel": "main",
   "notes": {
-    "fa": "پرداخت Darvish Bridge فقط به تومان، حذف تبدیل دلار و تتر و حفظ فاکتورهای قدیمی",
-    "en": "Toman-only Bridge checkout, no extra USD/USDT conversion, and preserved legacy invoice snapshots"
+    "fa": "اصلاح خرید حجم و ارسال رسید مینی‌اپ نمایندگی، کنترل پاسخ وب‌سرور و بازیابی وضعیت رسید ثبت‌شده",
+    "en": "Fix reseller Mini App volume receipt flow, validate API/proxy responses and recover committed uploads"
   }
 }
