@@ -204,3 +204,48 @@ test('Bridge load failure offers retry and keeps connection fields disabled',asy
  assert.ok(text().includes('Connection settings unavailable.'));fail=false;await click('Retry');
  assert.equal(document.querySelector('[role=alert]'),null);assert.equal(document.querySelector('input[type=url]').disabled,false);assert.equal(document.querySelector('input[type=password]').value,'');assert.ok(document.querySelector('label[for]'));
 });
+
+function miniResponse(data,status=200,type='application/json'){
+ return {status,ok:status>=200&&status<300,redirected:false,type:'basic',headers:{get:()=>type},text:async()=>type==='application/json'?JSON.stringify(data):data};
+}
+test('Mini App transport rejects HTML, truncated JSON and redirects with actionable errors',async()=>{
+ const {miniAppRequest}=require('../lib/miniapp-http.ts');
+ for(const [value,status,type] of [['<html>too large</html>',413,'text/html'],['<html>gateway timeout</html>',504,'text/html'],['<html>login</html>',200,'text/html']]){
+  global.fetch=async()=>miniResponse(value,status,type);
+  await assert.rejects(()=>miniAppRequest('/funding/1/receipt','signed',new FormData()),e=>e.message.length>10&&!/expected pattern|<html>/.test(e.message));
+ }
+ global.fetch=async()=>({...miniResponse({},200),text:async()=>'{"id":'});
+ await assert.rejects(()=>miniAppRequest('/funding/1','signed'),/پاسخ سرور معتبر نیست/);
+ global.fetch=async()=>({...miniResponse({},0),type:'opaqueredirect'});
+ await assert.rejects(()=>miniAppRequest('/funding/1','signed'),/هدایت/);
+ global.fetch=async()=>miniResponse({detail:'حساب نمایندگی فعال نیست'},403);
+ await assert.rejects(()=>miniAppRequest('/funding/quote','signed',{}),/حساب نمایندگی فعال نیست/);
+});
+
+for(const mode of ['retry','committed'])test(`Reseller volume purchase and receipt upload recover from proxy errors (${mode})`,async()=>{
+ const {MiniAppFunding}=require('../components/miniapp-native.tsx');const {miniAppRequest}=require('../lib/miniapp-http.ts');
+ const api=(path,body)=>miniAppRequest(path,'signed-telegram',body);let uploads=0,creates=0,reads=0;
+ const order={id:73,key:'key',kind:'reseller_package',status:'waiting_receipt',title:'Reseller volume',amount:90000,receipt_uploaded:false,card:{number:'6037000000000001',owner:'Admin'}};
+ global.fetch=async(url,opts={})=>{
+  assert.equal(opts.headers['X-Telegram-Init-Data'],'signed-telegram');assert.equal(opts.redirect,'manual');
+  if(url.endsWith('/reseller/catalog'))return miniResponse({servers:[{id:2,name:'Reseller server'}],packages:[{id:12,server_id:2,title:'100 GB',volume_gb:100,price:'90,000'}],default_server_id:2});
+  if(url.endsWith('/funding/quote')){const p=JSON.parse(opts.body);assert.equal(p.server_id,2);assert.equal(p.package_id,12);return miniResponse({amount:90000,title:'100 GB',balance:250000,methods:['card']})}
+  if(url.endsWith('/funding')){creates++;return miniResponse(order)}
+  if(url.endsWith('/receipt')){uploads++;assert.ok(opts.body instanceof FormData);assert.equal(opts.headers['Content-Type'],undefined);assert.equal(opts.body.get('file').name,'رسید.png');if(uploads===1)return miniResponse('<html>proxy error</html>',mode==='retry'?413:504,'text/html');return miniResponse({...order,status:'waiting_approval',receipt_uploaded:true})}
+  if(url.endsWith('/funding/73')){reads++;return miniResponse(mode==='committed'?{...order,status:'waiting_approval',receipt_uploaded:true}:order)}
+  throw Error('Unexpected route '+url);
+ };
+ await render(React.createElement(MiniAppFunding,{kind:'reseller_package',payg:false,api,onBack:()=>{},onDone:()=>{}}));
+ await click('بررسی و ادامه پرداخت');await click('کارت به کارت و ارسال رسید');
+ const picker=document.querySelector('input[type=file]');
+ await act(async()=>{Object.defineProperty(picker,'files',{configurable:true,value:[new File(['png-data'],'رسید.png',{type:'image/png'})]});picker.dispatchEvent(new window.Event('change',{bubbles:true}))});
+ await click('ارسال رسید برای بررسی');
+ if(mode==='retry'){assert.ok(document.querySelector('[role=alert]'));assert.equal(button('ارسال رسید برای بررسی').disabled,false);await click('ارسال رسید برای بررسی')}
+ assert.ok(text().includes('منتظر تأیید مدیر'));assert.equal(document.querySelector('[role=alert]'),null);assert.equal(creates,1);assert.equal(uploads,mode==='retry'?2:1);assert.equal(reads,1);assert.ok(!text().includes('expected pattern'));
+});
+
+test('Receipt size/type validation runs before any upload or status requests',async()=>{
+ const {uploadMiniAppReceipt}=require('../lib/miniapp-http.ts');let calls=0;const api=async()=>{calls++;return {}};
+ for(const file of [new File([],'empty.png',{type:'image/png'}),new File(['bad'],'receipt.heic',{type:'image/heic'})])await assert.rejects(()=>uploadMiniAppReceipt(api,'/receipt','/status',file));
+ const big=new File(['data'],'large.jpg',{type:'image/jpeg'});Object.defineProperty(big,'size',{value:8*1024**2+1});await assert.rejects(()=>uploadMiniAppReceipt(api,'/receipt','/status',big),/۸ مگابایت/);assert.equal(calls,0);
+});

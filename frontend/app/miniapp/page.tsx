@@ -1,4 +1,5 @@
 'use client';
+import {miniAppRequest} from '@/lib/miniapp-http';
 import {NxProfiles} from '@/components/nx-profiles';
 import {MiniAppContent} from '@/components/miniapp-content';
 import {errorMessage} from '@/lib/error-message';
@@ -53,11 +54,7 @@ export default function MiniApp(){
  const [resumeOrder,setResumeOrder]=useState<MiniAppOrder|null>(null);
  const [query,setQuery]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[qr,setQr]=useState(''),[happ,setHapp]=useState('');
  const telegram=useRef<TelegramApp|null>(null),qrRef=useRef(''),loadVersion=useRef(0),alive=useRef(true),root=useRef<HTMLElement|null>(null);
- const api=useCallback(async<T,>(path:string,body?:unknown):Promise<T>=>{
-   const auth=telegram.current?.initData;if(!auth)throw new Error('مینی‌اپ را از دکمه کنار کادر چت تلگرام باز کنید.');
-   const r=await fetch('/api/miniapp'+path,{method:body?'POST':'GET',cache:'no-store',credentials:'omit',headers:{'X-Telegram-Init-Data':auth,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
-   if(!r.ok){const result=await r.json().catch(()=>({}));throw new Error(errorMessage(result,'دریافت اطلاعات انجام نشد؛ دوباره تلاش کنید.','fa'));}return r.json() as Promise<T>;
- },[]);
+ const api=useCallback(<T,>(path:string,body?:unknown):Promise<T>=>miniAppRequest<T>(path,telegram.current?.initData||'',body),[]);
  const load=useCallback(async(force=false)=>{const version=++loadVersion.current;setLoading(true);setError('');try{
    let result=await api<Snapshot>('/session');
    if(force&&result.buttons.my_services)result=await api<Snapshot>('/usage');

@@ -1,5 +1,5 @@
 'use client';
-import {errorMessage} from '@/lib/error-message';
+import {validateReceipt} from '@/lib/miniapp-http';
 import {MiniAppPaymentCard} from './miniapp-payment-card';
 import {useEffect,useState} from 'react';
 import {ArrowRight,Check,ImagePlus,RefreshCw} from 'lucide-react';
@@ -15,7 +15,7 @@ export function MiniAppResellerJoin({api,onBack,onDone}:{api:API;onBack:()=>void
  async function validateCredentials(){if(busy)return;setBusy(true);setError('');try{await api('/reseller-join/credentials',request);setCredentials(true)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
  async function preview(){if(busy)return;setBusy(true);setError('');try{setQuote(await api<any>('/reseller-join/quote',request))}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
  async function purchase(){if(busy)return;setBusy(true);setError('');try{setOrder(await api<any>('/reseller-join',{...request,expected_amount:quote.amount}));setPassword('')}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
- async function upload(){if(!file||busy)return;setBusy(true);setError('');try{const form=new FormData();form.append('file',file);const r=await fetch(`/api/miniapp/reseller-join/${order.id}/receipt`,{method:'POST',credentials:'omit',headers:{'X-Telegram-Init-Data':window.Telegram?.WebApp.initData||''},body:form});const data=await r.json();if(!r.ok)throw Error(errorMessage(data,'ارسال رسید انجام نشد.','fa'));setOrder(data);setFile(null)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
+ async function upload(){if(!file||!order||busy)return;setBusy(true);setError('');try{validateReceipt(file);const form=new FormData();form.append('file',file);setOrder(await api<any>(`/reseller-join/${order.id}/receipt`,form));setFile(null)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
  async function cancel(){setBusy(true);try{await api(`/reseller-join/${order.id}/cancel`,{});setOrder(null);setQuote(null);setKind('')}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
  function back(){if(order){onBack();return}if(quote){setQuote(null);return}if(kind){setKind('');setCredentials(false);setPassword('');setMode('');setServer('');setPkg('');return}onBack()}
  const currentMode=kind==='panel'?mode:kind;
