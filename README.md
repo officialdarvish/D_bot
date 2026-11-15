@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/Deploy-Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker deployment" />
 </p>
 
-<p align="center"><img src="docs/images/readme-hero-neon.png" alt="D BOT — Telegram VPN sales, reseller automation and web administration" width="100%" /></p>
+<p align="center"><img src="docs/images/readme-hero-nx.png" alt="D BOT — Telegram VPN sales and reseller automation with Sanaei, PasarGuard, MikroTik and NX Panel" width="100%" /></p>
 
 <p align="center">
   <a href="#features">Explore features</a> ·
