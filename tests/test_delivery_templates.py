@@ -197,3 +197,60 @@ def test_existing_trial_rows_keep_trial_template_on_redelivery():
     assert presenter.is_trial_service(SimpleNamespace(**base))
     for change in [{'plan_id':1},{'reseller_id':1},{'client_username':'customer_test'}]:
         assert not presenter.is_trial_service(SimpleNamespace(**{**base,**change}))
+
+
+def test_trial_templates_are_independent_validated_and_preserve_legacy_default(editor):
+    import json
+    c,_=editor
+    endpoint='/admin/api/v2/delivery-templates?scope=trial'
+    config=c.get(endpoint).json()
+    assert config['active']=='legacy' and config['templates']==[]
+    assert 'تست' in config['presets'][0]['text']
+    assert asyncio.run(templates.selected_caption(is_test=True,**VALUES)) is None
+    rows=[{'id':'trial_brand','name':'تست من','text':'🧪 {username}\n{traffic} | {duration}\n{subscription_line}'}]
+    assert c.post(endpoint,data={'active':'trial_brand','templates_json':json.dumps(rows)}).status_code==200
+    assert c.get('/admin/api/v2/delivery-templates').json()['active']=='simple'
+    values={**VALUES,'username':'test_000001','volume_gb':0.5,'duration_days':1}
+    caption=asyncio.run(presenter.build_delivery_caption(is_test=True,**values))
+    assert '🧪 test_000001' in caption and '0.5 گیگابایت' in caption and LINK in plain_html(caption)
+    assert '🧪' not in asyncio.run(presenter.build_delivery_caption(**values))
+    bad=[{**rows[0],'text':'{unknown}'}]
+    assert c.post(endpoint,data={'active':'trial_brand','templates_json':json.dumps(bad)}).status_code==400
+    assert c.get(endpoint).json()['templates']==rows
+    assert c.get('/admin/api/v2/delivery-templates?scope=invalid').status_code==400
+    assert c.post('/admin/api/v2/delivery-templates?scope=invalid',data={'active':'simple'}).status_code==400
+    preview=c.post('/admin/api/v2/delivery-templates/preview?scope=trial',data={'text':'{username} {traffic} {duration}'})
+    assert preview.status_code==200 and 'test_000001' in preview.json()['preview'] and '0.5' in preview.json()['preview']
+    assert c.post(endpoint,data={'active':'legacy','templates_json':json.dumps(rows)}).status_code==200
+    assert asyncio.run(templates.selected_caption(is_test=True,**VALUES)) is None
+
+
+def test_trial_template_is_used_for_bot_and_miniapp_redelivery(editor,monkeypatch,tmp_path):
+    import json
+    from datetime import datetime,timedelta
+    from app.database.models import ClientService,User
+    from app.api import miniapp_actions
+    from app.services.xui_service import XuiService
+    c,sessions=editor
+    rows=[{'id':'test_card','name':'My trial','text':'My trial: {username} — {traffic} — {duration}'}]
+    assert c.post('/admin/api/v2/delivery-templates?scope=trial',data={'active':'test_card','templates_json':json.dumps(rows)}).status_code==200
+    qr=tmp_path/'trial.png'
+    def make(*args,**kwargs):qr.write_bytes(b'qr');return str(qr)
+    monkeypatch.setattr(presenter,'make_qr_card',make)
+    from app.services import user_content
+    monkeypatch.setattr(user_content,'background_bytes',AsyncMock(return_value=None))
+    bot=SimpleNamespace(send_photo=AsyncMock(),send_message=AsyncMock())
+    asyncio.run(presenter.send_service_info(bot,101,'test_000001','Trial',0.5,1,LINK,is_test=True))
+    assert 'My trial: test_000001' in bot.send_photo.await_args.kwargs['caption']
+    assert LINK in plain_html(bot.send_photo.await_args.kwargs['caption'])
+    async def seed():
+        async with sessions() as s:
+            user=User(telegram_id=101,username='demo');s.add(user);await s.flush()
+            svc=ClientService(user_id=user.id,server_id=1,client_username='test_000001',xui_email='test_000001',total_bytes=int(0.5*1024**3),sub_link=LINK,expires_at=datetime.utcnow()+timedelta(days=1))
+            s.add(svc);await s.commit();return svc.id,user
+    sid,user=asyncio.run(seed())
+    monkeypatch.setattr(miniapp_actions,'SessionLocal',sessions)
+    monkeypatch.setattr(XuiService,'resolve_service_subscription',AsyncMock(return_value=LINK))
+    asyncio.run(miniapp_actions.deliver_subscription(bot,user,sid))
+    assert bot.send_photo.await_count==2
+    assert 'My trial: test_000001' in bot.send_photo.await_args.kwargs['caption']

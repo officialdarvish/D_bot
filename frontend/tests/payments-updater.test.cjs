@@ -326,3 +326,44 @@ test('First setup stage offers a small restore entry without leaking keys into w
   assert.ok(d.getElementById('setupRestoreStatus').textContent.includes('رمز اصلی'));assert.equal(file.disabled,false);assert.equal(password.value,'private-password');
  }finally{wizard.window.close()}
 });
+
+for(const language of ['en','fa'])test(`Test-account template editor saves an independent template and keeps failed-save drafts (${language})`,async()=>{
+ const {DeliveryTemplates}=require('../components/delivery-templates.tsx');
+ const config={ok:true,active:'legacy',templates:[],presets:[{id:'simple',name:'Simple',text:'Trial {username}'},{id:'legacy',name:'Default',text:'Old {username}'}],fields:['username','traffic','duration','subscription_line']};
+ let saved=null,attempts=0,dirty=false;
+ global.fetch=async(url,options={})=>{
+  assert.ok(String(url).includes('scope=trial'));
+  if(!options.method)return response(config);
+  const fields=Object.fromEntries(options.body.entries());
+  if(String(url).includes('/preview?'))return response({ok:true,preview:'Trial test_000001 — 0.5 GB — 1 day'});
+  attempts++;if(attempts===1)return response({detail:'offline'},503);
+  saved=fields;return response({ok:true,active:fields.active,templates:JSON.parse(fields.templates_json)});
+ };
+ await render(React.createElement(DeliveryTemplates,{scope:'trial',reloadKey:0,show:()=>{},setAuthRequired:()=>{},onDirtyChange:v=>dirty=v}),language);
+ assert.ok(text().includes(language==='fa'?'قالب‌های ارسال اکانت تست':'Test account delivery templates'));
+ await click(language==='fa'?'افزودن قالب متنی':'Add text template');
+ await input(document.querySelector('input'),language==='fa'?'تست ویژه':'Trial style');
+ const editor=document.querySelector('textarea');
+ await act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set.call(editor,'Trial ');editor.dispatchEvent(new window.Event('input',{bubbles:true}))});
+ await click('{username}');assert.equal(editor.value,'Trial {username}');assert.equal(dirty,true);
+ await click(language==='fa'?'پیش‌نمایش نمونه':'Preview sample');assert.ok(text().includes('test_000001'));
+ await click(language==='fa'?'انتخاب برای ارسال':'Use for delivery');
+ await click(language==='fa'?'ذخیره قالب‌ها و انتخاب پیش‌فرض':'Save templates and default');assert.equal(editor.value,'Trial {username}');assert.equal(saved,null);assert.equal(dirty,true);
+ await click(language==='fa'?'ذخیره قالب‌ها و انتخاب پیش‌فرض':'Save templates and default');
+ const row=JSON.parse(saved.templates_json)[0];assert.equal(row.text,'Trial {username}');assert.equal(saved.active,row.id);assert.equal(dirty,false);
+});
+
+for(const language of ['en','fa'])test(`Custom protects unsaved test templates when switching sections (${language})`,async()=>{
+ const {CustomSection}=require('../components/custom-section.tsx');
+ const rows=[{key:'home',default:'Welcome',current:'Welcome',kind:'message',legacy_key:'welcome_text',section:'Entry',source:'app/database/defaults.py',customized:false},...['test_account','buy'].map(name=>({key:name,default:name,current:name,kind:'button',legacy_key:`button_${name}_text`,section:'Buttons',source:'app/bot/keyboards/common.py',customized:false,enabled:true}))];
+ const config={ok:true,active:'legacy',templates:[],presets:[{id:'simple',name:'Simple',text:'Trial {username}'},{id:'legacy',name:'Default',text:'Old {username}'}],fields:['username']};
+ global.fetch=async(url)=>String(url).includes('delivery-templates')?response(config):String(url).endsWith('custom-profiles')?response({ok:true,items:[]}):response({ok:true,items:rows,total:rows.length,modified:0});
+ let prompts=0,discard=false;window.confirm=()=>{prompts++;return discard};
+ await render(React.createElement(CustomSection,{reloadKey:0,show:()=>{},setAuthRequired:()=>{}}),language);
+ const menu=label=>[...document.querySelectorAll('.cj-menu button')].find(b=>b.textContent===label);
+ await act(async()=>menu('test_account').click());
+ await click(language==='fa'?'افزودن قالب متنی':'Add text template');
+ await act(async()=>document.querySelector('.cj-flow-buttons button').click());assert.equal(document.querySelector('[role=dialog]'),null);
+ await act(async()=>menu('buy').click());assert.equal(prompts,1);assert.ok(document.querySelector('.delivery-templates'));assert.ok(document.querySelector('.cj-flow h2').textContent.includes(language==='fa'?'اکانت تست':'Test account'));
+ discard=true;await act(async()=>menu('buy').click());assert.equal(prompts,2);assert.equal(document.querySelector('.delivery-templates'),null);assert.ok(document.querySelector('.cj-flow h2').textContent.includes(language==='fa'?'خرید':'Purchase'));
+});

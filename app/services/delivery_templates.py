@@ -14,6 +14,7 @@ from app.database.models import Setting
 
 log = logging.getLogger(__name__)
 SETTING_KEY = 'service_delivery_templates_v1'
+TRIAL_SETTING_KEY = 'trial_delivery_templates_v1'
 SIMPLE_TEXT = ('✅ سرویس شما آماده است.\n\n'
                '👤 نام کاربری: <code>{username}</code>\n'
                '📦 سرویس: <b>{title}</b>\n'
@@ -23,6 +24,13 @@ SIMPLE_TEXT = ('✅ سرویس شما آماده است.\n\n'
 FIELDS = ['username', 'title', 'traffic', 'duration', 'volume_gb', 'duration_days',
           'sub_link', 'subscription_line', 'credentials', 'server_type', 'password', 'l2tp_server', 'l2tp_ipsec_secret']
 FIXED_DELIVERY_TEXT = ContextVar('fixed_delivery_text', default=False)
+TRIAL_SIMPLE_TEXT = SIMPLE_TEXT.replace('✅ سرویس شما آماده است.', '🧪 اکانت تست شما آماده است.')
+
+
+def setting_key(scope: str) -> str:
+    if scope not in {'service', 'trial'}:
+        raise ValueError('Unknown delivery template section')
+    return TRIAL_SETTING_KEY if scope == 'trial' else SETTING_KEY
 
 
 class DeliveryTemplateText(str):
@@ -115,14 +123,15 @@ def normalize_config(raw) -> dict:
     return {'active': active, 'templates': templates}
 
 
-async def load_config(session=None) -> dict:
+async def load_config(session=None, *, scope='service') -> dict:
+    key = setting_key(scope)
     if session is None:
         from app.database.session import SessionLocal
         async with SessionLocal() as db:
-            return await load_config(db)
-    row = await session.get(Setting, SETTING_KEY)
+            return await load_config(db, scope=scope)
+    row = await session.get(Setting, key)
     if not row or not row.value:
-        return {'active': 'simple', 'templates': []}
+        return {'active': 'legacy' if scope == 'trial' else 'simple', 'templates': []}
     return normalize_config(json.loads(row.value))
 
 
@@ -161,14 +170,13 @@ def render_template(text: str, *, username, title, volume_gb, duration_days, sub
 
 
 async def selected_caption(**values) -> str | None:
-    if values.get('is_test'):
-        return None  # Trial messaging remains separate from purchased services.
+    trial = bool(values.get('is_test'))
     try:
-        config = await load_config()
+        config = await load_config(scope='trial') if trial else await load_config()
     except Exception:
         log.warning('Could not load delivery template; using simple preset', exc_info=True)
-        config = {'active': 'simple', 'templates': []}
+        config = {'active': 'legacy' if trial else 'simple', 'templates': []}
     if config['active'] == 'legacy':
         return None
-    text = SIMPLE_TEXT if config['active'] == 'simple' else next(row['text'] for row in config['templates'] if row['id'] == config['active'])
+    text = (TRIAL_SIMPLE_TEXT if trial else SIMPLE_TEXT) if config['active'] == 'simple' else next(row['text'] for row in config['templates'] if row['id'] == config['active'])
     return render_template(text, **values)

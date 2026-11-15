@@ -134,3 +134,28 @@ def test_profile_preserves_unrelated_delivery_template_definitions(custom):
     asyncio.run(verify('style_a'))
     assert c.post('/admin/api/v2/custom-profiles/apply',data={'profile_id':'default'}).status_code==200
     asyncio.run(verify('simple'))
+
+
+def test_trial_template_profiles_keep_old_snapshots_compatible(custom):
+    from app.services.delivery_templates import TRIAL_SETTING_KEY,load_config
+    c,sessions=custom
+    async def store(config):
+        async with sessions() as s:
+            await s.merge(Setting(key=TRIAL_SETTING_KEY,value=json.dumps(config)));await s.commit()
+    original={'active':'brand_trial','templates':[{'id':'brand_trial','name':'Trial','text':'Trial {username}'}]}
+    asyncio.run(store(original))
+    pid=c.post('/admin/api/v2/custom-profiles',data={'name':'Trial style'}).json()['id']
+    assert c.post('/admin/api/v2/custom-profiles/apply',data={'profile_id':'default'}).status_code==200
+    async def verify(active):
+        async with sessions() as s:
+            result=await load_config(s,scope='trial')
+            assert result['active']==active and result['templates']==original['templates']
+    asyncio.run(verify('legacy'))
+    assert c.post('/admin/api/v2/custom-profiles/apply',data={'profile_id':pid}).status_code==200
+    asyncio.run(verify('brand_trial'))
+    async def old_snapshot():
+        async with sessions() as s:
+            row=await s.get(Setting,'custom_profile:'+pid);data=json.loads(row.value);data.pop('trial_delivery');row.value=json.dumps(data);await s.commit()
+    asyncio.run(old_snapshot())
+    assert c.post('/admin/api/v2/custom-profiles/apply',data={'profile_id':pid}).status_code==200
+    asyncio.run(verify('brand_trial'))

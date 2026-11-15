@@ -140,40 +140,47 @@ async def reset_custom_text(key: str = Form(''), reset_all: str = Form('0')):
 
 
 @router.get('/admin/api/v2/delivery-templates', include_in_schema=False)
-async def list_delivery_templates():
-    from app.services.delivery_templates import load_config, SIMPLE_TEXT, FIELDS
-    from app.bot.service_presenter import SERVICE_CARD_XUI_TEXT
+async def list_delivery_templates(scope: str = 'service'):
+    from fastapi import HTTPException
+    from app.services.delivery_templates import load_config, SIMPLE_TEXT, TRIAL_SIMPLE_TEXT, FIELDS, setting_key
+    from app.bot.service_presenter import SERVICE_CARD_XUI_TEXT, TEST_SERVICE_CARD_XUI_TEXT
+    try:
+        setting_key(scope)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     async with SessionLocal() as session:
-        config = await load_config(session)
+        config = await load_config(session, scope=scope)
     return {'ok': True, **config, 'presets': [
-        {'id': 'simple', 'name': 'ساده — بارکد، مشخصات و لینک', 'text': SIMPLE_TEXT},
-        {'id': 'legacy', 'name': 'قالب قبلی — همراه آموزش اتصال', 'text': SERVICE_CARD_XUI_TEXT},
+        {'id': 'simple', 'name': 'ساده — بارکد، مشخصات و لینک', 'text': TRIAL_SIMPLE_TEXT if scope == 'trial' else SIMPLE_TEXT},
+        {'id': 'legacy', 'name': 'قالب قبلی — همراه آموزش اتصال', 'text': TEST_SERVICE_CARD_XUI_TEXT if scope == 'trial' else SERVICE_CARD_XUI_TEXT},
     ], 'fields': FIELDS}
 
 
 @router.post('/admin/api/v2/delivery-templates', include_in_schema=False)
-async def save_delivery_templates(active: str = Form('simple'), templates_json: str = Form('[]')):
+async def save_delivery_templates(active: str = Form('simple'), templates_json: str = Form('[]'), scope: str = 'service'):
     import json
     from fastapi import HTTPException
-    from app.services.delivery_templates import SETTING_KEY, normalize_config
+    from app.services.delivery_templates import setting_key, normalize_config
     try:
+        key = setting_key(scope)
         config = normalize_config({'active': active, 'templates': json.loads(templates_json)})
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     async with SessionLocal() as session:
-        await _upsert(session, SETTING_KEY, json.dumps(config, ensure_ascii=False))
+        await _upsert(session, key, json.dumps(config, ensure_ascii=False))
         await session.commit()
     return {'ok': True, 'message': 'قالب‌های تحویل سرویس ذخیره شدند.', **config}
 
 
 @router.post('/admin/api/v2/delivery-templates/preview', include_in_schema=False)
-async def preview_delivery_template(text: str = Form(...)):
+async def preview_delivery_template(text: str = Form(...), scope: str = 'service'):
     from fastapi import HTTPException
-    from app.services.delivery_templates import render_template
+    from app.services.delivery_templates import render_template, setting_key
     from app.bot.config_delivery import plain_html
     try:
-        rendered = render_template(text, username='demo_user', title='سرویس نمونه', volume_gb=20,
-            duration_days=30, sub_link='https://example.com/sub/demo', server_type='pasarguard')
+        setting_key(scope)
+        rendered = render_template(text, username='test_000001' if scope == 'trial' else 'demo_user', title='اکانت تست' if scope == 'trial' else 'سرویس نمونه', volume_gb=0.5 if scope == 'trial' else 20,
+            duration_days=1 if scope == 'trial' else 30, sub_link='https://example.com/sub/demo', server_type='pasarguard')
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {'ok': True, 'preview': plain_html(rendered)}

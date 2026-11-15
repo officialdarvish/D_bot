@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 13,
+  "build": 14,
   "channel": "main",
   "notes": {
-    "fa": "بازطراحی کاستوم با پیش‌نمایش منو و پیام‌ها، قالب‌های قابل ذخیره و بازیابی بک‌آپ در مرحله اول ویزارد",
-    "en": "Visual Custom menu and message editor, saved bot templates and first-stage setup backup restore"
+    "fa": "اصلاح کامل چیدمان و کادرهای کاستوم و افزودن قالب مستقل ارسال اکانت تست با پیش‌نمایش و درج متغیر",
+    "en": "Refine Custom layout and themed controls; add independent test-account delivery templates with preview and variable insertion"
   }
 }
