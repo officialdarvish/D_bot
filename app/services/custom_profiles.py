@@ -38,13 +38,14 @@ async def capture(session,name):
             texts[e.key]=value
         key=legacy_enabled_key(e)
         if key and key in values:flags[e.key]=str(values[key]).lower() not in {'0','false','off','no','disabled'}
-    from app.services.delivery_templates import SETTING_KEY,normalize_config
+    from app.services.delivery_templates import SETTING_KEY,normalize_config,load_config
     delivery=await session.get(Setting,SETTING_KEY)
     delivery_config=normalize_config(json.loads(delivery.value)) if delivery else None
+    trial_delivery=await load_config(session,scope='trial')
     from app.services.user_content import load_apps
     tutorials={row['id']:{'name':row['name'],'text':row['text']} for row in await load_apps(session)}
     key=uuid.uuid4().hex
-    session.add(Setting(key=PREFIX+key,value=json.dumps({'name':name,'texts':texts,'flags':flags,'delivery':delivery_config,'tutorials':tutorials},ensure_ascii=False)))
+    session.add(Setting(key=PREFIX+key,value=json.dumps({'name':name,'texts':texts,'flags':flags,'delivery':delivery_config,'trial_delivery':trial_delivery,'tutorials':tutorials},ensure_ascii=False)))
     await session.commit()
     return key
 
@@ -55,15 +56,26 @@ async def apply(session,profile_id):
         row=await session.get(Setting,profile_key(profile_id))
         if not row:raise HTTPException(404,'Template not found')
         data=json.loads(row.value)
-    from app.services.delivery_templates import SETTING_KEY,normalize_config,load_config
+    from app.services.delivery_templates import SETTING_KEY,TRIAL_SETTING_KEY,normalize_config,load_config
     current_delivery=await load_config(session)
     delivery=normalize_config(data['delivery']) if data.get('delivery') else {'active':'simple','templates':current_delivery['templates']}
     retained={row['id']:row for row in current_delivery['templates']}
     retained.update({row['id']:row for row in delivery['templates']})
     if len(retained)>30:raise HTTPException(409,'Remove unused delivery templates before applying this profile')
     delivery=normalize_config({**delivery,'templates':list(retained.values())})
+    # Older snapshots did not contain trial templates: keep the current trial
+    # selection when applying those snapshots. Explicit defaults restore legacy.
+    current_trial=await load_config(session,scope='trial')
+    trial=data.get('trial_delivery') or ({'active':'legacy','templates':[]} if profile_id=='default' else current_trial)
+    trial=normalize_config(trial)
+    retained_trial={row['id']:row for row in current_trial['templates']}
+    retained_trial.update({row['id']:row for row in trial['templates']})
+    if len(retained_trial)>30:raise HTTPException(409,'Remove unused delivery templates before applying this profile')
+    trial=normalize_config({**trial,'templates':list(retained_trial.values())})
     previous_delivery=await session.get(Setting,SETTING_KEY)
     if previous_delivery:await session.delete(previous_delivery)
+    previous_trial=await session.get(Setting,TRIAL_SETTING_KEY)
+    if previous_trial:await session.delete(previous_trial)
     catalog=build_catalog()
     keys={k for e in catalog for k in (e.key,legacy_setting_key(e),legacy_enabled_key(e)) if k}
     rows=(await session.execute(select(Setting).where(Setting.key.in_(keys)))).scalars().all()
@@ -80,6 +92,7 @@ async def apply(session,profile_id):
         enabled=legacy_enabled_key(e)
         if enabled and e.key in data.get('flags',{}):writes[enabled]='1' if data['flags'][e.key] else '0'
     if delivery:writes[SETTING_KEY]=json.dumps(delivery,ensure_ascii=False)
+    writes[TRIAL_SETTING_KEY]=json.dumps(trial,ensure_ascii=False)
     for key,value in writes.items():session.add(Setting(key=key,value=value))
     if data.get('tutorials'):
         from app.services.user_content import load_apps,save_apps
