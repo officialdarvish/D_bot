@@ -58,11 +58,13 @@
 
 ### 🔗 Connect the panels you use
 
-| Sanaei / 3x-ui / X-UI | PasarGuard | MikroTik / OpenVPN |
-| :---: | :---: | :---: |
-| Xray services | Public & reseller services | Router & OpenVPN services |
+| Sanaei / 3x-ui / X-UI | PasarGuard | MikroTik / OpenVPN | NX Panel |
+| :---: | :---: | :---: | :---: |
+| Xray services | Public & reseller services | Router & OpenVPN services | Public & D BOT reseller services |
 
 Multi-server support with inbound/group policies. Available operations follow provider permissions.
+
+NX Panel uses an API token and templates for public subscriptions and D BOT volume/PAYG resellers. Supported operations include account creation, renewal, traffic/day increases, enable/disable, deletion, usage and HWID management. OpenVPN, OpenConnect and WireGuard files are available when returned by NX; NX administrator-account sales are not supported. See the [NX Panel setup guide](docs/NX_PANEL_FA.md).
 
 <a id="install"></a>
 
