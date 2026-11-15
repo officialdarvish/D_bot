@@ -41,3 +41,11 @@ def count():
     with closing(connect()) as db:
         n=db.execute('SELECT COUNT(*) FROM installations WHERE seen>=?',(int(time.time())-ACTIVE_SECONDS,)).fetchone()[0]
     return JSONResponse({'ok':True,'count':n,'active_window_seconds':ACTIVE_SECONDS},headers={'Cache-Control':'public, max-age=60'})
+
+
+@app.get('/health')
+def health():
+    # Probe persistent storage too, not only the HTTP worker.
+    with closing(connect()) as db:
+        db.execute('SELECT 1 FROM installations LIMIT 1').fetchone()
+    return {'ok': True, 'service': 'dbot-installation-counter'}
