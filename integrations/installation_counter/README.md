@@ -35,7 +35,7 @@ From the D BOT project directory, recreate only the API and bot services so they
 docker compose up -d --no-deps --force-recreate api bot
 ```
 
-`DBOT_COUNTER_URL` enables reading the public total; `DBOT_COUNTER_ENABLED` independently opts the bot into reporting. Both default to unconfigured/disabled. Use the same central URL on all participating installations. The sidebar shows **Active D BOT installs / نصب‌های فعال D BOT**, or `—` if the endpoint is unavailable. Allow up to five minutes for the first heartbeat plus one minute for the display cache.
+`DBOT_COUNTER_URL` enables reading the public total; `DBOT_COUNTER_ENABLED` independently opts the bot into reporting. The bundled endpoint is `https://count.botgiftshop.ir`; reporting stays disabled until the owner enables `DBOT_COUNTER_ENABLED`. An explicit empty `DBOT_COUNTER_URL` disables reading too. Existing installations with a blank URL must set it explicitly. Use the same central URL on all participating installations. The sidebar shows **Active D BOT installs / نصب‌های فعال D BOT**, or `—` if the endpoint is unavailable. Allow up to five minutes for the first heartbeat plus one minute for the display cache.
 
 The bot-only `installation_identity` volume preserves the identity across updates and factory reset and is excluded from database backups. Deleting it creates a new identity; the old one expires after 15 minutes. Cloning it causes multiple installations to count as one. Multiple bot processes sharing the identity count once. This is an approximate count of installations, not unique owners.
 
@@ -66,3 +66,7 @@ bash -n integrations/installation_counter/install.sh
 ```
 
 Tests cover duplicate tokens, expiry, malformed/oversized requests, hash-only storage, pruning, health and absent list routes. VPS Docker/Nginx/TLS deployment must be verified on the actual host after choosing the domain. This repository does not claim that a public counter has already been deployed.
+
+## Current central endpoint / آدرس مرکزی فعلی
+
+The maintainer-operated endpoint is `https://count.botgiftshop.ir`. Its health and count endpoints were verified after deployment. The first response reported zero installations; installing the counter itself does not register a bot. To participate, set both environment values above using this hostname and recreate API/bot containers.

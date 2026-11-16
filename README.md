@@ -125,6 +125,8 @@ Python / Aiogram / FastAPI + Next.js, with **PostgreSQL 16** for persistent data
 
 Host the optional central counter alongside D BOT on your own VPS with a separate HTTPS subdomain. The sidebar counts participating installations seen in the last 15 minutes, not customers or unique people. Each installation must opt in and use the same endpoint. [Install and connect the counter](integrations/installation_counter/README.md).
 
+Central endpoint: `https://count.botgiftshop.ir`. Reporting remains opt-in (`DBOT_COUNTER_ENABLED=true`); existing installations must set `DBOT_COUNTER_URL` explicitly if it is blank.
+
 ## Official Links
 
 | Resource | Link |

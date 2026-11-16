@@ -9,7 +9,7 @@ import httpx
 
 _cache=(0.0,None)
 def endpoint():
-    raw=os.environ.get('DBOT_COUNTER_URL','').strip().rstrip('/')
+    raw=os.environ.get('DBOT_COUNTER_URL','https://count.botgiftshop.ir').strip().rstrip('/')
     parsed=urlsplit(raw)
     if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:return ''
     return raw
