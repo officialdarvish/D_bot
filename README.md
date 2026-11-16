@@ -123,9 +123,9 @@ Python / Aiogram / FastAPI + Next.js, with **PostgreSQL 16** for persistent data
 
 ## Active D BOT installations
 
-Host the optional central counter alongside D BOT on your own VPS with a separate HTTPS subdomain. The sidebar counts participating installations seen in the last 15 minutes, not customers or unique people. Each installation must opt in and use the same endpoint. [Install and connect the counter](integrations/installation_counter/README.md).
+**Anonymous installation reporting is enabled by default after installation/update.** Every five minutes D BOT sends only a stable, random 256-bit installation token over HTTPS to `https://count.botgiftshop.ir/heartbeat`. The service stores its SHA-256 hash and last-seen time to display the aggregate of installations active within 15 minutes; this is not a count of people, customers or VPN connections. HTTPS protects the request in transit; the destination is public and is not hidden from server owners. No Telegram IDs, bot tokens, domain, customer count or version are sent. As with any network request, the server sees a source IP in transit; the supplied service does not persist it in request logs or the database.
 
-Central endpoint: `https://count.botgiftshop.ir`. Reporting remains opt-in (`DBOT_COUNTER_ENABLED=true`); existing installations must set `DBOT_COUNTER_URL` explicitly if it is blank.
+Standard installations with no previous counter settings connect automatically on their next update/restart. A blank legacy URL uses the central default. **An explicit `DBOT_COUNTER_ENABLED=false` is preserved**, including old installations with that value; it must be changed to `true` if their owner wants to participate. Custom HTTPS endpoints remain supported. There is no web-panel toggle. To opt out on your VPS, set `DBOT_COUNTER_ENABLED=false` in `.env` and recreate API/bot containers. Failures do not interrupt bot operation; disconnected installations expire after 15 minutes. [Counter deployment, settings and limitations](integrations/installation_counter/README.md).
 
 ## Official Links
 

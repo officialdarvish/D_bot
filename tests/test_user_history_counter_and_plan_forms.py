@@ -110,9 +110,9 @@ def test_anonymous_counter_deduplicates_expires_and_never_lists(tmp_path,monkeyp
         assert [row[1] for row in db.execute('PRAGMA table_info(installations)')]==['token_hash','seen']
         assert all(row[0] not in {'a'*64,'b'*64} for row in db.execute('SELECT token_hash FROM installations'))
 
-def test_counter_disabled_by_default_and_token_stable(tmp_path,monkeypatch):
+def test_counter_explicit_opt_out_and_token_stable(tmp_path,monkeypatch):
     from app.services import installation_counter as counter
-    monkeypatch.delenv('DBOT_COUNTER_ENABLED',raising=False);monkeypatch.setenv('DBOT_COUNTER_URL','https://count.example.com');monkeypatch.setenv('DBOT_INSTALLATION_DIR',str(tmp_path/'identity'))
+    monkeypatch.setenv('DBOT_COUNTER_ENABLED','false');monkeypatch.setenv('DBOT_COUNTER_URL','https://count.example.com');monkeypatch.setenv('DBOT_INSTALLATION_DIR',str(tmp_path/'identity'))
     monkeypatch.setattr(counter.httpx,'AsyncClient',lambda **kw:pytest.fail('Disabled counter must not report'))
     asyncio.run(counter.heartbeat());assert not (tmp_path/'identity').exists()
     token=counter.installation_token();assert counter.installation_token()==token and len(token)==64

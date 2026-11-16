@@ -397,10 +397,13 @@ XUI_CA_BUNDLE=
 BACKUP_REQUIRE_SIGNATURE=true
 BACKUP_SIGNING_SECRET=
 DBOT_ALLOW_DOCKER_RESTART=false
+DBOT_COUNTER_ENABLED=${DBOT_COUNTER_ENABLED:-true}
+DBOT_COUNTER_URL=${DBOT_COUNTER_URL:-https://count.botgiftshop.ir}
 EOFENV
   chmod 600 "${APP_DIR}/.env"
 
   ok ".env created successfully."
+  info "Anonymous installation count: HTTPS to count.botgiftshop.ir; random identity every 5 minutes. Set DBOT_COUNTER_ENABLED=false in .env to opt out. See README."
   echo
   echo "================================================"
   echo "D Bot configuration summary"

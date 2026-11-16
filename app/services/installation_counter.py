@@ -1,4 +1,4 @@
-"""Opt-in anonymous installation heartbeat and cached public aggregate."""
+"""Disclosed, default-on anonymous installation aggregate with server-side opt-out."""
 import os
 import re
 import secrets
@@ -7,9 +7,16 @@ from pathlib import Path
 from urllib.parse import urlsplit
 import httpx
 
+DEFAULT_ENDPOINT='https://count.botgiftshop.ir'
 _cache=(0.0,None)
+
+def reporting_enabled():
+    # Preserve an explicit operator opt-out, including legacy false values.
+    return os.environ.get('DBOT_COUNTER_ENABLED','true').strip().lower() in {'1','true','yes'}
+
 def endpoint():
-    raw=os.environ.get('DBOT_COUNTER_URL','https://count.botgiftshop.ir').strip().rstrip('/')
+    # Older installers omitted the URL or wrote a blank placeholder.
+    raw=(os.environ.get('DBOT_COUNTER_URL','').strip() or DEFAULT_ENDPOINT).rstrip('/')
     parsed=urlsplit(raw)
     if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:return ''
     return raw
@@ -29,7 +36,7 @@ def installation_token():
     return value
 
 async def heartbeat():
-    if os.environ.get('DBOT_COUNTER_ENABLED','').lower() not in {'1','true','yes'} or not endpoint():return
+    if not reporting_enabled() or not endpoint():return
     try:
         token=installation_token()
         async with httpx.AsyncClient(timeout=8,follow_redirects=False) as client:

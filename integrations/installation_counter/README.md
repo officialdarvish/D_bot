@@ -1,6 +1,6 @@
 # D BOT active installations / نصب‌های فعال D BOT
 
-This independent service counts participating D BOT installations running on different VPSs. It does **not** count Telegram customers, VPN connections or people currently looking at the web panel. Each installation sends a persistent random identity every five minutes. An identity seen within the last **15 minutes** counts once; the web panel refreshes the total every minute. The initial total is zero until installations connect. Installations that do not opt in, cannot reach the endpoint or run older unconfigured versions cannot be counted.
+This independent service counts participating D BOT installations running on different VPSs. It does **not** count Telegram customers, VPN connections or people currently looking at the web panel. Each installation sends a persistent random identity every five minutes. An identity seen within the last **15 minutes** counts once; the web panel refreshes the total every minute. The initial total is zero until installations connect. Build 15 enables reporting by default. Explicit opt-outs, unreachable installations and older unconfigured versions cannot be counted.
 
 ## نصب کنار ربات روی VPS خودتان
 
@@ -18,14 +18,14 @@ sudo bash /tmp/dbot-counter-install.sh count.example.com you@example.com
 - `https://count.example.com/health` — سلامت سرویس و دیتابیس.
 - `https://count.example.com/count` — فقط مجموع نصب‌های فعال؛ ابتدا معمولاً صفر است.
 
-**آدرس پایه HTTPS را برای اتصال پروژه ارسال کنید.** این نصب به‌تنهایی ربات‌های دیگران را ثبت نمی‌کند؛ آدرس شمارنده باید در آن نصب‌ها تنظیم و ارسال آمار فعال شود.
+**آدرس مرکزی `https://count.botgiftshop.ir` است.** از بیلد ۱۵ نصب‌های استاندارد با آپدیت و راه‌اندازی مجدد خودکار متصل می‌شوند؛ مقدار false قبلی حفظ می‌شود. نصب خود شمارنده یک ربات به آمار اضافه نمی‌کند.
 
 ## Connect installations / اتصال هر نصب
 
-Set these two values in that installation's existing `.env`, without replacing the rest of it:
+Build 15 automatically uses the central HTTPS endpoint and enables reporting when no explicit setting exists. No manual domain configuration or database migration is required. Heartbeats start when the updated bot starts. Both main READMEs disclose the destination and data sent; no web-panel toggle is added. To override defaults, set these in the existing `.env` without replacing its other values:
 
 ```dotenv
-DBOT_COUNTER_URL=https://count.example.com
+DBOT_COUNTER_URL=https://count.botgiftshop.ir
 DBOT_COUNTER_ENABLED=true
 ```
 
@@ -35,7 +35,9 @@ From the D BOT project directory, recreate only the API and bot services so they
 docker compose up -d --no-deps --force-recreate api bot
 ```
 
-`DBOT_COUNTER_URL` enables reading the public total; `DBOT_COUNTER_ENABLED` independently opts the bot into reporting. The bundled endpoint is `https://count.botgiftshop.ir`; reporting stays disabled until the owner enables `DBOT_COUNTER_ENABLED`. An explicit empty `DBOT_COUNTER_URL` disables reading too. Existing installations with a blank URL must set it explicitly. Use the same central URL on all participating installations. The sidebar shows **Active D BOT installs / نصب‌های فعال D BOT**, or `—` if the endpoint is unavailable. Allow up to five minutes for the first heartbeat plus one minute for the display cache.
+Missing/blank `DBOT_COUNTER_URL` uses `https://count.botgiftshop.ir`; a nonempty invalid URL fails closed. Custom HTTPS endpoints remain supported. Reporting defaults to enabled. Set `DBOT_COUNTER_ENABLED=false` to opt out and recreate API/bot services using the command above. **Explicit false settings from earlier versions are preserved**, even when inherited from an old example file; the operator must choose `true` to opt back in. Existing `.env` files are not silently rewritten during updates. Reading the aggregate is independent of reporting. The sidebar shows **Active D BOT installs / نصب‌های فعال D BOT**, or `—` if unavailable. Allow five minutes for reporting plus one minute for the display cache.
+
+**انصراف:** صاحب VPS می‌تواند `DBOT_COUNTER_ENABLED=false` را در `.env` قرار دهد و دستور بالا را اجرا کند. مقدار false قبلی نیز حفظ می‌شود. مقصد عمومی است و ارتباط پنهان نمی‌شود.
 
 The bot-only `installation_identity` volume preserves the identity across updates and factory reset and is excluded from database backups. Deleting it creates a new identity; the old one expires after 15 minutes. Cloning it causes multiple installations to count as one. Multiple bot processes sharing the identity count once. This is an approximate count of installations, not unique owners.
 
@@ -65,8 +67,8 @@ python3 -m unittest discover -s integrations/installation_counter -p 'test_*.py'
 bash -n integrations/installation_counter/install.sh
 ```
 
-Tests cover duplicate tokens, expiry, malformed/oversized requests, hash-only storage, pruning, health and absent list routes. VPS Docker/Nginx/TLS deployment must be verified on the actual host after choosing the domain. This repository does not claim that a public counter has already been deployed.
+Tests cover duplicate tokens, expiry, malformed/oversized requests, hash-only storage, pruning, health and absent list routes. VPS Docker/Nginx/TLS deployment must be verified on the actual host after choosing the domain. The central counter was deployed by the maintainer; tests do not replace operational validation of future host deployments.
 
 ## Current central endpoint / آدرس مرکزی فعلی
 
-The maintainer-operated endpoint is `https://count.botgiftshop.ir`. Its health and count endpoints were verified after deployment. The first response reported zero installations; installing the counter itself does not register a bot. To participate, set both environment values above using this hostname and recreate API/bot containers.
+The maintainer-operated endpoint is `https://count.botgiftshop.ir`. Its health and count endpoints were verified after deployment. The first response reported zero installations; installing the counter itself does not register a bot. Build 15 standard installations connect after their normal update/restart. Explicit opt-outs stay disabled. This client-side default change does not require updating the counter server.
