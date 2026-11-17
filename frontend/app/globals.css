@@ -5706,6 +5706,16 @@ html[dir="rtl"] .shell .kv b{unicode-bidi:plaintext}
 html.setup-embedded body{background:#07111f;min-height:100dvh}
 html.setup-embedded body:before,html.setup-embedded body:after{display:none}
 .setup-embedded .shell{min-height:100dvh}
-.setup-embedded .content{padding:18px;max-width:none;margin:0}
+.setup-embedded .content{padding:20px;max-width:none;margin:0;min-width:0}
 .setup-embedded .page-title{margin-bottom:18px}
 @media(max-width:640px){.setup-embedded .content{padding:12px}.setup-embedded .page-title h1{font-size:23px}}
+
+/* Setup embeds keep exactly the panel controls and typography, without a second shell. */
+.setup-embedded .main{min-width:0;padding:0}
+.setup-embedded .page-title{align-items:flex-start;gap:12px}
+.setup-embedded .page-title h1{font-size:18px;line-height:1.5}
+.setup-embedded .page-title p{font-size:12px;line-height:1.8;max-width:70ch}
+.setup-embedded .page-title .btn{min-height:36px}
+.setup-embedded .content>.panel,.setup-embedded .content>.table-card{box-shadow:none}
+.setup-embedded .modal-card{max-width:calc(100% - 24px)}
+@media(max-width:640px){.setup-embedded .content{padding:14px}.setup-embedded .page-title h1{font-size:18px}.setup-embedded .page-title{flex-wrap:wrap}.setup-embedded .form-field :is(input,select,textarea){font-size:16px}}

@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 20,
+  "build": 21,
   "channel": "main",
   "notes": {
-    "fa": "حذف تگ‌های سرور از ستاپ اولیه و نمایش پیام موفقیت فارسی و انگلیسی پس از تأیید و ذخیره سرور",
-    "en": "Hide server tags in initial setup and show localized success confirmation after verifying and saving a server"
+    "fa": "هماهنگ‌سازی رابط تمام مراحل ویزارد با قالب وب‌پنل، پیمایش مراحل واکنش‌گرا، فرم‌های یکپارچه و وضعیت بارگذاری و ذخیره",
+    "en": "Synchronize all wizard stages with the web panel theme, responsive step navigation, consistent embedded forms and loading/save states"
   }
 }

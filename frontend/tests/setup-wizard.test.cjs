@@ -97,3 +97,43 @@ test('a failed second save clears the previous success message',async()=>{
   assert.equal(x.document.querySelectorAll('#setupServers li').length,2);
  }finally{x.dom.window.close()}
 });
+
+test('step navigation stays synchronized through every stage in both languages',async()=>{
+ const x=environment(()=>response({ok:true}));try{
+  const {document:d,dom}=x;
+  assert.equal(d.querySelector('.setup-workspace > form')?.tagName,'FORM');
+  assert.ok(d.querySelector('.setup-stepbar #setupStepList'));
+  d.querySelectorAll('[name^=feature_]').forEach(field=>field.checked=true);
+  let count=0;
+  while(!d.getElementById('setupNext').hidden){
+   const current=d.querySelector('.step.current');
+   assert.equal(d.querySelectorAll('.step.current').length,1);
+   assert.equal(d.querySelectorAll('[aria-current=step]').length,1);
+   assert.equal(d.querySelector('[aria-current=step] span:last-child').textContent,current.querySelector('h2').textContent);
+   const frame=current.querySelector('iframe');
+   if(frame){
+    assert.ok(frame.src.startsWith('https://bot.example/private/setup/options/'));
+    frame.dispatchEvent(new dom.window.Event('load'));
+    assert.equal(frame.parentElement.getAttribute('aria-busy'),'false');
+   }
+   d.querySelector('[name=bot_name]').value='D BOT';
+   d.querySelector('[name=support_username]').value='@support';
+   d.querySelector('[name=welcome_text]').value='Welcome';
+   d.querySelector('[name=web_path]').value='private';
+   d.getElementById('setupNext').click();await tick();
+   assert.equal(d.getElementById('setupError').textContent,'');
+   if(++count>25)throw Error('Stage navigation did not finish');
+  }
+  assert.equal(count,d.querySelectorAll('.step').length-1);
+  assert.equal(d.getElementById('setupFinish').hidden,false);
+  d.getElementById('setupLanguage').click();
+  assert.equal(d.documentElement.dir,'rtl');
+  assert.equal(d.getElementById('setupNav').getAttribute('aria-label'),'مراحل راه‌اندازی');
+  assert.equal(d.querySelector('[aria-current=step] span:last-child').textContent,d.querySelector('.step.current h2').textContent);
+  assert.equal(d.querySelector('iframe').title,'سرورها و نقش نمایندگی');
+  d.querySelector('.setup-step-link').click();
+  assert.equal(d.querySelector('.step.current h2').textContent,'سرورها');
+  assert.equal(d.getElementById('setupServers').hidden,true);
+  assert.deepEqual(x.errors,[]);
+ }finally{x.dom.window.close()}
+});
