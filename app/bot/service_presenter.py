@@ -279,6 +279,21 @@ async def send_service_info(
                 if sub_link is not None and sub_link != svc.sub_link:
                     svc.sub_link = sub_link
                     await db.commit()
+    nx_links = []
+    if (server_type or '').lower() == 'nx':
+        from types import SimpleNamespace
+        from app.services.nx_subscription import subscription_links
+        nx_server = SimpleNamespace(meta={})
+        if service_id:
+            from app.database.session import SessionLocal
+            from app.database.models import ClientService, Server
+            async with SessionLocal() as db:
+                nx_service = await db.get(ClientService, int(service_id))
+                nx_server = (await db.get(Server, nx_service.server_id)) if nx_service else nx_server
+                if not sub_link and nx_service:
+                    sub_link = nx_service.sub_link
+        nx_links = subscription_links(nx_server or SimpleNamespace(meta={}), sub_link)
+        sub_link = nx_links[0]['url'] if nx_links else None
     caption = await build_delivery_caption(
         username=username,
         title=title,
@@ -302,6 +317,8 @@ async def send_service_info(
     markup = reply_markup
     if (server_type or '').lower() in {'mikrotik','nx'} and service_id:
         rows = [[InlineKeyboardButton(text='📥 دریافت پروفایل سرور', callback_data=f'svc:profile:{service_id}')]]
+        if (server_type or '').lower() == 'nx':
+            rows.insert(0,[InlineKeyboardButton(text='📲 دریافت لینک و QR ساب',callback_data=f'svc:nx-sub:{service_id}')])
         if reply_markup is not None:
             rows.extend(list(getattr(reply_markup, 'inline_keyboard', []) or []))
         markup = InlineKeyboardMarkup(inline_keyboard=rows)
@@ -311,31 +328,30 @@ async def send_service_info(
     markup = config_restart_keyboard(markup)
 
     if sub_link and (server_type or '').lower() != 'mikrotik':
-        try:
-            from app.services.user_content import background_bytes
-            artwork = await background_bytes()
-            qr_path = make_qr_card(
-                sub_link,
-                background_bytes=artwork,
-                title='VPN BOT',
-                subtitle='VPN',
-                username=username,
-                plan_title=title,
-                volume_gb=volume_gb,
-                duration_days=duration_days,
-                server_name='Multi Location',
-            )
-        except DataOverflowError:
-            await send_config_text(bot, chat_id, caption, reply_markup=markup)
-            return
-
-        try:
-            await send_config_photo(bot, chat_id, FSInputFile(qr_path), caption, reply_markup=markup)
-        finally:
+        from app.services.user_content import background_bytes
+        artwork = await background_bytes()
+        deliveries = nx_links or [{'url': sub_link, 'label': 'VPN'}]
+        for index, delivery in enumerate(deliveries):
+            delivery_caption = caption
+            if nx_links:
+                delivery_caption = (type(caption)(caption + '\n\n📲 ' + escape(delivery['label'])) if index == 0 else
+                    '📲 ' + escape(delivery['label']) + '\n<code>' + escape(delivery['url']) + '</code>')
             try:
-                os.unlink(qr_path)
-            except OSError:
-                pass
+                qr_path = make_qr_card(
+                    delivery['url'], background_bytes=artwork, title='VPN BOT',
+                    subtitle=delivery['label'], username=username, plan_title=title,
+                    volume_gb=volume_gb, duration_days=duration_days, server_name='Multi Location',
+                )
+            except DataOverflowError:
+                await send_config_text(bot, chat_id, delivery_caption, reply_markup=markup)
+                continue
+            try:
+                await send_config_photo(bot, chat_id, FSInputFile(qr_path), delivery_caption, reply_markup=markup)
+            finally:
+                try:
+                    os.unlink(qr_path)
+                except OSError:
+                    pass
     else:
         await send_config_text(bot, chat_id, caption, reply_markup=markup)
         if (server_type or '').lower() in {'mikrotik','nx'} and service_id:

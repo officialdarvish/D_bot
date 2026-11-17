@@ -113,7 +113,7 @@ type DashboardApi = {
 
 type ResourceMetric = { title: string; value: string; detail: string; percent: number; icon: string; cls: string };
 type UserItem = { id: number; telegram_id: number; username?: string; full_name?: string; wallet_total: number; purchases: number; referral_code?: string; joined_at?: string; is_blocked?: boolean; is_reseller?: boolean };
-type ServerItem = { reseller_billing_modes?: string[]; reseller_payg_rate_irt?: number; id: number; name: string; display_name?: string; server_type: string; server_type_label?: string; panel_url: string; panel_base_url?: string; panel_path?: string; subscription_url?: string; username: string; auth_username?: string; scope?: string; inbound_ids?: unknown[]; inbounds?: { id: number; remark?: string; protocol?: string; enable?: boolean }[]; client_groups?: { name: string; client_count?: number | null }[]; last_inbound_sync_at?: string; is_active: boolean; user_count?: number; router_name?: string; router_host?: string; router_port?: string | number; router_online?: boolean; router_identity?: string; router_version?: string; router_uptime?: string; router_secrets?: number; router_active?: number; router_error?: string; last_router_sync_at?: string; default_protocol?: string; openvpn_profile_id?: number; l2tp_server?: string; l2tp_ipsec_secret?: string; badge_color?: string; badge_emoji?: string; badge_label?: string; pasarguard_role_name?: string; pasarguard_restricted?: boolean; pasarguard_group_source?: string; pasarguard_group_ids?: number[]; pasarguard_require_template?: boolean; pasarguard_capabilities?: Record<string, any>; pasarguard_limits?: Record<string, any>; pasarguard_warnings?: string[] };
+type ServerItem = { nx_subscription_formats?: string[]; reseller_billing_modes?: string[]; reseller_payg_rate_irt?: number; id: number; name: string; display_name?: string; server_type: string; server_type_label?: string; panel_url: string; panel_base_url?: string; panel_path?: string; subscription_url?: string; username: string; auth_username?: string; scope?: string; inbound_ids?: unknown[]; inbounds?: { id: number; remark?: string; protocol?: string; enable?: boolean }[]; client_groups?: { name: string; client_count?: number | null }[]; last_inbound_sync_at?: string; is_active: boolean; user_count?: number; router_name?: string; router_host?: string; router_port?: string | number; router_online?: boolean; router_identity?: string; router_version?: string; router_uptime?: string; router_secrets?: number; router_active?: number; router_error?: string; last_router_sync_at?: string; default_protocol?: string; openvpn_profile_id?: number; l2tp_server?: string; l2tp_ipsec_secret?: string; badge_color?: string; badge_emoji?: string; badge_label?: string; pasarguard_role_name?: string; pasarguard_restricted?: boolean; pasarguard_group_source?: string; pasarguard_group_ids?: number[]; pasarguard_require_template?: boolean; pasarguard_capabilities?: Record<string, any>; pasarguard_limits?: Record<string, any>; pasarguard_warnings?: string[] };
 type CategoryItem = { service_type_key?: string; service_type_name?: string; id: number; name: string; server_id?: number | null; server_ids?: number[]; server_names?: string[]; is_active?: boolean; bot_visibility?: { status: string; detail: string; providers: string[]; provider_labels: string[]; active_public_server_ids: number[]; inactive_public_server_ids: number[] } };
 type PlanItem = { custom_tariff?:Record<string,number|boolean>; id: number; title: string; volume_gb: number; duration_days: number; price_irt: number; pricing_currency?: 'IRT' | 'USD'; price_usd?: string; category_id?: number; server_id?: number; inbound_ids?: unknown[]; inbound_mode?: 'automatic' | 'manual'; group_name?: string; hwid_limit?: number; happ_encrypted_sub?: boolean; is_active: boolean; is_unlimited?: boolean };
 type ServerGroupsApi = { ok: boolean; items: { server_id: number; groups: { name: string; client_count?: number | null }[]; error?: string }[] };
@@ -2118,6 +2118,7 @@ function serverForm(s?: ServerItem): ModalForm {
     panel_url: isCustom ? (s.panel_base_url || s.panel_url || '') : (s.panel_base_url || s.panel_url || ''),
     panel_path: (isCustom || s.server_type === 'pasarguard') ? '/' : (s.panel_path || '/'),
     subscription_url: isCustom ? '' : (s.subscription_url || ''),
+    nx_subscription_formats: s.nx_subscription_formats || ['v2ray'],
     username: isCustom ? (s.auth_username || '') : (s.username || ''),
     name: isCustom ? (s.name || 'custom-panel') : (s.name || ''),
     display_name: s.display_name || s.name || '',
@@ -2136,6 +2137,7 @@ function serverForm(s?: ServerItem): ModalForm {
     panel_url: '',
     panel_path: '/',
     subscription_url: '',
+    nx_subscription_formats: ['v2ray'],
     username: '',
     password: '',
     name: '',
@@ -2167,6 +2169,7 @@ function serverForm(s?: ServerItem): ModalForm {
       { name: 'subscription_url', label: 'Subscription URL (public subscription base)', full: true, placeholder: 'https://sub.example.com/sub/', showWhen: { name: 'server_type', value: 'xui' } },
       { name: 'subscription_url', label: 'Subscription URL (PasarGuard public subscription base)', required: true, full: true, placeholder: 'https://sub.example.com/sub/', showWhen: { name: 'server_type', value: 'pasarguard' } },
       {name:'subscription_url',label:'NX subscription base (optional; API subUrl takes priority)',full:true,showWhen:{name:'server_type',value:'nx'}},
+      {name:'nx_subscription_formats',label:'NX subscription formats (each selected format gets its own link and QR)',type:'checkbox-group',full:true,options:[{value:'v2ray',label:'V2Ray / Base64 (v2rayN, v2rayNG, Happ)'},{value:'clash',label:'Clash / mihomo YAML'},{value:'singbox',label:'sing-box JSON (Hiddify, Karing)'},{value:'xray',label:'Xray JSON'},{value:'plain',label:'Plain share links'}],showWhen:{name:'server_type',value:'nx'}},
       { name: 'username', label: 'Username', required: false },
       { name: 'password', label: s ? 'New password / login password' : 'Password / login password', type: 'password', required: false },
       { name: 'api_key', label: 'API Token Panel', type: 'password', full: true, placeholder: 'Optional panel API token/key. Supported by 3x-ui and MikroTik.', showWhen:{name:'server_type',values:['xui','mikrotik']} },

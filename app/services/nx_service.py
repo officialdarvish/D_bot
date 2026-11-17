@@ -13,6 +13,7 @@ from urllib.parse import urlsplit,urlunsplit
 import httpx
 from app.core.security import decrypt_text
 from app.services.traffic_units import gb_to_bytes
+from app.services.nx_subscription import subscription_links
 from app.services.pasarguard_service import PasarGuardCreateUnconfirmed,PasarGuardUsernameConflict
 
 
@@ -81,7 +82,9 @@ class NxService:
         status='disabled' if not enabled else 'expired' if expiry and expiry<=datetime.now(timezone.utc).timestamp() else 'limited' if total and used>=total else 'active'
         # subUrl is authoritative for wildcard subscription domains.
         link=data.get('subUrl') or ((str(server.subscription_url).rstrip('/')+'/'+str(data['subId'])) if server.subscription_url and data.get('subId') else (str(server.panel_url).rstrip('/')+'/sub/'+str(data['subId']) if data.get('subId') else ''))
-        return {**data,'username':data.get('name'),'used_traffic':used,'data_limit':total,'total_bytes':total,'expire':expiry,'status':status,'disabled':not enabled,'hwid_limit':int(data.get('deviceLimit') or 0),'inbound_ids':data.get('templateIds') or [],'group_ids':data.get('templateIds') or [],'sub_link':link,'subscription_url':link,'uuid':(data.get('config') or {}).get('uuid') or str(data.get('id') or '')}
+        links=subscription_links(server,link)
+        link=links[0]['url'] if links else ''
+        return {**data,'subscription_links':links,'username':data.get('name'),'used_traffic':used,'data_limit':total,'total_bytes':total,'expire':expiry,'status':status,'disabled':not enabled,'hwid_limit':int(data.get('deviceLimit') or 0),'inbound_ids':data.get('templateIds') or [],'group_ids':data.get('templateIds') or [],'sub_link':link,'subscription_url':link,'uuid':(data.get('config') or {}).get('uuid') or str(data.get('id') or '')}
 
     async def list_groups(self,server):return await self._list(server,'/templates')
     async def list_templates(self,server):return await self.list_groups(server)
@@ -98,7 +101,8 @@ class NxService:
         if len(matches)>1:raise RuntimeError('NX username is ambiguous')
         return self.normalize(server,matches[0]) if matches else None
     async def current_subscription_link(self,server,username,*responses):
-        user=await self.get_user(server,username)
+        user=next((self.normalize(server,row) for row in responses if isinstance(row,dict) and row.get('name')==username and row.get('subUrl')),None)
+        if user is None:user=await self.get_user(server,username)
         if not user or not user['sub_link']:raise RuntimeError('NX subscription URL unavailable')
         return user['sub_link']
 

@@ -60,6 +60,8 @@ body.setup-page{margin:0;min-height:100dvh;color:var(--text);background:radial-g
 .setup-page .step.current{display:block}
 .setup-page .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
 .setup-page .full{grid-column:1/-1}
+.setup-nx-formats{margin:0;padding:16px;border:1px solid var(--line);border-radius:var(--ui-radius);min-width:0}
+.setup-nx-formats legend{padding-inline:8px;color:var(--muted);font-size:13px}
 .setup-page label{display:grid;gap:8px;min-width:0;font-size:13px;color:#c4d2e4;text-align:start}
 .setup-page input:not([type=radio]):not([type=checkbox]),.setup-page select,.setup-page textarea{width:100%;min-width:0;min-height:var(--ui-control-h);border:1px solid rgba(136,169,214,.20);border-radius:var(--ui-radius-sm);padding:9px 12px;background:rgba(10,24,41,.72);color:#eef5ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.015);transition:border-color .16s,box-shadow .16s}
 .setup-page input:focus,.setup-page select:focus,.setup-page textarea:focus{border-color:rgba(111,169,248,.55);box-shadow:0 0 0 3px rgba(85,147,234,.08)}

@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 24,
+  "build": 25,
   "channel": "main",
   "notes": {
-    "fa": "ورود مرحله‌به‌مرحله حجم و سپس تعداد روز برای پلن سفارشی و بسته نمایندگی، با اعتبارسنجی جداگانه و محاسبه نهایی قیمت",
-    "en": "Ask for custom-plan and reseller-package volume first, then days, with independent validation and final server-side pricing"
+    "fa": "انتخاب فرمت‌های ساب NX در افزودن، ویرایش و ستاپ، لینک اجباری کلاینت بر اساس subUrl API و QR جداگانه برای هر فرمت انتخابی بدون دانلود اضافه",
+    "en": "Select NX subscription formats in add/edit/setup, derive explicit client URLs from API subUrl and deliver matching QR codes per selected format without extra config downloads"
   }
 }

@@ -22,7 +22,7 @@ def test_paging_exact_name_and_authoritative_subscription(monkeypatch):
     monkeypatch.setattr(svc,'_request',request)
     found=asyncio.run(svc.get_user(server(),'buyer'))
     assert found['used_traffic']==300 and found['data_limit']==10000
-    assert found['sub_link']=='https://wildcard.test/sub/old'
+    assert found['sub_link']=='https://wildcard.test/sub/old?format=v2ray'
     assert calls[0][2]['params']['q']=='buyer'
 
 
@@ -38,7 +38,7 @@ def test_patch_concurrency_and_rotation_retains_other_config(monkeypatch):
     assert sent['version']==55 and sent['config']['flow']=='vision'
     assert sent['config']['uuid']!='old' and sent['subId']!='old'
     assert 'volume' not in sent and 'templateIds' not in sent and 'subToken' not in sent
-    assert result['sub_link'].endswith('/new')
+    assert result['sub_link'].endswith('/new?format=v2ray')
 
 
 def test_ambiguous_create_is_never_repeated_or_adopts_other_user(monkeypatch):

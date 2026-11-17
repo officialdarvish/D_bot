@@ -1658,7 +1658,9 @@ async def reseller_create_hwid_limit(message: Message, state: FSMContext):
             await reconcile_reseller_accounting(session, r_after)
             remaining_after = bytes_to_gb(remaining_bytes(r_after))
     caption = await build_delivery_caption(username=username, title=f'نمایندگی | {volume:g} گیگ | {days} روز', volume_gb=volume, duration_days=days, sub_link=created_sub_link, server_type=server.server_type if 'server' in locals() and server else 'xui', password=created_password)
-    if created_sub_link:
+    if server.server_type == 'nx':
+        await send_service_card(message.bot, message.from_user.id, username, f'نمایندگی | {volume:g} گیگ | {days} روز', volume, days, created_sub_link, is_test=False, service_id=created_service_id, server_type='nx')
+    elif created_sub_link:
         qr_path = None
         try:
             from app.services.user_content import background_bytes
@@ -1744,6 +1746,9 @@ async def reseller_user_detail(callback: CallbackQuery):
     status_text = 'فعال' if svc.is_active else 'غیرفعال'
     expire_text = fa_date(svc.expires_at, empty='-') if svc.expires_at else '-'
     sub_link_text = svc.sub_link or '-'
+    if server and server.server_type=='nx' and svc.sub_link:
+        from app.services.nx_subscription import subscription_links
+        sub_link_text='\n\n'.join(row['label']+'\n'+row['url'] for row in subscription_links(server,svc.sub_link))
     text = (
         '👤 اطلاعات یوزر\n\n'
         f'نام: {svc.client_username}\n'
@@ -1770,6 +1775,8 @@ async def reseller_user_detail(callback: CallbackQuery):
         ],
         [back_button('reseller:users')],
     ])
+    if server and server.server_type=='nx':
+        kb.inline_keyboard.insert(0,[InlineKeyboardButton(text='📲 دریافت لینک و QR ساب',callback_data=f'svc:nx-sub:{sid}')])
     await edit_or_answer(callback, text, reply_markup=kb); await callback.answer()
 
 

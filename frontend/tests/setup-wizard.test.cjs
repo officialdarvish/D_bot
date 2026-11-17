@@ -140,3 +140,20 @@ test('step navigation stays synchronized through every stage in both languages',
   assert.deepEqual(x.errors,[]);
  }finally{x.dom.window.close()}
 });
+
+test('NX setup saves selected subscription formats without submitting them to other providers',async()=>{
+ const x=environment(()=>response({ok:true}));try{
+  const d=x.document,provider=d.querySelector('[data-server=server_type]');
+  assert.equal(d.querySelector('.setup-nx-formats').hidden,true);
+  provider.value='nx';provider.dispatchEvent(new x.dom.window.Event('change'));
+  assert.equal(d.querySelector('.setup-nx-formats').hidden,false);
+  d.querySelector('[data-nx-format=clash]').checked=true;
+  d.getElementById('setupAddServer').click();await tick();
+  assert.equal(x.calls[0].options.body.get('nx_subscription_formats'),'v2ray,clash');
+  provider.value='xui';provider.dispatchEvent(new x.dom.window.Event('change'));
+  assert.equal(d.querySelector('.setup-nx-formats').hidden,true);
+  d.getElementById('setupAddServer').click();await tick();
+  assert.equal(x.calls[1].options.body.has('nx_subscription_formats'),false);
+  assert.deepEqual(x.errors,[]);
+ }finally{x.dom.window.close()}
+});

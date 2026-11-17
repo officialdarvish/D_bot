@@ -3325,18 +3325,21 @@ async def custom_panel_edit(request: Request, sid: int, panel_url: str = Form(..
 
 
 @router.post('/admin/servers/add')
-async def server_add(request: Request, server_type:str=Form('xui'), scope:str=Form('public'), name:str=Form(''), display_name:str=Form(''), panel_url:str=Form(...), panel_path:str=Form('/'), subscription_url:str=Form(''), username:str=Form(''), password:str=Form(''), api_key:str=Form(''), router_name:str=Form(''), default_protocol:str=Form('openvpn'), openvpn_profile_id:int=Form(0), l2tp_server:str=Form(''), l2tp_ipsec_secret:str=Form(''), badge_color:str=Form(''), badge_label:str=Form(''), badge_emoji:str=Form(''), reseller_billing_modes:str|None=Form(None), reseller_payg_rate_irt:int=Form(0), _: str = Depends(_auth_user)):
+async def server_add(request: Request, server_type:str=Form('xui'), scope:str=Form('public'), name:str=Form(''), display_name:str=Form(''), panel_url:str=Form(...), panel_path:str=Form('/'), subscription_url:str=Form(''), username:str=Form(''), password:str=Form(''), api_key:str=Form(''), router_name:str=Form(''), default_protocol:str=Form('openvpn'), openvpn_profile_id:int=Form(0), l2tp_server:str=Form(''), l2tp_ipsec_secret:str=Form(''), badge_color:str=Form(''), badge_label:str=Form(''), badge_emoji:str=Form(''), reseller_billing_modes:str|None=Form(None), reseller_payg_rate_irt:int=Form(0), nx_subscription_formats:str|None=Form(None), _: str = Depends(_auth_user)):
     from app.services.reseller_billing import validate_policy
     try: billing_policy = validate_policy(reseller_billing_modes or 'volume', reseller_payg_rate_irt, server_type)
     except ValueError as exc: return fail(request, str(exc))
     async with SessionLocal() as s:
         if server_type=='nx':
             from app.services.nx_service import NxService, normalize_nx_panel_parts
+            from app.services.nx_subscription import parse_formats
+            try:formats=parse_formats(nx_subscription_formats)
+            except ValueError as exc:return fail(request,str(exc),400)
             from app.services.server_connections import add_shared_connection
             if not name.strip() or not api_key:return fail(request,'NX name and API token are required',400)
             try:base_url, web_path, final_url = normalize_nx_panel_parts(panel_url, panel_path)
             except ValueError as exc:return fail(request,str(exc),400)
-            candidate=Server(name=name.strip(),server_type='nx',panel_url=final_url,username='api-token',password_encrypted=encrypt_text(api_key),subscription_url=subscription_url or None,is_active=True,meta={'scope':scope if scope in {'public','reseller','all'} else 'public','display_name':display_name or name,**billing_policy,'badge_label':'NX','badge_color':badge_color or '#8b5cf6','panel_base_url':base_url,'panel_path':web_path})
+            candidate=Server(name=name.strip(),server_type='nx',panel_url=final_url,username='api-token',password_encrypted=encrypt_text(api_key),subscription_url=subscription_url or None,is_active=True,meta={'scope':scope if scope in {'public','reseller','all'} else 'public','display_name':display_name or name,**billing_policy,'badge_label':'NX','badge_color':badge_color or '#8b5cf6','panel_base_url':base_url,'panel_path':web_path,'nx_subscription_formats':formats})
             try:
                 probe=await NxService().probe_server(candidate)
                 if not probe['ok']:raise ValueError('No visible NX templates')
@@ -3461,7 +3464,7 @@ async def server_add(request: Request, server_type:str=Form('xui'), scope:str=Fo
             return fail(request, 'Server saved, but panel test/inbound sync failed. Check server logs.')
     return ok(request, '/admin/servers', f'Server added and {len(new_ids)} inbound(s) synchronized')
 @router.post('/admin/servers/{sid}/edit')
-async def server_edit(request: Request, sid:int, name:str=Form(...), scope:str=Form('public'), display_name:str=Form(''), panel_url:str=Form(...), panel_path:str=Form('/'), subscription_url:str=Form(''), username:str=Form(''), password:str=Form(''), api_key:str=Form(''), router_name:str=Form(''), default_protocol:str=Form('openvpn'), openvpn_profile_id:int=Form(0), l2tp_server:str=Form(''), l2tp_ipsec_secret:str=Form(''), badge_color:str=Form(''), badge_label:str=Form(''), badge_emoji:str=Form(''), reseller_billing_modes:str|None=Form(None), reseller_payg_rate_irt:int=Form(0), _: str = Depends(_auth_user)):
+async def server_edit(request: Request, sid:int, name:str=Form(...), scope:str=Form('public'), display_name:str=Form(''), panel_url:str=Form(...), panel_path:str=Form('/'), subscription_url:str=Form(''), username:str=Form(''), password:str=Form(''), api_key:str=Form(''), router_name:str=Form(''), default_protocol:str=Form('openvpn'), openvpn_profile_id:int=Form(0), l2tp_server:str=Form(''), l2tp_ipsec_secret:str=Form(''), badge_color:str=Form(''), badge_label:str=Form(''), badge_emoji:str=Form(''), reseller_billing_modes:str|None=Form(None), reseller_payg_rate_irt:int=Form(0), nx_subscription_formats:str|None=Form(None), _: str = Depends(_auth_user)):
     async with SessionLocal() as s:
         srv=await s.get(Server,sid)
         if not srv: raise HTTPException(404)
@@ -3473,10 +3476,13 @@ async def server_edit(request: Request, sid:int, name:str=Form(...), scope:str=F
 
         if srv.server_type=='nx':
             from app.services.nx_service import NxService, normalize_nx_panel_parts
+            from app.services.nx_subscription import parse_formats
+            try:formats=parse_formats(nx_subscription_formats if nx_subscription_formats is not None else (srv.meta or {}).get('nx_subscription_formats'))
+            except ValueError as exc:return fail(request,str(exc),400)
             try:base_url, web_path, final_url = normalize_nx_panel_parts(panel_url, panel_path)
             except ValueError as exc:return fail(request,str(exc),400)
             srv.name=name or srv.name;srv.panel_url=final_url;srv.subscription_url=subscription_url or None
-            srv.meta={**(srv.meta or {}),'panel_base_url':base_url,'panel_path':web_path}
+            srv.meta={**(srv.meta or {}),'panel_base_url':base_url,'panel_path':web_path,'nx_subscription_formats':formats}
             if api_key:srv.password_encrypted=encrypt_text(api_key)
             try:
                 probe=await NxService().probe_server(srv)
@@ -6167,6 +6173,7 @@ def srv_json(sv):
         'reseller_billing_modes':(sv.meta or {}).get('reseller_billing_modes',['volume']), 'reseller_payg_rate_irt':int((sv.meta or {}).get('reseller_payg_rate_irt',0) or 0), 'server_type': sv.server_type, 'server_type_label': ('MikroTik / Custom' if sv.server_type == 'mikrotik' else ('PasarGuard' if sv.server_type == 'pasarguard' else sv.server_type)), 'panel_url': sv.panel_url,
         'panel_base_url': m.get('panel_base_url') or '', 'panel_path': m.get('panel_path') or '/',
         'subscription_url': sv.subscription_url,
+        'nx_subscription_formats': m.get('nx_subscription_formats') or ['v2ray'],
         'username': (m.get('auth_username') or sv.username) if sv.server_type == 'mikrotik' else sv.username,
         'auth_username': m.get('auth_username') or '',
         'category_id': sv.category_id, 'is_active': sv.is_active,

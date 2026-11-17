@@ -238,6 +238,8 @@ def detail_kb(svc, plan, server_type: str = 'xui', actor_telegram_id: int | None
     is_xui = normalized_server_type == 'xui'
     is_pasarguard = normalized_server_type in {'pasarguard','nx'}
     rows = []
+    if normalized_server_type == 'nx':
+        rows.append([InlineKeyboardButton(text='📲 دریافت لینک و QR ساب', callback_data=f'svc:nx-sub:{svc.id}')])
     if is_mikrotik:
         toggle_text = '⛔ غیرفعال کردن سرویس' if svc.is_active else '✅ فعال کردن سرویس'
         toggle_value = '0' if svc.is_active else '1'
@@ -366,6 +368,10 @@ def service_detail_text(svc, plan, server_type: str = 'xui', server=None, hwid_s
             f'├ server : {l2tp_server}',
             f'╰ private key : {private_key}',
         ]
+    elif (server_type or '').lower() == 'nx' and server and svc.sub_link:
+        from app.services.nx_subscription import subscription_links
+        for row in subscription_links(server, svc.sub_link):
+            lines += ['📲 '+row['label'], row['url']]
     else:
         link = svc.sub_link or 'ثبت نشده'
         lines += [
@@ -833,6 +839,14 @@ async def revoke_service(callback: CallbackQuery):
         if detail_text and detail_markup:
             detail_msg = await callback.message.answer(detail_text, reply_markup=detail_markup)
             # Manual refresh button is enough here; avoid panel polling after revoke.
+    elif server_type == 'nx' and callback.message:
+        from app.bot.service_presenter import send_service_info, is_trial_service
+        await send_service_info(callback.bot, callback.message.chat.id, svc.client_username,
+            plan.title if plan else 'NX', svc.total_bytes / 1024**3,
+            max(0, ((svc.expires_at or datetime.utcnow()) - datetime.utcnow()).days), sub,
+            service_id=svc.id, server_type='nx', is_test=is_trial_service(svc))
+        if detail_text and detail_markup:
+            await callback.message.answer(detail_text, reply_markup=detail_markup)
     elif sub and callback.message:
         caption = '✅ لینک جدید با موفقیت ساخته شد.\n\n' + install_text(sub)
         qr_path = None
@@ -1616,6 +1630,36 @@ async def renew_pay(callback: CallbackQuery, state: FSMContext):
         reply_markup=renewal_keyboard(),
     )
     await callback.answer('✅ سرویس با کیف پول تمدید شد')
+
+
+@router.callback_query(F.data.startswith('svc:nx-sub:'))
+async def send_nx_subscriptions(callback: CallbackQuery):
+    sid=int(callback.data.split(':')[-1])
+    async with SessionLocal() as session:
+        svc=await session.get(ClientService,sid)
+        server=await session.get(Server,svc.server_id) if svc else None
+        owned,actor=await _owned_public_service(session,svc,callback.from_user.id)
+        if svc and server and server.server_type=='nx' and svc.reseller_id and actor and not actor.is_blocked:
+            from app.database.models import ResellerAccount
+            from app.services.features import capabilities
+            account=await session.get(ResellerAccount,svc.reseller_id)
+            owned=bool(account and account.is_active and account.user_id==actor.id==svc.user_id
+                and visible_in_my_services(svc,datetime.utcnow()) and (await capabilities(session))['resellers'])
+        if not owned or not actor or actor.is_blocked or not server or server.server_type!='nx':
+            await _deny_not_owned(callback);return
+        await callback.answer('در حال دریافت لینک و QR...')
+        try:
+            from app.services.nx_service import NxService
+            svc.sub_link=await NxService().current_subscription_link(server,svc.xui_email or svc.client_username)
+            plan=await session.get(Plan,svc.plan_id) if svc.plan_id else None
+            await session.commit()
+        except Exception as exc:
+            await handle_user_facing_error(callback,exc,context='NX subscription delivery failed',reply_markup=back_main_inline());return
+    from app.bot.service_presenter import send_service_info,is_trial_service
+    await send_service_info(callback.bot,callback.from_user.id,svc.client_username,
+        plan.title if plan else 'NX',svc.total_bytes/1024**3,
+        max(0,((svc.expires_at or datetime.utcnow())-datetime.utcnow()).days),svc.sub_link,
+        service_id=svc.id,server_type='nx',is_test=is_trial_service(svc))
 
 
 @router.callback_query(F.data.startswith('svc:profile:'))

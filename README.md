@@ -139,6 +139,8 @@ Disabled optional modules only block their own matching Telegram actions. `/star
 
 Custom Telegram purchases ask for **volume (GB) first**, then **number of days**, for both public plans and reseller packages. Each answer is checked against the configured limits. A purchase snapshot and final price are created only after both answers are valid; the Back button on the days step returns to volume selection.
 
+In **Servers → Add/Edit NX → NX subscription formats**, select V2Ray/Base64, Clash/mihomo YAML, sing-box JSON, Xray JSON and/or plain share links. The same choice is available during setup. Delivery derives explicit `?format=` URLs from NX API `subUrl`, preserving its public/wildcard host and private path, then generates a separate matching QR for every selected format. Legacy connections default to V2Ray/Base64; the first selected format is used for the primary stored link and Mini App copy/QR. NX templates still determine the underlying VPN protocols; NX omits protocols a format cannot represent. API create responses are reused and QR generation does not download subscriptions or register client devices. See [NX configuration](docs/NX_PANEL_FA.md).
+
 ## Backup settings reliability
 
 Backup-channel detection and shared settings writes now use atomic database upserts, so simultaneous Telegram updates cannot insert duplicate setting keys. Committed writes also refresh the settings cache. No database reset or manual configuration is required.

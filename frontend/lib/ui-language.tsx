@@ -7,6 +7,9 @@ export type UiLanguage = 'en' | 'fa';
 const STORAGE_KEY = 'dbot_ui_language';
 
 const EN_FA: Record<string, string> = {
+  'NX subscription formats (each selected format gets its own link and QR)': 'فرمت‌های اشتراک NX (هر فرمت انتخابی، لینک و QR جداگانه دارد)',
+  'Plain share links': 'لینک‌های کانفیگ به‌صورت متن خام',
+
   'Dashboard statistics': 'آمار داشبورد',
   "NX Panel": "پنل NX",
   "NX subscription base (optional; API subUrl takes priority)": "پایه اشتراک NX (اختیاری؛ آدرس صادرشده پنل اولویت دارد)",

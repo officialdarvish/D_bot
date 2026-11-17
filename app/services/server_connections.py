@@ -33,6 +33,8 @@ async def add_shared_connection(session,candidate):
             for field in ('reseller_billing_modes','reseller_payg_rate_irt'):
                 if field in after:before[field]=after[field]
         if before.pop('deleted_from_panel',False):row.is_active=True
+        if candidate.server_type=='nx' and 'nx_subscription_formats' in after:
+            before['nx_subscription_formats']=after['nx_subscription_formats']
         row.meta=before
         return row
     session.add(candidate)
