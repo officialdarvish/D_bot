@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 17,
+  "build": 18,
   "channel": "main",
   "notes": {
-    "fa": "تغییر عنوان به WIzard Setup D Bot و هماهنگ‌سازی کامل ظاهر مراحل، فرم‌ها و انتخاب زبان با استایل وب‌پنل",
-    "en": "Rename setup to WIzard Setup D Bot and align all setup stages, forms and language controls with the shared web panel theme"
+    "fa": "رفع مسیر خصوصی و پسوند تکراری API در اتصال NX، حفظ مسیر هنگام تست و ویرایش و اصلاح خطای ذخیره ویرایش NX",
+    "en": "Fix NX private-path handling and duplicate API suffixes across test/add/edit, and repair NX edit persistence"
   }
 }

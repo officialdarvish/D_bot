@@ -3093,13 +3093,15 @@ async def servers(request: Request, _: str = Depends(_auth_user)):
 @router.post('/admin/servers/test')
 async def server_test(request: Request, server_type:str=Form('xui'), panel_url:str=Form(...), panel_path:str=Form('/'), username:str=Form(''), password:str=Form(''), api_key:str=Form(''), router_name:str=Form(''), _: str = Depends(_auth_user)):
     if server_type=='nx':
-        from app.services.nx_service import NxService
+        from app.services.nx_service import NxService, normalize_nx_panel_parts
         if not api_key: return fail(request,'NX API token is required',400)
-        candidate=Server(name='NX probe',server_type='nx',panel_url=panel_url.strip().rstrip('/'),username='api-token',password_encrypted=encrypt_text(api_key))
-        try:probe=await NxService().probe_server(candidate)
+        try:
+            base_url, web_path, final_url = normalize_nx_panel_parts(panel_url, panel_path)
+            candidate=Server(name='NX probe',server_type='nx',panel_url=final_url,username='api-token',password_encrypted=encrypt_text(api_key),meta={'panel_base_url':base_url,'panel_path':web_path})
+            probe=await NxService().probe_server(candidate)
         except Exception as exc:return fail(request,str(exc),400)
         if not probe['ok']:return fail(request,'No visible NX templates',400)
-        return JSONResponse({'ok':True,'message':'NX connected','auto_fill':{'panel_path':'/','username':'api-token'},'inbounds':probe['groups']})
+        return JSONResponse({'ok':True,'message':'NX connected','auto_fill':{'panel_url':base_url,'panel_path':web_path,'username':'api-token'},'inbounds':probe['groups']})
     if server_type == 'mikrotik':
         try:
             origin, routers, _secret_to_save = await _test_custom_panel_connection(panel_url, username, password, api_key)
@@ -3332,10 +3334,12 @@ async def server_add(request: Request, server_type:str=Form('xui'), scope:str=Fo
     except ValueError as exc: return fail(request, str(exc))
     async with SessionLocal() as s:
         if server_type=='nx':
-            from app.services.nx_service import NxService
+            from app.services.nx_service import NxService, normalize_nx_panel_parts
             from app.services.server_connections import add_shared_connection
             if not name.strip() or not api_key:return fail(request,'NX name and API token are required',400)
-            candidate=Server(name=name.strip(),server_type='nx',panel_url=panel_url.strip().rstrip('/'),username='api-token',password_encrypted=encrypt_text(api_key),subscription_url=subscription_url or None,is_active=True,meta={'scope':scope if scope in {'public','reseller','all'} else 'public','display_name':display_name or name,**billing_policy,'badge_label':'NX','badge_color':badge_color or '#8b5cf6'})
+            try:base_url, web_path, final_url = normalize_nx_panel_parts(panel_url, panel_path)
+            except ValueError as exc:return fail(request,str(exc),400)
+            candidate=Server(name=name.strip(),server_type='nx',panel_url=final_url,username='api-token',password_encrypted=encrypt_text(api_key),subscription_url=subscription_url or None,is_active=True,meta={'scope':scope if scope in {'public','reseller','all'} else 'public','display_name':display_name or name,**billing_policy,'badge_label':'NX','badge_color':badge_color or '#8b5cf6','panel_base_url':base_url,'panel_path':web_path})
             try:
                 probe=await NxService().probe_server(candidate)
                 if not probe['ok']:raise ValueError('No visible NX templates')
@@ -3471,14 +3475,17 @@ async def server_edit(request: Request, sid:int, name:str=Form(...), scope:str=F
             except ValueError as exc: return fail(request, str(exc))
 
         if srv.server_type=='nx':
-            from app.services.nx_service import NxService
-            srv.name=name or srv.name;srv.panel_url=panel_url.strip().rstrip('/');srv.subscription_url=subscription_url or None
+            from app.services.nx_service import NxService, normalize_nx_panel_parts
+            try:base_url, web_path, final_url = normalize_nx_panel_parts(panel_url, panel_path)
+            except ValueError as exc:return fail(request,str(exc),400)
+            srv.name=name or srv.name;srv.panel_url=final_url;srv.subscription_url=subscription_url or None
+            srv.meta={**(srv.meta or {}),'panel_base_url':base_url,'panel_path':web_path}
             if api_key:srv.password_encrypted=encrypt_text(api_key)
             try:
                 probe=await NxService().probe_server(srv)
                 if not probe['ok']:raise ValueError('No visible NX templates')
             except Exception as exc:return fail(request,str(exc),400)
-            srv.meta={**(srv.meta or {}),**billing_policy,**PasarGuardService.probe_meta(probe),'scope':scope if scope in {'public','reseller','all'} else 'public','display_name':display_name or name,'badge_label':badge_label or 'NX','badge_color':badge_color or '#8b5cf6'}
+            srv.meta={**(srv.meta or {}),**PasarGuardService.probe_meta(probe),'scope':scope if scope in {'public','reseller','all'} else 'public','display_name':display_name or name,'badge_label':badge_label or 'NX','badge_color':badge_color or '#8b5cf6'}
             from app.services.server_migration import sync_alias_connections
             await sync_alias_connections(s,srv)
             await s.commit()

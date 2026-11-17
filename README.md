@@ -121,6 +121,8 @@ Python / Aiogram / FastAPI + Next.js, with **PostgreSQL 16** for persistent data
 
 </details>
 
+NX Panel connections preserve the private web path whether entered separately or included in the panel URL, and normalize pasted API/login suffixes. Test/add/edit share the same URL handling. For template 404 errors, verify the panel origin, port, private path and API v1 support; see the [NX guide](docs/NX_PANEL_FA.md).
+
 ## WIzard Setup D Bot
 
 The first-run wizard is named **WIzard Setup D Bot**. Its screens reuse the exported web-panel styles, with responsive forms, matching controls, an accessible progress indicator and Persian/English layout support. Embedded settings retain their normal web-panel appearance.

@@ -9,11 +9,37 @@ import base64
 import re
 import secrets
 import uuid
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit,urlunsplit
 import httpx
 from app.core.security import decrypt_text
 from app.services.traffic_units import gb_to_bytes
 from app.services.pasarguard_service import PasarGuardCreateUnconfirmed,PasarGuardUsernameConflict
+
+
+def normalize_nx_panel_parts(panel_url, panel_path=None):
+    """Keep NX's private prefix, whether entered in the URL or separate path field."""
+    raw = str(panel_url or '').strip()
+    parts = urlsplit(raw)
+    if parts.scheme not in {'http','https'} or not parts.hostname or parts.username or parts.password or parts.query or parts.fragment or any(c.isspace() for c in raw):
+        raise ValueError('Invalid NX base URL; enter the panel origin and private path without query or fragment')
+    try:
+        parts.port
+    except ValueError:
+        raise ValueError('Invalid NX panel port') from None
+    def clean_path(value):
+        path = '/' + str(value or '').strip().strip('/')
+        if any(c.isspace() for c in path) or any(c in path for c in ('?', '#', '://')) or any(p in {'.','..'} for p in path.split('/')):
+            raise ValueError('Invalid NX private path')
+        for suffix in ('/api/v1', '/api', '/login'):
+            if path.endswith(suffix):
+                path = path[:-len(suffix)] or '/'
+                break
+        return path.rstrip('/')
+    embedded = clean_path(parts.path)
+    supplied = clean_path('' if panel_path == '-' else panel_path)
+    path = supplied or embedded
+    origin = urlunsplit((parts.scheme, parts.netloc, '', '', '')).rstrip('/')
+    return origin, (path + '/' if path else '/'), origin + path
 
 
 class NxCreateUnconfirmed(PasarGuardCreateUnconfirmed):
@@ -24,15 +50,18 @@ class NxService:
     def __init__(self,timeout=None):self.timeout=timeout or 30
 
     async def _request(self,server,method,path,**kwargs):
-        base=str(server.panel_url).rstrip('/')
-        parts=urlsplit(base)
-        if parts.scheme not in {'http','https'} or not parts.hostname or parts.username or parts.password or parts.query or parts.fragment:raise ValueError('Invalid NX base URL')
+        _, _, base = normalize_nx_panel_parts(server.panel_url, (server.meta or {}).get('panel_path'))
         headers={'Authorization':'Bearer '+decrypt_text(server.password_encrypted),'Accept':'application/json',**kwargs.pop('headers',{})}
         async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout,connect=8),follow_redirects=False) as client:
             response=await client.request(method,base+'/api/v1'+path,headers=headers,**kwargs)
-            if response.status_code>=400:raise RuntimeError(f'NX API {method} {path.split("?")[0]} failed ({response.status_code})')
+            if response.status_code>=400:
+                hint = ' Check the panel URL, port, private web path and NX API v1 support.' if response.status_code == 404 else ''
+                raise RuntimeError(f'NX API {method} {path.split("?")[0]} failed ({response.status_code}).'+hint)
             if response.is_redirect:raise RuntimeError('NX redirects are not allowed; use the exact panel base path')
-            return response.json() if response.content else {}
+            try:
+                return response.json() if response.content else {}
+            except ValueError:
+                raise RuntimeError('NX returned an invalid API response; check the panel URL and private web path') from None
 
     async def _list(self,server,path,**filters):
         rows=[]
