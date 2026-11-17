@@ -3788,22 +3788,60 @@ def _discount_allowed_server_ids(d: DiscountCode | None) -> list[int]:
     return _parse_id_list(getattr(d, 'allowed_server_ids', None) or [])
 
 
-async def _discount_form_values(request: Request) -> tuple[str, str, int, int, int, list[int]]:
+def _discount_scope_ids(form, name: str) -> list[int]:
+    result = []
+    for raw in form.getlist(name):
+        value = str(raw or '').strip()
+        if not value:
+            continue
+        try:
+            parts = json.loads(value) if value.startswith('[') else value.split(',')
+            if not isinstance(parts, list):
+                raise ValueError()
+            for part in parts:
+                if isinstance(part, bool) or not re.fullmatch(r'[0-9]+', str(part).strip()):
+                    raise ValueError()
+                item = int(part)
+                if not 0 < item < 2**31:
+                    raise ValueError()
+                if item not in result:
+                    result.append(item)
+            if len(result) > 2000:
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise HTTPException(400, f'Invalid selection: {name}')
+    return result
+
+
+async def _discount_form_values(request: Request):
     form = await request.form()
     code = str(form.get('code') or '').strip().upper().replace(' ', '')
     discount_type = str(form.get('discount_type') or 'percent')
     value = int(form.get('value') or 0)
     max_uses = int(form.get('max_uses') or 1)
     per_user_limit = int(form.get('per_user_limit') or 1)
-    raw_values = []
-    try:
-        raw_values.extend(form.getlist('allowed_server_ids'))
-    except Exception:
-        pass
-    if form.get('allowed_server_ids') not in (None, ''):
-        raw_values.append(form.get('allowed_server_ids'))
-    server_ids = _parse_id_list(raw_values)
-    return code, discount_type, value, max_uses, per_user_limit, server_ids
+    scopes = [_discount_scope_ids(form, name) for name in ('allowed_server_ids', 'allowed_category_ids', 'allowed_plan_ids')]
+    return code, discount_type, value, max_uses, per_user_limit, *scopes
+
+
+async def _validate_discount_scope(session, server_ids, category_ids, plan_ids):
+    for model, ids, label in ((Server, server_ids, 'servers'), (ServerCategory, category_ids, 'categories'), (Plan, plan_ids, 'plans')):
+        if ids:
+            found = set((await session.execute(select(model.id).where(model.id.in_(ids)))).scalars().all())
+            if found != set(ids):
+                raise HTTPException(400, f'Unknown selected {label}; refresh and choose again.')
+
+
+def _discount_catalog_fields(categories, plans, discount=None):
+    fields = ''
+    for name, label, items, attr in (
+        ('allowed_category_ids', 'Allowed categories', categories, 'name'),
+        ('allowed_plan_ids', 'Allowed plans', plans, 'title'),
+    ):
+        selected = getattr(discount, name, None) or []
+        options = ''.join(f'<label class="checkline"><input type="checkbox" name="{name}" value="{item.id}" {"checked" if item.id in selected else ""}> {e(getattr(item, attr))} (#{item.id})</label>' for item in items)
+        fields += f'<div class="full"><label>{label}</label><input type="hidden" name="{name}" value=""><div class="checkbox-grid">{options}</div><small class="muted">Leave empty for no restriction. All selected scope restrictions must match.</small></div>'
+    return fields
 
 
 @router.get('/admin-legacy/categories', response_class=HTMLResponse)
@@ -4389,31 +4427,42 @@ async def discounts(request: Request, _: str = Depends(_auth_user)):
     async with SessionLocal() as s:
         items=(await s.execute(select(DiscountCode).order_by(DiscountCode.id.desc()))).scalars().all()
         srvs=(await s.execute(select(Server).order_by(Server.id.desc()))).scalars().all()
+        cats=(await s.execute(select(ServerCategory).order_by(ServerCategory.name))).scalars().all()
+        plans=(await s.execute(select(Plan).order_by(Plan.title))).scalars().all()
     form='<form method="post" action="/admin/discounts/add" class="formgrid">'+field('code','Code')+'<div><label>Type</label><select name="discount_type"><option value="percent">Percent</option><option value="fixed">Fixed</option></select></div>'+field('value','Value','number')+field('max_uses','Max uses','number')+field('per_user_limit','Per user limit','number')+f'<div class="full"><label>Allowed servers</label><div class="checkbox-grid">{_server_options_html(srvs, field_name="allowed_server_ids")}</div><small class="muted">Leave empty to enable it for all servers.</small></div><div class="full"><button class="btn primary">Save</button></div></form>'
+    form=form.replace('<div class="full"><button class="btn primary">Save</button>', _discount_catalog_fields(cats, plans)+'<div class="full"><button class="btn primary">Save</button>')
     cards=''
     srv_by_id={s.id:s for s in srvs}
     for d in items:
         selected=_discount_allowed_server_ids(d)
         names=[((srv_by_id[sid].meta or {}).get('display_name') or srv_by_id[sid].name) for sid in selected if sid in srv_by_id]
         edit='<form method="post" action="/admin/discounts/'+str(d.id)+'/edit" class="formgrid">'+field('code','Code','text',d.code)+'<div><label>Type</label><select name="discount_type"><option value="percent">Percent</option><option value="fixed">Fixed</option></select></div>'+field('value','Value','number',d.value)+field('max_uses','Max uses','number',d.max_uses)+field('per_user_limit','Per user limit','number',d.per_user_limit)+f'<div class="full"><label>Allowed servers</label><div class="checkbox-grid">{_server_options_html(srvs, selected, field_name="allowed_server_ids")}</div><small class="muted">Leave empty to enable it for all servers.</small></div><div class="full"><button class="btn primary">Save</button></div></form>'
+        edit=edit.replace('<div class="full"><button class="btn primary">Save</button>', _discount_catalog_fields(cats, plans, d)+'<div class="full"><button class="btn primary">Save</button>')
         scope=', '.join(names) if names else 'All servers'
+        scope += ' | Categories: ' + (', '.join(c.name for c in cats if c.id in (d.allowed_category_ids or [])) or ('Restricted' if d.allowed_category_ids else 'All'))
+        scope += ' | Plans: ' + (', '.join(p.title for p in plans if p.id in (d.allowed_plan_ids or [])) or ('Restricted' if d.allowed_plan_ids else 'All'))
         cards+=f'<div class="card"><h3>🎟 {e(d.code)}</h3><p>{e(d.discount_type)}: {d.value}</p><p class="muted">used {d.used_count}/{d.max_uses} | per user {d.per_user_limit}</p><p class="muted">Allowed: {e(scope)}</p><div class="rowactions"><button class="btn" onclick="openModal(\'discEdit{d.id}\')">Edit</button><button class="btn danger" onclick="askDelete(\'/admin/discounts/{d.id}/delete\')">Delete</button></div></div>'+modal('discEdit'+str(d.id),'Edit Discount','Edit Discount',edit)
     return simple_section('/admin/discounts','Discount Codes','Discount Codes','Add Discount Code','discAdd',form,cards)
 
 @router.post('/admin/discounts/add')
 async def disc_add(request: Request, _: str = Depends(_auth_user)):
-    code, discount_type, value, max_uses, per_user_limit, server_ids = await _discount_form_values(request)
+    code, discount_type, value, max_uses, per_user_limit, server_ids, category_ids, plan_ids = await _discount_form_values(request)
     if not code: return fail(request, 'Code required', 400)
     async with SessionLocal() as s:
-        s.add(DiscountCode(code=code,discount_type=discount_type,value=value,max_uses=max_uses,per_user_limit=per_user_limit,allowed_server_ids=server_ids,is_active=True)); await s.commit()
+        await _validate_discount_scope(s, server_ids, category_ids, plan_ids)
+        s.add(DiscountCode(code=code,discount_type=discount_type,value=value,max_uses=max_uses,per_user_limit=per_user_limit,allowed_server_ids=server_ids,allowed_category_ids=category_ids,allowed_plan_ids=plan_ids,is_active=True)); await s.commit()
     return ok(request, '/admin/discounts', 'Done')
 
 @router.post('/admin/discounts/{did}/edit')
 async def disc_edit(request: Request, did:int, _: str = Depends(_auth_user)):
-    code, discount_type, value, max_uses, per_user_limit, server_ids = await _discount_form_values(request)
+    code, discount_type, value, max_uses, per_user_limit, server_ids, category_ids, plan_ids = await _discount_form_values(request)
     async with SessionLocal() as s:
         obj=await s.get(DiscountCode,did)
         if obj:
+            await _validate_discount_scope(s, server_ids, category_ids, plan_ids)
+            form = await request.form()
+            if 'allowed_category_ids' in form: obj.allowed_category_ids=category_ids
+            if 'allowed_plan_ids' in form: obj.allowed_plan_ids=plan_ids
             obj.code=code; obj.discount_type=discount_type; obj.value=value; obj.max_uses=max_uses; obj.per_user_limit=per_user_limit; obj.allowed_server_ids=server_ids
             await s.commit()
     return ok(request, '/admin/discounts', 'Done')
@@ -6788,7 +6837,11 @@ async def api_v2_discounts(_: str = Depends(_auth_user)):
     async with SessionLocal() as s:
         items=(await s.execute(select(DiscountCode).order_by(DiscountCode.id.desc()))).scalars().all()
         servers=(await s.execute(select(Server))).scalars().all()
+        categories=(await s.execute(select(ServerCategory).order_by(ServerCategory.name))).scalars().all()
+        plans=(await s.execute(select(Plan).order_by(Plan.title))).scalars().all()
     srv_by_id={srv.id:srv for srv in servers}
+    category_names={c.id:c.name for c in categories}
+    plan_names={p.id:p.title for p in plans}
     out=[]
     for d in items:
         server_ids=_discount_allowed_server_ids(d)
@@ -6796,8 +6849,8 @@ async def api_v2_discounts(_: str = Depends(_auth_user)):
         for sid in server_ids:
             srv=srv_by_id.get(sid)
             server_names.append(((srv.meta or {}).get('display_name') or srv.name) if srv else f'Server #{sid}')
-        out.append({'id':d.id,'code':d.code,'discount_type':d.discount_type,'value':int(d.value or 0),'max_uses':d.max_uses,'per_user_limit':d.per_user_limit,'used_count':d.used_count,'expires_at':dt_iso(d.expires_at),'is_active':d.is_active,'allowed_server_ids':server_ids,'allowed_server_names':server_names})
-    return {'ok':True,'items':out}
+        out.append({'id':d.id,'code':d.code,'discount_type':d.discount_type,'value':int(d.value or 0),'max_uses':d.max_uses,'per_user_limit':d.per_user_limit,'used_count':d.used_count,'expires_at':dt_iso(d.expires_at),'is_active':d.is_active,'allowed_server_ids':server_ids,'allowed_server_names':server_names,'allowed_category_ids':d.allowed_category_ids or [],'allowed_plan_ids':d.allowed_plan_ids or [],'allowed_category_names':[category_names.get(i,f'Category #{i}') for i in (d.allowed_category_ids or [])],'allowed_plan_names':[plan_names.get(i,f'Plan #{i}') for i in (d.allowed_plan_ids or [])]})
+    return {'ok':True,'items':out,'categories':[{'id':c.id,'name':c.name} for c in categories],'plans':[{'id':p.id,'title':p.title,'category_id':p.category_id} for p in plans]}
 
 def _parse_reseller_server_selection(raw: str) -> list[int]:
     """Reject malformed IDs instead of silently granting a different server."""

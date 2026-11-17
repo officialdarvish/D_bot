@@ -1042,7 +1042,7 @@ async def buy_discount_apply(message: Message, state: FSMContext):
         plan = await session.get(Plan, data['plan_id'])
         user=(await session.execute(select(User).where(User.telegram_id == message.from_user.id))).scalar_one()
         quote = _pricing_snapshot(data, plan)
-        final, err, d = await apply_discount_amount(session, code, quote.amount_irt, user.id, 'buy', int(data.get('server_id') or (plan.server_id or 0)))
+        final, err, d = await apply_discount_amount(session, code, quote.amount_irt, user.id, 'buy', int(data.get('server_id') or (plan.server_id or 0)), plan_id=plan.id)
     if err:
         await ui_message(message, '❌ ' + err, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('pay:back_methods')]])); return
     await state.update_data(discount_code=code, final_amount=final)
@@ -1211,7 +1211,7 @@ async def buy_payment(callback: CallbackQuery, state: FSMContext):
         discount_code = data.get('discount_code')
         discount_obj = None
         if discount_code:
-            final_amount, err, discount_obj = await apply_discount_amount(session, discount_code, quote.amount_irt, user.id, 'buy', server.id if server else None)
+            final_amount, err, discount_obj = await apply_discount_amount(session, discount_code, quote.amount_irt, user.id, 'buy', server.id if server else None, plan_id=plan.id)
             if err:
                 await ui_callback_message(callback, '❌ ' + err, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('pay:discount')]])); await safe_callback_answer(callback); return
         if callback.data == 'pay:crypto':

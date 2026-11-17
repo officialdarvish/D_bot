@@ -121,6 +121,10 @@ Python / Aiogram / FastAPI + Next.js, with **PostgreSQL 16** for persistent data
 
 </details>
 
+## Discount code scope
+
+In **Discount Codes**, select multiple allowed categories and plans when adding or editing a code. Empty scopes allow all; nonempty server, category and plan restrictions must all match. Restrictions are checked again at checkout in the Telegram bot and Mini App, including renewals. Existing codes retain their previous behavior until restricted.
+
 ## Active D BOT installations
 
 **Anonymous installation reporting is enabled by default after installation/update.** Every five minutes D BOT sends only a stable, random 256-bit installation token over HTTPS to `https://count.botgiftshop.ir/heartbeat`. The service stores its SHA-256 hash and last-seen time to display the aggregate of installations active within 15 minutes; this is not a count of people, customers or VPN connections. HTTPS protects the request in transit; the destination is public and is not hidden from server owners. No Telegram IDs, bot tokens, domain, customer count or version are sent. As with any network request, the server sees a source IP in transit; the supplied service does not persist it in request logs or the database.

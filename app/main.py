@@ -162,6 +162,8 @@ async def create_tables():
         if conn.dialect.name == 'postgresql':
             await conn.exec_driver_sql('SELECT pg_advisory_xact_lock(314158279)')
         await conn.run_sync(Base.metadata.create_all)
+        from app.database.discount_scope import ensure_discount_scope_columns
+        await ensure_discount_scope_columns(conn)
         from app.database.service_visibility import ensure_service_visibility_column
         await ensure_service_visibility_column(conn)
         # Safe lightweight upgrades for older installed versions.

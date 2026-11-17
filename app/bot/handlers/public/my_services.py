@@ -1148,6 +1148,7 @@ async def renew_discount_apply(message: Message, state: FSMContext):
             user.id,
             'renew',
             server.id,
+            plan_id=plan.id,
         )
         current_plan = await session.get(Plan, svc.plan_id) if svc.plan_id else None
 
@@ -1418,6 +1419,7 @@ async def renew_pay(callback: CallbackQuery, state: FSMContext):
                 user.id,
                 'renew',
                 server.id,
+                plan_id=plan.id,
             )
             if discount_error:
                 await state.update_data(renew_discount_code=None, renew_final_amount=int(price_quote.amount_irt))

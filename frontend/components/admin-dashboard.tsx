@@ -119,7 +119,7 @@ type PlanItem = { custom_tariff?:Record<string,number|boolean>; id: number; titl
 type ServerGroupsApi = { ok: boolean; items: { server_id: number; groups: { name: string; client_count?: number | null }[]; error?: string }[] };
 type ResellerPackage = { inbound_mode?:'automatic'|'manual';inbound_ids?:number[];id: number; title: string; server_id?: number; volume_gb: number; price_irt: number; pricing_currency?: 'IRT' | 'USD'; price_usd?: string; reseller_validity_days: number; is_active: boolean };
 type PaymentItem = { id: number; server_type: string; server_id?: number; card_number: string; owner_name: string; reviewer_telegram_id?: number | null; is_active: boolean };
-type DiscountItem = { id: number; code: string; discount_type: string; value: number; max_uses: number; per_user_limit: number; used_count: number; expires_at?: string; is_active: boolean; allowed_server_ids?: number[]; allowed_server_names?: string[] };
+type DiscountItem = { id: number; code: string; discount_type: string; value: number; max_uses: number; per_user_limit: number; used_count: number; expires_at?: string; is_active: boolean; allowed_server_ids?: number[]; allowed_server_names?: string[]; allowed_category_ids?: number[]; allowed_category_names?: string[]; allowed_plan_ids?: number[]; allowed_plan_names?: string[] };
 type ResellerItem = { entry_kind?:string; entry_id?:number; request_status?:string; panel_username?:string; billing_mode?: 'volume' | 'payg'; wallet_balance_irt?: number; billing_last_run_at?: string; id: number; user: UserItem; server_id?: number | null; allowed_server_ids?: number[]; inbound_policies?: Record<string, { mode: 'manual' | 'automatic'; inbound_ids: number[]; group_name?:string }>; inbound_mode?: 'automatic' | 'manual'; inbound_ids?: number[]; group_name?: string; total_bytes: number; used_bytes: number; reserved_bytes: number; remaining_bytes?: number; expires_at?: string; is_active: boolean; created_at?: string };
 type ResellerServiceItem = { id: number; username: string; panel_username?: string; server_id?: number | null; server_name?: string; server_type?: string; plan_title?: string; total_bytes: number; used_bytes: number; remaining_bytes: number; used_percent: number; expires_at?: string; created_at?: string; is_active: boolean; disabled_reason?: string };
 type ResellerActivityItem = { id: number; action: string; action_label?: string; service_id?: number | null; username: string; server_id?: number | null; server_name?: string; volume_bytes: number; previous_volume_bytes?: number; duration_days?: number; expires_at?: string; created_at?: string; released_bytes?: number; old_used_bytes?: number; old_unused_bytes?: number; added_bytes?: number; deducted_bytes?: number; requested_volume_bytes?: number; quota_before_bytes?: number; quota_after_bytes?: number; quota_remaining_after_bytes?: number; quota_delta_bytes?: number; quota_snapshot_version?: number; service_total_before_bytes?: number; service_total_after_bytes?: number; status?: string; error_type?: string; error_message?: string; failure_stage?: string; operation_id?: string; request_id?: number | null; package_title?: string; legacy_quota_snapshot_unavailable?: boolean; source?: string };
@@ -1109,15 +1109,18 @@ function PaymentsSection({ query, reloadKey, setAuthRequired, openModal, runActi
 }
 
 function DiscountsSection({ query, reloadKey, setAuthRequired, openModal, runAction }: any) {
-  const discounts = useApi<ApiList<DiscountItem>>('/admin/api/v2/discounts', reloadKey, setAuthRequired);
+  const discounts = useApi<ApiList<DiscountItem> & { categories: {id:number;name:string}[]; plans: {id:number;title:string;category_id?:number}[] }>('/admin/api/v2/discounts', reloadKey, setAuthRequired);
   const srvs = useApi<ApiList<ServerItem>>('/admin/api/v2/servers', reloadKey, setAuthRequired);
   if (discounts.loading || srvs.loading) return <SkeletonGrid />;
   if (discounts.error || !discounts.data) return <EmptyState message={discounts.error || 'Discounts could not be loaded.'} />;
   const rows = filterItems(discounts.data.items, query, ['code', 'discount_type']);
   const srvOpts = serverOptions(srvs.data?.items || []);
-  return <><div className="filterbar"><button className="btn primary" onClick={() => openModal(discountForm(srvOpts))}><Plus size={16} /> Add Discount</button><span className="badge">{rows.length} codes</span></div><div className="section-grid">{!rows.length && <EmptyState message="No items found. Add an item or clear the search." />}{rows.map((d) => {
+  const categoryOpts = (discounts.data.categories || []).map(c => ({value:c.id,label:`${c.name} (#${c.id})`}));
+  const categoryNames = new Map((discounts.data.categories || []).map(c => [c.id,c.name]));
+  const planOpts = (discounts.data.plans || []).map(p => ({value:p.id,label:`${p.title} (#${p.id})${p.category_id ? ' — ' + (categoryNames.get(p.category_id) || `#${p.category_id}`) : ''}`}));
+  return <><p className="muted">Leave a scope empty for no restriction. When categories and plans are selected, both must match.</p><div className="filterbar"><button className="btn primary" onClick={() => openModal(discountForm(srvOpts, categoryOpts, planOpts))}><Plus size={16} /> Add Discount</button><span className="badge">{rows.length} codes</span></div><div className="section-grid">{!rows.length && <EmptyState message="No items found. Add an item or clear the search." />}{rows.map((d) => {
     const scope = d.allowed_server_names?.length ? d.allowed_server_names.join(', ') : 'All servers';
-    return <EntityCard key={d.id} title={d.code} icon={<Tag />} badge={d.is_active ? 'Active' : 'Inactive'} badgeClass={d.is_active ? 'green' : 'red'} kvs={[["Type", d.discount_type === 'percent' ? 'Percent' : 'Toman'], ['Value', d.discount_type === 'percent' ? `${d.value}%` : toman(d.value)], ['Usage', `${d.used_count}/${d.max_uses}`], ['Per User', d.per_user_limit], ['Allowed servers', scope], ['Expires', shortDate(d.expires_at)]]} actions={<><button className="btn" onClick={() => openModal(discountForm(srvOpts, d))}>Edit</button><button className="btn danger" onClick={() => runAction(`/admin/discounts/${d.id}/delete`, 'Discount deleted')}>Delete</button></>} />;
+    return <EntityCard key={d.id} title={d.code} icon={<Tag />} badge={d.is_active ? 'Active' : 'Inactive'} badgeClass={d.is_active ? 'green' : 'red'} kvs={[["Type", d.discount_type === 'percent' ? 'Percent' : 'Toman'], ['Value', d.discount_type === 'percent' ? `${d.value}%` : toman(d.value)], ['Usage', `${d.used_count}/${d.max_uses}`], ['Per User', d.per_user_limit], ['Allowed servers', scope], ['Allowed categories', d.allowed_category_names?.length ? d.allowed_category_names.join(', ') : 'All categories'], ['Allowed plans', d.allowed_plan_names?.length ? d.allowed_plan_names.join(', ') : 'All plans'], ['Expires', shortDate(d.expires_at)]]} actions={<><button className="btn" onClick={() => openModal(discountForm(srvOpts, categoryOpts, planOpts, d))}>Edit</button><button className="btn danger" onClick={() => runAction(`/admin/discounts/${d.id}/delete`, 'Discount deleted')}>Delete</button></>} />;
   })}</div></>;
 }
 
@@ -2267,19 +2270,21 @@ function paymentForm(servers: ServerItem[], p?: PaymentItem): ModalForm {
     { name: 'server_id', label: 'Payment server', type: 'select', optionsBy: { name: 'show_for', map: { public: publicOptions, reseller: resellerOptions, panel_reseller: resellerOptions } }, full: true }
   ] };
 }
-function discountForm(serverOptionsList: any[], d?: DiscountItem): ModalForm {
+function discountForm(serverOptionsList: any[], categoryOptionsList: any[], planOptionsList: any[], d?: DiscountItem): ModalForm {
   const selectedServers = d?.allowed_server_ids?.length ? d.allowed_server_ids : [];
   return {
     title: d ? 'Edit Discount Code' : 'Add Discount Code',
     action: d ? `/admin/discounts/${d.id}/edit` : '/admin/discounts/add',
-    defaults: d ? { ...d, allowed_server_ids: selectedServers } : { discount_type: 'percent', max_uses: 1, per_user_limit: 1, allowed_server_ids: [] },
+    defaults: d ? { ...d, allowed_server_ids: selectedServers, allowed_category_ids: d.allowed_category_ids || [], allowed_plan_ids: d.allowed_plan_ids || [] } : { allowed_category_ids: [], allowed_plan_ids: [], discount_type: 'percent', max_uses: 1, per_user_limit: 1, allowed_server_ids: [] },
     fields: [
       { name: 'code', label: 'Code', required: true },
       { name: 'discount_type', label: 'Discount type', type: 'select', options: [{ value: 'percent', label: 'Percent (%)' }, { value: 'fixed', label: 'Toman amount' }] },
       { name: 'value', label: 'Discount value', type: 'number', required: true, placeholder: '20 for percent or 50000 for Toman' },
       { name: 'max_uses', label: 'Max uses', type: 'number', required: true },
       { name: 'per_user_limit', label: 'Per user limit', type: 'number', required: true },
-      { name: 'allowed_server_ids', label: 'Allowed servers for this discount', type: 'checkbox-group', options: serverOptionsList, full: true, placeholder: 'Leave empty to allow all servers' }
+      { name: 'allowed_server_ids', label: 'Allowed servers for this discount', type: 'checkbox-group', options: serverOptionsList, full: true, placeholder: 'Leave empty to allow all servers' },
+      { name: 'allowed_category_ids', label: 'Allowed categories (empty = all)', type: 'checkbox-group', options: categoryOptionsList, full: true },
+      { name: 'allowed_plan_ids', label: 'Allowed plans (empty = all)', type: 'checkbox-group', options: planOptionsList, full: true }
     ]
   };
 }

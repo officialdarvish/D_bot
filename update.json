@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 15,
+  "build": 16,
   "channel": "main",
   "notes": {
-    "fa": "شمارنده نصب‌های فعال با اتصال HTTPS خودکار پس از آپدیت، اطلاع‌رسانی در README و حفظ انصراف صریح در تنظیمات سرور؛ بدون نیاز به تنظیم دستی دامنه",
-    "en": "Automatic HTTPS active-installation reporting after updates, documented in both READMEs; explicit server-side opt-outs remain respected"
+    "fa": "انتخاب چند دسته‌بندی و پلن مجاز برای هر کد تخفیف، نمایش محدوده روی کارت‌ها و کنترل مشترک خرید و تمدید در ربات و مینی‌اپ",
+    "en": "Add category and plan restrictions to discount codes, scope summaries and shared checkout/renewal validation in bot and Mini App"
   }
 }

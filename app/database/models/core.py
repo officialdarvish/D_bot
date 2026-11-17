@@ -84,6 +84,8 @@ class DiscountCode(Base):
     max_uses: Mapped[int] = mapped_column(Integer, default=1)
     per_user_limit: Mapped[int] = mapped_column(Integer, default=1)
     allowed_server_ids: Mapped[list] = mapped_column(JSON, default=list)
+    allowed_category_ids: Mapped[list] = mapped_column(JSON, default=list)
+    allowed_plan_ids: Mapped[list] = mapped_column(JSON, default=list)
     used_count: Mapped[int] = mapped_column(Integer, default=0)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

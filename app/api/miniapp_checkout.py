@@ -64,7 +64,7 @@ async def validate_purchase(s,user,body,*,lock_discount=False):
     code=body.discount_code.strip().upper().replace(' ','')
     if lock_discount and code:
         await s.scalar(select(DiscountCode).where(func.upper(DiscountCode.code)==code).with_for_update())
-    amount,error,discount=await apply_discount_amount(s,code,quote.amount_irt,user.id,'renew' if body.service_id else 'buy',server.id)
+    amount,error,discount=await apply_discount_amount(s,code,quote.amount_irt,user.id,'renew' if body.service_id else 'buy',server.id,plan_id=body.plan_id)
     if error:raise HTTPException(409,error)
     from app.services.payment_cards import public_payment_card
     card=await public_payment_card(s,server)

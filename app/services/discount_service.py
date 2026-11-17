@@ -4,7 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import func, select
 
-from app.database.models import DiscountCode, DiscountUsage
+from app.database.models import DiscountCode, DiscountUsage, Plan
 
 
 async def apply_discount_amount(
@@ -14,6 +14,8 @@ async def apply_discount_amount(
     user_id: int | None = None,
     source: str = 'buy',
     server_id: int | None = None,
+    *,
+    plan_id: int | None = None,
 ) -> tuple[int, str | None, DiscountCode | None]:
     """Validate a discount code and return the payable amount.
 
@@ -52,6 +54,18 @@ async def apply_discount_amount(
 
     if allowed_servers and (not server_id or int(server_id) not in allowed_servers):
         return int(amount or 0), 'این کد تخفیف برای سرور انتخابی شما فعال نیست.', None
+
+    # Resolve the authoritative plan/category from storage; never trust a client category.
+    allowed_categories = getattr(discount, 'allowed_category_ids', None) or []
+    allowed_plans = getattr(discount, 'allowed_plan_ids', None) or []
+    if allowed_categories or allowed_plans:
+        plan = await session.get(Plan, plan_id) if plan_id else None
+        if not plan:
+            return int(amount or 0), 'این کد تخفیف برای پلن انتخابی شما فعال نیست.', None
+        if allowed_plans and plan.id not in allowed_plans:
+            return int(amount or 0), 'این کد تخفیف برای پلن انتخابی شما فعال نیست.', None
+        if allowed_categories and plan.category_id not in allowed_categories:
+            return int(amount or 0), 'این کد تخفیف برای دسته‌بندی انتخابی شما فعال نیست.', None
 
     if user_id and getattr(discount, 'per_user_limit', 1):
         used_by_user = (
