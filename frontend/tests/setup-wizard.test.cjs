@@ -41,6 +41,15 @@ test('setup add requests JSON once and appends the saved server',async()=>{
   assert.equal(x.calls[0].options.headers['X-CSRF-Token'],'test-csrf');
   assert.equal(x.calls[0].options.redirect,'manual');
   assert.equal(x.document.querySelectorAll('#setupServers li').length,2);
+  assert.equal(x.document.getElementById('setupServers').hidden,true);
+  assert.deepEqual([...x.document.querySelectorAll('#setupServers li')].map(el=>el.textContent),['Existing','NX new']);
+  const success=x.document.getElementById('setupServerSuccess');
+  assert.equal(success.hidden,false);
+  assert.equal(success.textContent,'Your server has been added successfully.');
+  x.document.getElementById('setupLanguage').click();
+  assert.equal(success.textContent,'سرور شما با موفقیت اضافه شد.');
+  x.document.getElementById('setupLanguage').click();
+  assert.equal(success.textContent,'Your server has been added successfully.');
   assert.equal(x.document.getElementById('setupError').textContent,'');assert.deepEqual(x.errors,[]);
  }finally{x.dom.window.close()}
 });
@@ -48,6 +57,7 @@ test('HTML response shows a clear error and never retries an ambiguous add',asyn
  const x=environment(()=>({...response(null,200,'text/html'),json:async()=>{throw new SyntaxError('Unexpected token <')}}));try{
   x.document.getElementById('setupAddServer').click();await tick();
   assert.match(x.document.getElementById('setupError').textContent,/non-JSON page/);
+  assert.equal(x.document.getElementById('setupServerSuccess').hidden,true);
   assert.equal(x.document.querySelectorAll('#setupServers li').length,1);
   assert.equal(x.calls.length,1);assert.deepEqual(x.errors,[]);
   assert.equal(x.document.getElementById('setupAddServer').disabled,false);
@@ -66,7 +76,24 @@ test('progress save handles HTML without advancing the stage',async()=>{
  const x=environment(()=>response(null,502,'text/html'));try{
   x.document.getElementById('setupNext').click();await tick();
   assert.match(x.document.getElementById('setupError').textContent,/non-JSON page/);
+  assert.equal(x.document.getElementById('setupServerSuccess').hidden,true);
   assert.match(x.document.querySelector('.step.current h2').textContent,/Servers/);
   assert.equal(x.calls[0].url,'/private/setup/progress');assert.equal(x.calls.length,1);
+ }finally{x.dom.window.close()}
+});
+
+test('a failed second save clears the previous success message',async()=>{
+ let attempt=0;
+ const x=environment(()=>++attempt===1?response({ok:true}):response({ok:false,message:'Connection failed'},400));try{
+  const button=x.document.getElementById('setupAddServer');
+  button.click();await tick();
+  assert.equal(x.document.getElementById('setupServerSuccess').hidden,false);
+  button.click();await tick();
+  const success=x.document.getElementById('setupServerSuccess');
+  assert.equal(success.hidden,true);assert.equal(success.textContent,'');
+  x.document.getElementById('setupLanguage').click();
+  assert.equal(success.textContent,'');
+  assert.equal(x.document.getElementById('setupError').textContent,'Connection failed');
+  assert.equal(x.document.querySelectorAll('#setupServers li').length,2);
  }finally{x.dom.window.close()}
 });

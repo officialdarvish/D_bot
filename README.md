@@ -129,6 +129,8 @@ The first-run wizard is named **WIzard Setup D Bot**. Its screens reuse the expo
 
 Wizard server saves use JSON responses, including legacy XMLHttpRequest clients. Expired sessions and non-JSON proxy pages produce a readable error without automatically repeating a server save; check the server list before retrying an ambiguous result.
 
+Initial setup hides the server tags and shows “Your server has been added successfully.” after a confirmed save, translated to Persian when selected.
+
 ## Backup settings reliability
 
 Backup-channel detection and shared settings writes now use atomic database upserts, so simultaneous Telegram updates cannot insert duplicate setting keys. Committed writes also refresh the settings cache. No database reset or manual configuration is required.

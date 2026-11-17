@@ -83,9 +83,8 @@ body.setup-page{margin:0;min-height:100dvh;color:var(--text);background:radial-g
 .setup-page .btn:disabled{opacity:.6;cursor:wait}
 #setupLanguage{min-width:100px;padding:8px 12px;font-size:12px;direction:ltr}
 #setupBack{margin-inline-end:auto}
-#setupServers{display:flex;flex-wrap:wrap;gap:10px;list-style:none;margin:0 0 22px;padding:0}
-#setupServers:empty{display:none}
-#setupServers li{padding:10px 14px;border:1px solid rgba(54,201,143,.24);border-radius:10px;background:rgba(32,113,84,.18);color:#9ce8ca;font-size:12px;overflow-wrap:anywhere}
+#setupServers{display:none}
+#setupServerSuccess:not([hidden]){margin:0;padding:12px 14px;border:1px solid rgba(54,201,143,.24);border-radius:10px;background:rgba(32,113,84,.18);color:#9ce8ca;font-size:13px;line-height:1.8}
 #setupServerForm input{direction:ltr;text-align:left}
 #setupAddServer{justify-self:start}
 #setupError:not(:empty){padding:12px 14px;margin-top:18px;border:1px solid rgba(255,114,133,.28);border-radius:10px;background:rgba(116,35,49,.18);color:#ffb6c0;white-space:pre-wrap;font-size:13px;line-height:1.8}

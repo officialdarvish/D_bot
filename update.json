@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 19,
+  "build": 20,
   "channel": "main",
   "notes": {
-    "fa": "رفع تداخل ذخیره هم‌زمان تنظیمات کانال بکاپ و خطای کلید تکراری، رفع پاسخ HTML در ویزارد و مدیریت نشست منقضی‌شده",
-    "en": "Fix concurrent backup-channel settings writes and duplicate primary keys, setup HTML/JSON replies and expired-session handling"
+    "fa": "حذف تگ‌های سرور از ستاپ اولیه و نمایش پیام موفقیت فارسی و انگلیسی پس از تأیید و ذخیره سرور",
+    "en": "Hide server tags in initial setup and show localized success confirmation after verifying and saving a server"
   }
 }
