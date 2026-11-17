@@ -906,7 +906,9 @@ async def buy_plan(callback: CallbackQuery, state: FSMContext):
     policy=(plan.meta or {}).get('custom_tariff')
     if policy:
         await state.set_state(BuyFlow.custom_selection)
-        await edit_or_answer(callback,f"حجم و مدت را با یک فاصله بفرستید؛ نمونه: 20 30\nحجم: {policy['min_gb']} تا {policy['max_gb']} گیگ\nمدت: {policy['min_days']} تا {policy['max_days']} روز",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(back_cb)]]))
+        from app.services.custom_tariff import step_prompt
+        await state.update_data(custom_volume_gb=None)
+        await edit_or_answer(callback,step_prompt(policy,'gb'),reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(back_cb)]]))
         await safe_callback_answer(callback)
         return
     await state.set_state(BuyFlow.username)
@@ -922,21 +924,39 @@ async def buy_plan(callback: CallbackQuery, state: FSMContext):
 
 @router.message(BuyFlow.custom_selection)
 async def buy_custom_selection(message: Message,state: FSMContext):
-    from app.services.custom_tariff import selected_plan,snapshot
+    from app.services.custom_tariff import step_value,step_prompt
     data=await state.get_data()
     try:
-        parts=(message.text or '').split()
-        if len(parts)!=2:raise ValueError('حجم و روز را به‌صورت 20 30 وارد کنید.')
         async with SessionLocal() as session:
             plan=await session.get(Plan,data['plan_id'])
-            if not plan or not plan.is_active or not (plan.meta or {}).get('custom_tariff'):raise ValueError('پلن دیگر در دسترس نیست.')
+            if not plan or not plan.is_active:raise ValueError('پلن دیگر در دسترس نیست.')
+            policy=(plan.meta or {}).get('custom_tariff')
+            volume=step_value(policy,message.text,'gb')
+        await state.update_data(custom_volume_gb=volume)
+        await state.set_state(BuyFlow.custom_days)
+        await ui_message(message,f'حجم انتخاب‌شده: {volume} گیگابایت\n\n'+step_prompt(policy,'days'),reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(f'buy:plan:{plan.id}')]]))
+    except (ValueError,TypeError) as exc:await ui_message(message,str(exc))
+
+
+@router.message(BuyFlow.custom_days)
+async def buy_custom_days(message: Message,state: FSMContext):
+    from app.services.custom_tariff import selected_plan,snapshot,step_value
+    data=await state.get_data()
+    try:
+        async with SessionLocal() as session:
+            plan=await session.get(Plan,data['plan_id'])
+            if not plan or not plan.is_active:raise ValueError('پلن دیگر در دسترس نیست.')
+            policy=(plan.meta or {}).get('custom_tariff')
+            volume=step_value(policy,data.get('custom_volume_gb'),'gb')
+            days=step_value(policy,message.text,'days')
             user=await session.scalar(select(User).where(User.telegram_id==message.from_user.id))
-            concrete=await snapshot(session,selected_plan(plan,*parts),user.id)
+            concrete=await snapshot(session,selected_plan(plan,volume,days),user.id)
             await session.commit()
         await state.update_data(plan_id=concrete.id,custom_parent_id=plan.id)
         await state.set_state(BuyFlow.username)
         await ui_message(message,f'پلن انتخاب‌شده: {concrete.title}\nمبلغ: {concrete.price_irt:,} تومان\nنام کانفیگ را وارد کنید:')
-    except (ValueError,TypeError) as exc:await ui_message(message,str(exc))
+    except (ValueError,TypeError) as exc:
+        await ui_message(message,str(exc),reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(f"buy:plan:{data['plan_id']}")]]))
 
 
 @router.message(BuyFlow.username)

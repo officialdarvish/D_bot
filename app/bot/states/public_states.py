@@ -2,6 +2,7 @@ from aiogram.fsm.state import State, StatesGroup
 
 class BuyFlow(StatesGroup):
     custom_selection = State()
+    custom_days = State()
     server_id = State()
     category_id = State()
     plan_id = State()

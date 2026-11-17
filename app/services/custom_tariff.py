@@ -2,6 +2,33 @@
 from types import SimpleNamespace
 from app.database.models import Plan
 KEY='custom_tariff'
+
+def step_value(policy, raw, field):
+    """Validate one Telegram answer without creating a purchase snapshot."""
+    if field not in {'gb', 'days'}:
+        raise ValueError('Invalid tariff field')
+    policy = normalize(policy)
+    if not policy:
+        raise ValueError('پلن سفارشی دیگر در دسترس نیست.')
+    label = 'حجم (گیگابایت)' if field == 'gb' else 'تعداد روز'
+    minimum, maximum = policy['min_' + field], policy['max_' + field]
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        raise ValueError(f'{label} را به‌صورت یک عدد صحیح وارد کنید.')
+    if not minimum <= value <= maximum:
+        raise ValueError(f'{label} باید بین {minimum} و {maximum} باشد.')
+    return value
+
+
+def step_prompt(policy, field):
+    policy = normalize(policy)
+    if not policy:
+        raise ValueError('پلن سفارشی دیگر در دسترس نیست.')
+    if field == 'gb':
+        return f"حجم موردنظر را به گیگابایت وارد کنید:\nاز {policy['min_gb']} تا {policy['max_gb']} گیگابایت"
+    return f"تعداد روز موردنظر را وارد کنید:\nاز {policy['min_days']} تا {policy['max_days']} روز"
+
 def normalize(values):
     if not values or str(values.get('enabled','0')).lower() not in {'1','true','yes','on'}:return None
     def integer(key,lo,hi):

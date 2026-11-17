@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 23,
+  "build": 24,
   "channel": "main",
   "notes": {
-    "fa": "رفع مسدودشدن start و منوی اصلی توسط بخش‌های اختیاری غیرفعال؛ حفظ محدودیت قابلیت‌ها و خروج از وضعیت قدیمی هنگام شروع مجدد",
-    "en": "Fix disabled optional modules blocking start and core navigation, preserve feature gates and escape stale module states on restart"
+    "fa": "ورود مرحله‌به‌مرحله حجم و سپس تعداد روز برای پلن سفارشی و بسته نمایندگی، با اعتبارسنجی جداگانه و محاسبه نهایی قیمت",
+    "en": "Ask for custom-plan and reseller-package volume first, then days, with independent validation and final server-side pricing"
   }
 }

@@ -919,8 +919,9 @@ async def reseller_pkg(callback: CallbackQuery, state: FSMContext):
     policy=normalize((pkg.meta or {}).get('custom_tariff'))
     if policy:
         await state.set_state('reseller_custom_selection')
-        await state.update_data(custom_package_id=pid)
-        await edit_or_answer(callback,f"حجم و روز را با فاصله وارد کنید. مثال: 20 30\nGB: {policy['min_gb']}–{policy['max_gb']} | Days: {policy['min_days']}–{policy['max_days']}",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('reseller:topup')]]))
+        from app.services.custom_tariff import step_prompt
+        await state.update_data(custom_package_id=pid,custom_volume_gb=None)
+        await edit_or_answer(callback,step_prompt(policy,'gb'),reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('reseller:topup')]]))
         await callback.answer();return
     if callback.from_user.id in settings.admin_ids:
         async with SessionLocal() as session:
@@ -962,26 +963,48 @@ async def reseller_pkg(callback: CallbackQuery, state: FSMContext):
     )
     await edit_or_answer(callback, text, reply_markup=reseller_payment_kb(pid)); await callback.answer()
 
+async def _custom_reseller_package(session,data,telegram_id):
+    from app.services.custom_tariff import normalize
+    pkg=await session.get(ResellerPackage,int(data.get('custom_package_id') or 0))
+    if not pkg or not pkg.is_active or not normalize((pkg.meta or {}).get('custom_tariff')):raise ValueError('بسته فعال نیست.')
+    _,account=await get_user_reseller(session,telegram_id)
+    from app.services.reseller_service import reseller_package_server_ids
+    if telegram_id not in settings.admin_ids and (not account or pkg.server_id not in reseller_package_server_ids(account)):raise ValueError('بسته در دسترس نیست.')
+    return pkg
+
+
 @router.message(StateFilter('reseller_custom_selection'))
 async def reseller_custom_selection(message:Message,state:FSMContext):
-    from app.services.custom_tariff import reseller_selection,reseller_snapshot
+    from app.services.custom_tariff import step_value,step_prompt
     data=await state.get_data()
     try:
-        parts=(message.text or '').split()
-        if len(parts)!=2:raise ValueError('حجم و روز را با فاصله وارد کنید. مثال: 20 30')
         async with SessionLocal() as session:
-            pkg=await session.get(ResellerPackage,int(data.get('custom_package_id') or 0))
-            if not pkg or not pkg.is_active:raise ValueError('بسته فعال نیست.')
-            _,account=await get_user_reseller(session,message.from_user.id)
-            from app.services.reseller_service import reseller_package_server_ids
-            if message.from_user.id not in settings.admin_ids and (not account or pkg.server_id not in reseller_package_server_ids(account)):raise ValueError('بسته در دسترس نیست.')
-            selected=reseller_selection(pkg,*parts)
+            pkg=await _custom_reseller_package(session,data,message.from_user.id)
+            policy=(pkg.meta or {}).get('custom_tariff')
+            volume=step_value(policy,message.text,'gb')
+        await state.update_data(custom_volume_gb=volume)
+        await state.set_state('reseller_custom_days')
+        await ui_message(message,f'حجم انتخاب‌شده: {volume} گیگابایت\n\n'+step_prompt(policy,'days'),reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(f'reseller:pkg:{pkg.id}')]]))
+    except (ValueError,TypeError) as exc:await ui_message(message,str(exc))
+
+
+@router.message(StateFilter('reseller_custom_days'))
+async def reseller_custom_days(message:Message,state:FSMContext):
+    from app.services.custom_tariff import reseller_selection,reseller_snapshot,step_value
+    data=await state.get_data()
+    try:
+        async with SessionLocal() as session:
+            pkg=await _custom_reseller_package(session,data,message.from_user.id)
+            policy=(pkg.meta or {}).get('custom_tariff')
+            volume=step_value(policy,data.get('custom_volume_gb'),'gb')
+            days=step_value(policy,message.text,'days')
+            selected=reseller_selection(pkg,volume,days)
             row=await reseller_snapshot(session,selected,message.from_user.id)
             await session.commit();pid=row.id
         await state.set_state(None)
         await ui_message(message,f'GB: {selected.volume_gb} | Days: {selected.reseller_validity_days}\n{selected.price_irt:,} تومان',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='ادامه / Continue',callback_data=f'reseller:pkg:{pid}')],[back_button('reseller:topup')]]))
     except (ValueError,TypeError) as exc:
-        await ui_message(message,str(exc))
+        await ui_message(message,str(exc),reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(f"reseller:pkg:{data.get('custom_package_id',0)}")]]))
 
 
 @router.callback_query(F.data == 'reseller:discount')

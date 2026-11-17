@@ -137,6 +137,8 @@ The general **Settings** page is excluded from initial setup and remains availab
 
 Disabled optional modules only block their own matching Telegram actions. `/start` (including referral links) and the restart button reach the main navigation even if a previous module form is still active. The existing administrator bot on/off switch and normal access checks remain independent.
 
+Custom Telegram purchases ask for **volume (GB) first**, then **number of days**, for both public plans and reseller packages. Each answer is checked against the configured limits. A purchase snapshot and final price are created only after both answers are valid; the Back button on the days step returns to volume selection.
+
 ## Backup settings reliability
 
 Backup-channel detection and shared settings writes now use atomic database upserts, so simultaneous Telegram updates cannot insert duplicate setting keys. Committed writes also refresh the settings cache. No database reset or manual configuration is required.
