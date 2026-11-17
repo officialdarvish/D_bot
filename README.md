@@ -127,6 +127,12 @@ NX Panel connections preserve the private web path whether entered separately or
 
 The first-run wizard is named **WIzard Setup D Bot**. Its screens reuse the exported web-panel styles, with responsive forms, matching controls, an accessible progress indicator and Persian/English layout support. Embedded settings retain their normal web-panel appearance.
 
+Wizard server saves use JSON responses, including legacy XMLHttpRequest clients. Expired sessions and non-JSON proxy pages produce a readable error without automatically repeating a server save; check the server list before retrying an ambiguous result.
+
+## Backup settings reliability
+
+Backup-channel detection and shared settings writes now use atomic database upserts, so simultaneous Telegram updates cannot insert duplicate setting keys. Committed writes also refresh the settings cache. No database reset or manual configuration is required.
+
 ## Discount code scope
 
 In **Discount Codes**, select multiple allowed categories and plans when adding or editing a code. Empty scopes allow all; nonempty server, category and plan restrictions must all match. Restrictions are checked again at checkout in the Telegram bot and Mini App, including renewals. Existing codes retain their previous behavior until restricted.

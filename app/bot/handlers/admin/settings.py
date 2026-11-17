@@ -19,7 +19,7 @@ from app.database.session import SessionLocal
 from app.database.models import User, Setting, PaymentCard, ClientService, Server, ServerCategory, Plan, Order, Ticket, TicketMessage, WalletTransaction, TestAccountUsage, DiscountCode, ResellerAccount
 from app.bot.states.admin_states import TestAccountConfig, PaymentCardConfig, PaymentTextConfig, RulesTextConfig, BroadcastFlow, ForwardBroadcastFlow, RestoreBackup, ServiceTypeConfig, AddDiscountCode, EditDiscountCode, WebsiteSettings, WebsiteCommandSetup, ReferralSettingsConfig, UserInfoLookup, PrivateMessageFlow
 from app.bot.keyboards.common import BTN_USERS, BTN_PAYMENT_CHANNEL, BTN_RULES, BTN_BUTTONS, BTN_BROADCAST, BTN_PRIVATE_MESSAGE, BTN_DISCOUNTS, CB_USERS, CB_PAYMENT_CHANNEL, CB_RULES, CB_BUTTONS, CB_BROADCAST, CB_FORWARD_BROADCAST, CB_PRIVATE_MESSAGE, CB_DISCOUNTS, CB_BACKUP, CB_RESTORE, back_button, back_admin_inline, main_menu_inline, private_message_user_actions
-from app.database.defaults import get_setting_value, set_setting_value, WELCOME_TEXT_DEFAULT, RULES_TEXT_DEFAULT
+from app.database.defaults import get_setting_value, set_setting_value, set_setting_values, WELCOME_TEXT_DEFAULT, RULES_TEXT_DEFAULT
 from app.bot.utils import edit_or_answer, ui_message, ui_callback_message, ui_page, delete_active_ui_message, remember_ui_message
 from app.bot.error_reporting import handle_user_facing_error, report_bot_error
 from app.services.xui_service import XuiService
@@ -70,24 +70,12 @@ def admin(uid): return is_owner(uid)
 async def set_value(key, value): await set_setting_value(key, value)
 
 async def save_web_setting(key: str, value: str) -> None:
-    # Website login is used by the API container, so store it directly in the shared settings table.
-    async with SessionLocal() as session:
-        row = await session.get(Setting, key)
-        if row:
-            row.value = value
-        else:
-            session.add(Setting(key=key, value=value))
-        await session.commit()
+    # The bot and API share this table; use the same atomic write and cache refresh.
+    await set_setting_value(key, value)
+
 
 async def save_web_settings_bulk(values: dict[str, str]) -> None:
-    async with SessionLocal() as session:
-        for key, value in values.items():
-            row = await session.get(Setting, key)
-            if row:
-                row.value = value
-            else:
-                session.add(Setting(key=key, value=value))
-        await session.commit()
+    await set_setting_values(values)
 
 @router.channel_post()
 async def detect_existing_private_backup_channel(message: Message):

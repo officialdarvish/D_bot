@@ -113,7 +113,7 @@ async def admin_json_error_middleware(request: Request, call_next):
             request_id = uuid.uuid4().hex[:12]
             logging.getLogger(__name__).exception('Mini App API error request_id=%s path=%s', request_id, request.url.path)
             return JSONResponse({'detail':'خطایی رخ داده؛ وضعیت سفارش را بررسی کنید و در صورت نیاز با پشتیبانی تماس بگیرید.','request_id':request_id},status_code=500)
-        wants_json = (request.url.path.startswith('/admin') or request.url.path.startswith('/api/admin')) and (request.headers.get('x-requested-with') == 'fetch' or 'application/json' in request.headers.get('accept', '') or request.query_params.get('ajax') == '1')
+        wants_json = (request.url.path.startswith('/admin') or request.url.path.startswith('/api/admin')) and (request.headers.get('x-requested-with', '').lower() in {'fetch', 'xmlhttprequest'} or 'application/json' in request.headers.get('accept', '') or request.query_params.get('ajax') == '1')
         if wants_json:
             request_id = uuid.uuid4().hex[:12]
             logging.getLogger(__name__).exception('Admin JSON error request_id=%s path=%s', request_id, request.url.path)

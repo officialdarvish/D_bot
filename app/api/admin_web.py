@@ -39,7 +39,8 @@ from app.services.service_type_catalog import (
 from app.services.reseller_service import reconcile_reseller_accounting, remaining_bytes, repair_reseller_services_from_panels
 from app.services.live_pricing import plan_currency, plan_price_usd, format_usd, update_plan_pricing_meta
 from app.services.category_visibility import category_name_key, category_group_rows, category_is_enabled, category_bot_status
-from app.database.defaults import WELCOME_TEXT_DEFAULT, RULES_TEXT_DEFAULT
+from app.database.defaults import WELCOME_TEXT_DEFAULT, RULES_TEXT_DEFAULT, invalidate_settings_cache
+from app.database.settings_write import upsert_settings
 from app.bot.keyboards.common import BUTTON_DEFAULTS, button_text_key, button_enabled_key, invalidate_button_settings_cache
 from app.services.web_credentials import (
     WEB_ADMIN_PASSWORD_SECRET_KEY,
@@ -818,11 +819,7 @@ async def db_setting(key: str, default: str = '') -> str:
 
 
 async def set_db_setting(session, key: str, value: str) -> None:
-    row = await session.get(Setting, key)
-    if row:
-        row.value = value
-    else:
-        session.add(Setting(key=key, value=value))
+    await upsert_settings(session, {key: value})
 
 
 def _parse_id_order(value: str | None) -> list[int]:
@@ -846,7 +843,7 @@ def _sort_by_saved_order(items, order_value: str | None):
 
 
 def is_ajax(request: Request) -> bool:
-    return (request.headers.get('x-requested-with') == 'fetch'
+    return (request.headers.get('x-requested-with', '').lower() in {'fetch', 'xmlhttprequest'}
             or 'application/json' in request.headers.get('accept','')
             or request.query_params.get('ajax') == '1')
 
@@ -4751,10 +4748,10 @@ async def _settings_map() -> dict[str, str]:
 
 
 async def _save_settings_map(values: dict[str, Any]) -> None:
-    async with SessionLocal() as s:
-        for key, value in values.items():
-            await s.merge(Setting(key=key, value=str(value if value is not None else '')))
-        await s.commit()
+    async with SessionLocal() as session:
+        await upsert_settings(session, {key: str(value if value is not None else '') for key, value in values.items()})
+        await session.commit()
+    invalidate_settings_cache()
 
 
 def _backup_format(data: dict[str, Any]) -> int:

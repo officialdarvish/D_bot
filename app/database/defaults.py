@@ -4,6 +4,7 @@ import time
 from sqlalchemy import select
 from app.database.models import Setting
 from app.database.session import SessionLocal
+from app.database.settings_write import upsert_settings
 
 WELCOME_TEXT_DEFAULT = '''👋 به {bot_name} خوش آمدید
 
@@ -110,12 +111,12 @@ async def get_setting_value(key: str, default: str = '') -> str:
     return value
 
 
-async def set_setting_value(key: str, value: str) -> None:
+async def set_setting_values(values: dict[str, str]) -> None:
     async with SessionLocal() as session:
-        row = await session.get(Setting, key)
-        if row:
-            row.value = value
-        else:
-            session.add(Setting(key=key, value=value))
+        await upsert_settings(session, values)
         await session.commit()
     invalidate_settings_cache()
+
+
+async def set_setting_value(key: str, value: str) -> None:
+    await set_setting_values({key: value})

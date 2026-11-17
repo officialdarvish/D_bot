@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 18,
+  "build": 19,
   "channel": "main",
   "notes": {
-    "fa": "رفع مسیر خصوصی و پسوند تکراری API در اتصال NX، حفظ مسیر هنگام تست و ویرایش و اصلاح خطای ذخیره ویرایش NX",
-    "en": "Fix NX private-path handling and duplicate API suffixes across test/add/edit, and repair NX edit persistence"
+    "fa": "رفع تداخل ذخیره هم‌زمان تنظیمات کانال بکاپ و خطای کلید تکراری، رفع پاسخ HTML در ویزارد و مدیریت نشست منقضی‌شده",
+    "en": "Fix concurrent backup-channel settings writes and duplicate primary keys, setup HTML/JSON replies and expired-session handling"
   }
 }
