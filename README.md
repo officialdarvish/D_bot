@@ -121,6 +121,10 @@ Python / Aiogram / FastAPI + Next.js, with **PostgreSQL 16** for persistent data
 
 </details>
 
+## WIzard Setup D Bot
+
+The first-run wizard is named **WIzard Setup D Bot**. Its screens reuse the exported web-panel styles, with responsive forms, matching controls, an accessible progress indicator and Persian/English layout support. Embedded settings retain their normal web-panel appearance.
+
 ## Discount code scope
 
 In **Discount Codes**, select multiple allowed categories and plans when adding or editing a code. Empty scopes allow all; nonempty server, category and plan restrictions must all match. Restrictions are checked again at checkout in the Telegram bot and Mini App, including renewals. Existing codes retain their previous behavior until restricted.

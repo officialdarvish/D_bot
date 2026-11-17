@@ -5701,3 +5701,11 @@ html[dir="rtl"] .shell .kv b{unicode-bidi:plaintext}
 .delivery-template-format > button:disabled { opacity:.55; cursor:default; }
 .custom-journeys .delivery-template-incomplete:empty { display:none; }
 .custom-journeys .delivery-template-incomplete { margin:0 0 16px; color:#e4c788; font-size:12px; }
+
+/* Embedded wizard forms share the web panel controls with a compact canvas. */
+html.setup-embedded body{background:#07111f;min-height:100dvh}
+html.setup-embedded body:before,html.setup-embedded body:after{display:none}
+.setup-embedded .shell{min-height:100dvh}
+.setup-embedded .content{padding:18px;max-width:none;margin:0}
+.setup-embedded .page-title{margin-bottom:18px}
+@media(max-width:640px){.setup-embedded .content{padding:12px}.setup-embedded .page-title h1{font-size:23px}}
