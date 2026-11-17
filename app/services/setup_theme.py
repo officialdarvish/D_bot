@@ -110,7 +110,7 @@ body.setup-page{margin:0;min-height:100dvh;color:var(--text);background:radial-g
 .setup-step-link:disabled{cursor:default;opacity:.6}
 .setup-step-link[data-state=current]{background:rgba(65,120,195,.16);border-color:rgba(111,169,248,.4);color:var(--text);opacity:1}
 .setup-step-link[data-state=complete]{color:#9ce8ca}
-.setup-step-number{display:grid;place-items:center;flex:0 0 25px;width:25px;height:25px;border:1px solid var(--line);border-radius:7px;font-size:11px;font-variant-numeric:tabular-nums}
+.setup-page .setup-step-number{display:inline-flex;align-items:center;justify-content:center;align-self:center;flex:0 0 25px;box-sizing:border-box;width:25px;min-width:25px;height:25px;min-height:25px;margin:0;padding:0;border:1px solid var(--line);border-radius:7px;font-family:Arial,Tahoma,sans-serif;font-size:11px;font-weight:400;line-height:1;text-align:center;letter-spacing:0;direction:ltr;font-variant-numeric:tabular-nums}
 .setup-step-link[data-state=current] .setup-step-number{background:rgba(111,169,248,.18);border-color:rgba(111,169,248,.4)}
 .setup-page .setup-progress-head{margin-top:0}
 .setup-page .step>h2{padding-bottom:16px;border-bottom:1px solid var(--line);margin-bottom:20px}

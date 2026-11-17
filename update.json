@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 25,
+  "build": 26,
   "channel": "main",
   "notes": {
-    "fa": "انتخاب فرمت‌های ساب NX در افزودن، ویرایش و ستاپ، لینک اجباری کلاینت بر اساس subUrl API و QR جداگانه برای هر فرمت انتخابی بدون دانلود اضافه",
-    "en": "Select NX subscription formats in add/edit/setup, derive explicit client URLs from API subUrl and deliver matching QR codes per selected format without extra config downloads"
+    "fa": "وسط‌چین افقی و عمودی شماره‌های تمام مراحل ستاپ با اندازه ثابت، مستقل از ارتفاع خط و زبان رابط",
+    "en": "Center all setup step numbers horizontally and vertically with fixed badge dimensions independent of inherited line height and UI language"
   }
 }

@@ -195,3 +195,7 @@ Build 12 makes Mini App tutorials distinct expandable cards and adds HTTP byte-r
 Build 13 redesigns **Custom** around a clickable bot-menu preview and related button/message editors. Edit text with a safe preview, insert variables, restore defaults, and save/apply up to eight named text templates. Home, rules, tutorials and service-delivery editors are accessible from their sections. Templates capture saved text/visibility; payment settings, accounts and tutorial media remain managed separately. A small **Restore backup** entry at the bottom of setup stage one imports an existing encrypted/legacy backup using the original password/key while retaining this installation's web login/address and completing setup.
 
 Build 14 applies the panel's shared dark form styling to Custom template/section/search fields and refines message cards, menu buttons, editor preview, mobile spacing and focus states. In **Custom → Test account**, create or duplicate a delivery template, insert variables, preview sample data, choose it for sending and save. Trial templates are independent of purchased-service templates; existing installations keep their current trial message until a new template is selected. Named bot profiles now capture trial templates too. Switching Custom sections warns before discarding unsaved tutorial/delivery edits.
+
+### Build 26 — Setup step numbers
+
+Setup step numbers and completion checkmarks stay centered horizontally and vertically in fixed 25px badges in both languages, including steps with wrapped titles.
