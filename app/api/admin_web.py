@@ -2329,7 +2329,7 @@ async def _setup_response(request,values,error='',status_code=200):
 
 @router.get('/setup/options/{section}')
 async def setup_options(request: Request, section: str, _: str = Depends(_auth_user)):
-    allowed={'servers','service-types','miniapp','discounts','custom','connection','categories','plans','payments','resellers','pasarguard-panel-sales','test-account','openvpn-profiles','settings','backup'}
+    allowed={'servers','service-types','miniapp','discounts','custom','connection','categories','plans','payments','resellers','pasarguard-panel-sales','test-account','openvpn-profiles','backup'}
     if section not in allowed or (await db_setting('initial_setup_done','0'))=='1':raise HTTPException(404)
     root=Path(__file__).resolve().parents[2]/'frontend_out'
     for path in (root/'admin'/section/'index.html',root/'admin'/f'{section}.html'):

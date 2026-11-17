@@ -133,6 +133,8 @@ Initial setup hides the server tags and shows “Your server has been added succ
 
 All wizard stages use the panel’s shared styles, compact form controls and matching surfaces. A responsive step list tracks the current stage and allows returning to previous stages. Embedded forms show a loading state; saving disables repeated clicks, and unsaved embedded changes must be saved before moving on. Persian/English directions and frame titles follow the selected language.
 
+The general **Settings** page is excluded from initial setup and remains available in the main admin panel. Embedded configuration stages are optional: use **Continue** to keep existing values; save any edits before continuing.
+
 ## Backup settings reliability
 
 Backup-channel detection and shared settings writes now use atomic database upserts, so simultaneous Telegram updates cannot insert duplicate setting keys. Committed writes also refresh the settings cache. No database reset or manual configuration is required.

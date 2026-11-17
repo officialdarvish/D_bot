@@ -103,6 +103,7 @@ test('step navigation stays synchronized through every stage in both languages',
   const {document:d,dom}=x;
   assert.equal(d.querySelector('.setup-workspace > form')?.tagName,'FORM');
   assert.ok(d.querySelector('.setup-stepbar #setupStepList'));
+  assert.equal(d.querySelector('iframe[data-src$="/setup/options/settings"]'),null);
   d.querySelectorAll('[name^=feature_]').forEach(field=>field.checked=true);
   let count=0;
   while(!d.getElementById('setupNext').hidden){
@@ -112,6 +113,8 @@ test('step navigation stays synchronized through every stage in both languages',
    assert.equal(d.querySelector('[aria-current=step] span:last-child').textContent,current.querySelector('h2').textContent);
    const frame=current.querySelector('iframe');
    if(frame){
+    assert.equal(d.getElementById('setupNext').textContent,'Continue');
+    assert.match(current.querySelector('.setup-step-hint').textContent,/Optional: continue without changes/);
     assert.ok(frame.src.startsWith('https://bot.example/private/setup/options/'));
     frame.dispatchEvent(new dom.window.Event('load'));
     assert.equal(frame.parentElement.getAttribute('aria-busy'),'false');

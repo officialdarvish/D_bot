@@ -13,7 +13,8 @@ def test_wizard_has_real_conditional_forms_and_resume():
     source='<html><head></head><body><main><form><div class="steps"><section class="step"></section></div><div class="actions"><button class="btn" type="submit">Save</button></div></form></main></body></html>'
     result=staged(source,{'setup_step':'7'},'/private','csrf',[])
     assert 'let index=7' in result
-    for section in ('plans','payments','servers','resellers','test-account','openvpn-profiles','settings','backup','miniapp','connection'):
+    assert '/private/setup/options/settings' not in result
+    for section in ('plans','payments','servers','resellers','test-account','openvpn-profiles','backup','miniapp','connection'):
         assert f'/private/setup/options/{section}' in result
     assert 'data-feature="resellers"' in result and 'data-feature="openvpn"' in result
     assert '/setup/progress' in result and 'dbot-setup-dirty' in result
