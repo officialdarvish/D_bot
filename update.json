@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 22,
+  "build": 23,
   "channel": "main",
   "notes": {
-    "fa": "حذف بخش Settings از مراحل ستاپ اولیه و مشخص‌کردن امکان ادامه مراحل اختیاری بدون تغییر تنظیمات",
-    "en": "Remove Settings from initial setup and clearly allow continuing optional stages without changes"
+    "fa": "رفع مسدودشدن start و منوی اصلی توسط بخش‌های اختیاری غیرفعال؛ حفظ محدودیت قابلیت‌ها و خروج از وضعیت قدیمی هنگام شروع مجدد",
+    "en": "Fix disabled optional modules blocking start and core navigation, preserve feature gates and escape stale module states on restart"
   }
 }

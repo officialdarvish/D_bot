@@ -135,6 +135,8 @@ All wizard stages use the panel’s shared styles, compact form controls and mat
 
 The general **Settings** page is excluded from initial setup and remains available in the main admin panel. Embedded configuration stages are optional: use **Continue** to keep existing values; save any edits before continuing.
 
+Disabled optional modules only block their own matching Telegram actions. `/start` (including referral links) and the restart button reach the main navigation even if a previous module form is still active. The existing administrator bot on/off switch and normal access checks remain independent.
+
 ## Backup settings reliability
 
 Backup-channel detection and shared settings writes now use atomic database upserts, so simultaneous Telegram updates cannot insert duplicate setting keys. Committed writes also refresh the settings cache. No database reset or manual configuration is required.
