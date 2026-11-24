@@ -1,0 +1,2702 @@
+{
+  "home.text.a1ba0979f1": {
+    "text": "دریافت QR انجام نشد.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.a5bef364c5": {
+    "text": "لینک اشتراک کپی شد",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.ebbc2e4dc5": {
+    "text": "باز کردن HAPP را بزنید؛ سپس در مرورگر، افزودن به HAPP را انتخاب کنید.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.cb281458d2": {
+    "text": "نمایندگی",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.202a5a0d44": {
+    "text": "خرید عمومی",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.6f63796667": {
+    "text": "فعال",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.d9ba416811": {
+    "text": "غیرفعال",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.b52eb3df67": {
+    "text": "بدون انقضا",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.64ad5cc2e6": {
+    "text": "پنل در دسترس نیست؛ آخرین مصرف ثبت‌شده",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.d0a7d1f83d": {
+    "text": "مدیریت اشتراک",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.7fd8b30eb5": {
+    "text": "جستجوی کانفیگ",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.370d163a36": {
+    "text": "جستجوی نام کانفیگ یا سرور…",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.b93f015faf": {
+    "text": "فضای اختصاصی نمایندگان",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.046b9d88a5": {
+    "text": "مینی‌اپ تلگرام",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.c576dcf139": {
+    "text": "بروزرسانی اطلاعات",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.retry": {
+    "text": "تلاش دوباره",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.d598ca38fe": {
+    "text": "در حال دریافت اطلاعات…",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.95bb589280": {
+    "text": "ورود از تلگرام",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.back": {
+    "text": "بازگشت",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.cb281458d2": {
+    "text": "نمایندگی",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.202a5a0d44": {
+    "text": "خرید عمومی",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.7f1fb3358b": {
+    "text": "جزئیات کانفیگ",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.6f63796667": {
+    "text": "فعال",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.d9ba416811": {
+    "text": "غیرفعال",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.5877b032a2": {
+    "text": "مصرف‌شده",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.975a84eddd": {
+    "text": "بدون محدودیت زمانی",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.acc620dd99": {
+    "text": "حجم باقی‌مانده",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.58c54168f8": {
+    "text": "نامحدود",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.c1185c0e7c": {
+    "text": "تاریخ انقضا",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.e51254cb06": {
+    "text": "اطلاعات اتصال",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.56df47ddf8": {
+    "text": "متن را انتخاب و کپی کنید.",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.8fd7256000": {
+    "text": "کپی",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.33925ef251": {
+    "text": "پروفایل فعالی ثبت نشده است.",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.958a020923": {
+    "text": "دریافت پروفایل OpenVPN",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.69e3a2eefc": {
+    "text": "اتصال در HAPP",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.491a239671": {
+    "text": "باز کردن HAPP ↗",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.ac0faf914a": {
+    "text": "کپی لینک",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.9dadc0483d": {
+    "text": "نمایش QR",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.ac4aea1a1f": {
+    "text": "ابزارهای پنل نمایندگی",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.2d20e0f1c7": {
+    "text": "انجام داخل همین پنل",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.d0cf0c4323": {
+    "text": "ارتباط با پنل برقرار نشد؛ آخرین اطلاعات ثبت‌شده نمایش داده شده است.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.1582ff6c48": {
+    "text": "ابزارهای نمایندگی",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.5334991787": {
+    "text": "انجام داخل مینی‌اپ",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.98ebc4ad48": {
+    "text": "تغییرات با تأیید شما داخل مینی‌اپ انجام می‌شوند.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.144e4ae028": {
+    "text": "تمدید اشتراک",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.6e3f64b403": {
+    "text": "باطل کردن لینک قبلی",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.249405576a": {
+    "text": "ریست HWID",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.0930a4a7b6": {
+    "text": "تبدیل تعرفه",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.7413146e15": {
+    "text": "انتقال مالکیت",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.4dcd09bcbb": {
+    "text": "حذف کانفیگ",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.d2d7ad6495": {
+    "text": "حذف از پنل و قطع دسترسی این اشتراک",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.911e4a98e8": {
+    "text": "PARTNER EXPERIENCE",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.9aea9b005a": {
+    "text": "YOUR CONNECTION SPACE",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.92dd818ac3": {
+    "text": "موجودی کیف پول",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.306eba5069": {
+    "text": "تومان",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.top_up": {
+    "text": "افزایش موجودی",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.8b6f037bce": {
+    "text": "اشتراک فعال",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.3e1e89492d": {
+    "text": "ترافیک باقی‌مانده",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.purchase": {
+    "text": "خرید اشتراک جدید",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.3b8d04c044": {
+    "text": "فضای نمایندگی تو",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.3430df461c": {
+    "text": "کانفیگ ·",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.db20495cb7": {
+    "text": "پنل‌های نمایندگی من",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.d745d5b8e0": {
+    "text": "حجمی",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.f01266a08d": {
+    "text": "کیف پول پنل‌های نمایندگی",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.a71127a884": {
+    "text": "پنل خریداری‌شده",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.f61ca75379": {
+    "text": "مشاهده پنل و افزایش اعتبار",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.567d19e848": {
+    "text": "اشتراک‌های من",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.view_all": {
+    "text": "مشاهده همه",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.1de329b96d": {
+    "text": "هنوز اشتراکی ندارید.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.support": {
+    "text": "ارتباط با پشتیبانی",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.4164823b31": {
+    "text": "مستقیم در تلگرام با ما حرف بزن",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.tutorials": {
+    "text": "📚 آموزش اتصال",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.rules": {
+    "text": "📜 قوانین استفاده",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.trial": {
+    "text": "دریافت اکانت تست",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.9e3b609e32": {
+    "text": "ساخت و دریافت مستقیم کانفیگ رایگان",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.reseller_request": {
+    "text": "درخواست نمایندگی",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.previous_step": {
+    "text": "بازگشت به مرحله قبل",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.a162f5e489": {
+    "text": "انتخاب پلن",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.315c72aead": {
+    "text": "انتخاب دسته‌بندی",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.8df4b41b3d": {
+    "text": "در انتظار تعرفه",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.93c139d48b": {
+    "text": "ترافیک نامحدود",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.c48a4b443d": {
+    "text": "روز",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.a4a2d425b3": {
+    "text": "برای این دسته تعرفه قابل خریدی وجود ندارد.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.8607357137": {
+    "text": "هنوز دسته‌بندی فعالی ثبت نشده است.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.9d20a5d6c7": {
+    "text": "MY CONNECTIONS",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.3b4a484688": {
+    "text": "کانفیگ‌های من",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.e423e92664": {
+    "text": "هنوز اشتراکی نداری.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.a2186438a0": {
+    "text": "کانفیگی پیدا نشد.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.44e84e7aba": {
+    "text": "PASARGUARD / RESELLER",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.90165ef9e6": {
+    "text": "اعتبار و تعرفهٔ پنل‌ها بر اساس سیستم مالی انتخاب‌شده توسط مدیر محاسبه می‌شود.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.46e627cc25": {
+    "text": "ساخت کانفیگ",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.067ecee8d3": {
+    "text": "ساخت مستقیم در همین پنل نمایندگی",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.d68461d9f6": {
+    "text": "مصرف ترافیک",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.026e85dd54": {
+    "text": "هزینهٔ کسرشده",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.b7b3c0f305": {
+    "text": "هر گیگ:",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.3f80f9eae7": {
+    "text": "تومان · هر ساعت:",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.7c2f786216": {
+    "text": "سقف کاربر:",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.92233170cf": {
+    "text": "· کارکرد:",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.4dbe762d48": {
+    "text": "ساعت",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.59af21c99e": {
+    "text": "پنل به دلیل اتمام اعتبار متوقف شده است. پس از تأیید رسید شارژ، سرویس‌های متوقف‌شده به‌صورت خودکار فعال می‌شوند.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.08523c24ae": {
+    "text": "ورود به پنل PasarGuard",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.4e513ba0a7": {
+    "text": "پنل خریداری‌شده‌ای ندارید.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.c54b8bee56": {
+    "text": "PARTNER STUDIO",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.8c4ff8e20c": {
+    "text": "نمایندگی من",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.dd48ba3ebd": {
+    "text": "Pay As You Go · تسویه هر ۳۰ دقیقه",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.04f337aec5": {
+    "text": "خرید حجم · سهمیه پیش‌پرداخت",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.349800a698": {
+    "text": "نمایندگی فعال",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.179823c5b4": {
+    "text": "اعتبار غیرفعال",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.e18fd29fef": {
+    "text": "اعتبار تا",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.3a9c2c3c5e": {
+    "text": "کیف پول نمایندگی — تومان",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.d0d38a5006": {
+    "text": "حجم آمادهٔ ساخت",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.7906beaeba": {
+    "text": "صورتحساب مصرف واقعی",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.f41e4ce483": {
+    "text": "مصرف تاریخی",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.ea3291e63c": {
+    "text": "شارژ کیف پول",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.016013349e": {
+    "text": "خرید حجم",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.6bd75dc4bd": {
+    "text": "تمام کانفیگ‌ها",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.f6cea64de6": {
+    "text": "کانفیگ فعال",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.320ed15f5a": {
+    "text": "تعرفه مصرف سرورها",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.ee5af5d1f3": {
+    "text": "تومان / گیگ",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.bd21617800": {
+    "text": "آخرین تسویه:",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.54e41c8e3b": {
+    "text": "هنوز تسویه نشده",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.f104f3e8e7": {
+    "text": "با اتمام اعتبار، کانفیگ‌های مصرفی تا شارژ دوباره متوقف می‌شوند.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.f6b1931dab": {
+    "text": "مدیریت مشتری‌ها",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.109c2d8b3c": {
+    "text": "هنوز کانفیگی برای مشتری‌ها نساختی.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.a6ad050aa4": {
+    "text": "MY BALANCE",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.9b93495188": {
+    "text": "کیف پول",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.293640f9d7": {
+    "text": "موجودی قابل استفاده",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.d91f6a6d19": {
+    "text": "سفارش‌های اخیر",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.bea6a97262": {
+    "text": "سفارش",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.8a4c21182f": {
+    "text": "پرداخت‌شده",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.9e439812c2": {
+    "text": "در انتظار بررسی",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.8be271e089": {
+    "text": "ردشده",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.fb873d2e37": {
+    "text": "ناموفق",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.e962ebdc45": {
+    "text": "تاییدشده",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.57ab5550d8": {
+    "text": "لغوشده",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.d0fc541fe9": {
+    "text": "در حال پردازش",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.e0cbf712cf": {
+    "text": "سفارشی ثبت نشده است.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.33d4065095": {
+    "text": "مصرف کانفیگ‌ها هر یک دقیقه از پنل به‌روزرسانی می‌شود.",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.6b5b757f24": {
+    "text": "منوی اصلی",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.441def3dc4": {
+    "text": "در حال دریافت…",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.0e69b93731": {
+    "text": "کد QR اشتراک",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.d4a14fa869": {
+    "text": "بستن QR",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.b7dd387d8f": {
+    "text": "QR اشتراک",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.7525e88fbd": {
+    "text": "QR لینک اشتراک",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.cd0d36fecf": {
+    "text": "با برنامه اتصال اسکن کنید.",
+    "kind": "text",
+    "group": "home"
+  },
+  "checkout.text.previous_step": {
+    "text": "بازگشت به مرحله قبل",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.26581b8b4b": {
+    "text": "در حال بازیابی مرحله خرید…",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.bea6a97262": {
+    "text": "سفارش",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.06eecb9d7e": {
+    "text": "رایگان برای مدیر",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.df25593c51": {
+    "text": "منتظر تأیید مدیر",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.9f5e0f53a3": {
+    "text": "در حال بررسی",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.b4c18c7e02": {
+    "text": "مبلغ پرداخت درویش بریج:",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.button.e7f0ff4e3d": {
+    "text": "پرداخت و ارسال رسید در Darvish Bridge",
+    "kind": "button",
+    "group": "checkout"
+  },
+  "checkout.button.311d9cf137": {
+    "text": "دریافت مجدد فاکتور همین سفارش",
+    "kind": "button",
+    "group": "checkout"
+  },
+  "checkout.text.9f4df0761f": {
+    "text": "پس از تأیید واریز، سرویس خودکار صادر می‌شود. دوباره پرداخت نکنید.",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.9115b7941a": {
+    "text": "مبلغ دقیق",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.eee330922b": {
+    "text": "تومان را واریز و عکس رسید را ارسال کنید.",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.79d04d97f3": {
+    "text": "انتخاب عکس رسید",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.3be8be81f1": {
+    "text": "پیش‌نمایش رسید",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.button.817c48b942": {
+    "text": "ارسال رسید برای بررسی",
+    "kind": "button",
+    "group": "checkout"
+  },
+  "checkout.button.ad7ec9d6a5": {
+    "text": "لغو سفارش و برگشت",
+    "kind": "button",
+    "group": "checkout"
+  },
+  "checkout.text.fea8244b5d": {
+    "text": "رسید برای مدیر ارسال شد. نتیجه بررسی همین‌جا و در پیگیری سفارش‌های من نمایش داده می‌شود.",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.bb762679c9": {
+    "text": "درخواست ثبت شده است؛ تا پایان ساخت منتظر بمانید و درخواست را دوباره ثبت نکنید.",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.51cbbbc39f": {
+    "text": "رسید رد شد · دلیل:",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.102759a40c": {
+    "text": "دلیلی ثبت نشده است؛ با پشتیبانی تماس بگیرید.",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.4ad3e27265": {
+    "text": "درخواست به بررسی مدیر نیاز دارد؛ دوباره پرداخت نکنید.",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.button.bb6c2f402b": {
+    "text": "نمایش کانفیگ، لینک و اتصال",
+    "kind": "button",
+    "group": "checkout"
+  },
+  "checkout.button.7bd1d8f702": {
+    "text": "بررسی وضعیت سفارش",
+    "kind": "button",
+    "group": "checkout"
+  },
+  "checkout.button.f8d0fb9ce3": {
+    "text": "خرید جدید",
+    "kind": "button",
+    "group": "checkout"
+  },
+  "checkout.text.4ea21c8752": {
+    "text": "حجم (گیگابایت)",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.25ea06227a": {
+    "text": "مدت (روز)",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.23afae696e": {
+    "text": "تمدید همین کانفیگ؛ نام کاربری تغییر نمی‌کند.",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.8dd76cd53c": {
+    "text": "نام کانفیگ",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.91d57ab843": {
+    "text": "نام انتخابی باید با استاندارد پنل سازگار و آزاد باشد.",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.a04dcbda5c": {
+    "text": "رمز کانفیگ",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.64b010fb5b": {
+    "text": "کد تخفیف (اختیاری)",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.button.052da5fc32": {
+    "text": "بررسی و ادامه خرید",
+    "kind": "button",
+    "group": "checkout"
+  },
+  "checkout.text.4b32ad7606": {
+    "text": "نام کانفیگ:",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.caf93635ba": {
+    "text": "ساخت این کانفیگ برای مدیر رایگان است.",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.button.b571331efa": {
+    "text": "ساخت رایگان برای مدیر",
+    "kind": "button",
+    "group": "checkout"
+  },
+  "checkout.text.ebd5a0ee37": {
+    "text": "مبلغ نهایی",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.306eba5069": {
+    "text": "تومان",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.7cb388337d": {
+    "text": "قیمت پیش از تخفیف:",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.582560631b": {
+    "text": "قیمت پایه: $",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.8417c18b69": {
+    "text": "· نرخ:",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.8b3d74843b": {
+    "text": "موجودی کیف پول:",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.button.29444d5c43": {
+    "text": "پرداخت",
+    "kind": "button",
+    "group": "checkout"
+  },
+  "checkout.button.d3aa444d11": {
+    "text": "تومان از کیف پول",
+    "kind": "button",
+    "group": "checkout"
+  },
+  "checkout.text.05142b5ac6": {
+    "text": "موجودی کیف پول کافی نیست.",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.button.f7aea907e3": {
+    "text": "کارت به کارت و ارسال رسید",
+    "kind": "button",
+    "group": "checkout"
+  },
+  "checkout.text.7d46baa740": {
+    "text": "پیگیری سفارش‌های خرید من",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.button.126c729936": {
+    "text": "بروزرسانی سفارش‌ها",
+    "kind": "button",
+    "group": "checkout"
+  },
+  "checkout.text.6fe78d4843": {
+    "text": "· سفارش",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.eb7ce94565": {
+    "text": "هنوز خریدی از مینی‌اپ ثبت نکرده‌اید.",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.8c18d795de": {
+    "text": "وضعیت سفارش",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.73845f9aea": {
+    "text": "آخرین سفارش ·",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.5f68cc59d8": {
+    "text": "سفارش شما",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.25cb4bdd45": {
+    "text": "دلیل رد رسید:",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.bf857167e4": {
+    "text": "دلیلی ثبت نشده است.",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.button.34ca62c04b": {
+    "text": "ارسال مجدد سفارش",
+    "kind": "button",
+    "group": "checkout"
+  },
+  "checkout.button.588cd0bd05": {
+    "text": "مشاهده جزئیات سفارش",
+    "kind": "button",
+    "group": "checkout"
+  },
+  "checkout.text.e919a2ec1f": {
+    "text": "هنوز سفارشی ثبت نکرده‌اید.",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.d2b072664e": {
+    "text": "در حال دریافت وضعیت سفارش…",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "conversion.text.back": {
+    "text": "بازگشت",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.0930a4a7b6": {
+    "text": "تبدیل تعرفه",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.bcd17886b4": {
+    "text": "تبدیل تعرفه انجام شد",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.3e105d5e8d": {
+    "text": "تبدیل تکمیل نشد",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.160125d6c9": {
+    "text": "در حال تبدیل تعرفه…",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.78df58a7e1": {
+    "text": "درخواست ثبت شده است؛ لطفاً منتظر بمانید.",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.0964f75bb5": {
+    "text": "شناسه درخواست:",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.button.6959e6163c": {
+    "text": "دریافت کانفیگ جدید",
+    "kind": "button",
+    "group": "conversion"
+  },
+  "conversion.button.fe50a66c82": {
+    "text": "بررسی مجدد و شروع تبدیل",
+    "kind": "button",
+    "group": "conversion"
+  },
+  "conversion.text.debaa5abb7": {
+    "text": "پس از آزادسازی درخواست توسط مدیر، یک محاسبه تازه دریافت کنید.",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.244712e513": {
+    "text": "کانفیگ مبدا:",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.183c2f3e2c": {
+    "text": "دسته مقصد:",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.74c8393f7f": {
+    "text": "سرور مقصد:",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.44de404980": {
+    "text": "حجم باقی‌مانده مبدا",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.a30be1cd97": {
+    "text": "حجم کانفیگ جدید",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.6b5df1d1fc": {
+    "text": "ارزش باقی‌مانده:",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.91c4fa24ce": {
+    "text": "انقضا:",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.2f1a93d5b5": {
+    "text": "پس از تأیید و تبدیل موفق، کانفیگ قبلی حذف می‌شود. تاریخ انقضا حفظ می‌شود.",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.button.03e4d57d5a": {
+    "text": "در حال ثبت…",
+    "kind": "button",
+    "group": "conversion"
+  },
+  "conversion.button.8f45eb65bc": {
+    "text": "تأیید نهایی تبدیل",
+    "kind": "button",
+    "group": "conversion"
+  },
+  "conversion.button.45b4d4c78b": {
+    "text": "تغییر دسته مقصد",
+    "kind": "button",
+    "group": "conversion"
+  },
+  "conversion.text.f2dabef730": {
+    "text": "کانفیگ:",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.4ce9ee79e4": {
+    "text": "دسته مقصد را انتخاب کنید؛ حجم جدید براساس اعتبار باقی‌مانده محاسبه می‌شود.",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.f3c446e6bb": {
+    "text": "در حال دریافت و محاسبه…",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.text.1d23c47994": {
+    "text": "دسته‌ای برای تبدیل این کانفیگ فعال نشده است.",
+    "kind": "text",
+    "group": "conversion"
+  },
+  "conversion.button.acc813ba2f": {
+    "text": "بررسی مجدد",
+    "kind": "button",
+    "group": "conversion"
+  },
+  "trial.text.88809848e5": {
+    "text": "دریافت وضعیت تست انجام نشد.",
+    "kind": "text",
+    "group": "trial"
+  },
+  "trial.text.61e3ae3083": {
+    "text": "ثبت درخواست تست انجام نشد.",
+    "kind": "text",
+    "group": "trial"
+  },
+  "trial.button.back": {
+    "text": "بازگشت",
+    "kind": "button",
+    "group": "trial"
+  },
+  "trial.text.trial": {
+    "text": "دریافت اکانت تست",
+    "kind": "text",
+    "group": "trial"
+  },
+  "trial.text.536f88c519": {
+    "text": "سهمیه، تنظیمات و کانفیگ‌های تست بین ربات و مینی‌اپ مشترک است.",
+    "kind": "text",
+    "group": "trial"
+  },
+  "trial.text.21f6e6a1ec": {
+    "text": "گیگ ·",
+    "kind": "text",
+    "group": "trial"
+  },
+  "trial.text.511d69c1e1": {
+    "text": "روز ·",
+    "kind": "text",
+    "group": "trial"
+  },
+  "trial.text.f019da3ec8": {
+    "text": "سرور",
+    "kind": "text",
+    "group": "trial"
+  },
+  "trial.text.989bdaf3a4": {
+    "text": "سرور تست",
+    "kind": "text",
+    "group": "trial"
+  },
+  "trial.button.a20e1822c1": {
+    "text": "بررسی دوباره وضعیت",
+    "kind": "button",
+    "group": "trial"
+  },
+  "trial.text.ca7830eb60": {
+    "text": "در حال ساخت اکانت تست… پس از بازگشت به این صفحه، نتیجه همین درخواست نمایش داده می‌شود.",
+    "kind": "text",
+    "group": "trial"
+  },
+  "trial.text.2957d8f92b": {
+    "text": "شما قبلاً اکانت تست دریافت کرده‌اید.",
+    "kind": "text",
+    "group": "trial"
+  },
+  "trial.text.90ead8e7c6": {
+    "text": " کانفیگ‌های موجود را از همین صفحه مشاهده کنید.",
+    "kind": "text",
+    "group": "trial"
+  },
+  "trial.button.e6c3bbdc76": {
+    "text": "· دریافت کانفیگ",
+    "kind": "button",
+    "group": "trial"
+  },
+  "trial.button.0a91e95e77": {
+    "text": "در حال ثبت درخواست…",
+    "kind": "button",
+    "group": "trial"
+  },
+  "trial.button.28d19a8a3c": {
+    "text": "دریافت اکانت تست جدید",
+    "kind": "button",
+    "group": "trial"
+  },
+  "trial.button.659e374fa9": {
+    "text": "تلاش مجدد برای دریافت تست",
+    "kind": "button",
+    "group": "trial"
+  },
+  "trial.button.8118a52fd5": {
+    "text": "دریافت اکانت تست رایگان",
+    "kind": "button",
+    "group": "trial"
+  },
+  "trial.text.e7a4fb1f75": {
+    "text": "تنظیمات اکانت تست هنوز توسط مدیر کامل نشده است.",
+    "kind": "text",
+    "group": "trial"
+  },
+  "trial.text.4711825cc9": {
+    "text": "در حال دریافت تنظیمات…",
+    "kind": "text",
+    "group": "trial"
+  },
+  "ownership.text.back": {
+    "text": "بازگشت",
+    "kind": "text",
+    "group": "ownership"
+  },
+  "ownership.text.7413146e15": {
+    "text": "انتقال مالکیت",
+    "kind": "text",
+    "group": "ownership"
+  },
+  "ownership.text.b48711da34": {
+    "text": "مالکیت کانفیگ منتقل شد.",
+    "kind": "text",
+    "group": "ownership"
+  },
+  "ownership.text.47d5deeb20": {
+    "text": "کانفیگ",
+    "kind": "text",
+    "group": "ownership"
+  },
+  "ownership.text.f78952e753": {
+    "text": "به کاربر",
+    "kind": "text",
+    "group": "ownership"
+  },
+  "ownership.text.f61098b46c": {
+    "text": "منتقل شد و از فهرست شما خارج می‌شود.",
+    "kind": "text",
+    "group": "ownership"
+  },
+  "ownership.text.a9a29183d0": {
+    "text": "پیام انتقال مالکیت برای کاربر ارسال شد.",
+    "kind": "text",
+    "group": "ownership"
+  },
+  "ownership.text.cb87d48e3a": {
+    "text": "ارسال پیام به کاربر تأیید نشد؛ انتقال انجام شده است و کانفیگ در بخش «کانفیگ‌های من» او قرار دارد.",
+    "kind": "text",
+    "group": "ownership"
+  },
+  "ownership.button.7f471f6c6e": {
+    "text": "بازگشت به کانفیگ‌های من",
+    "kind": "button",
+    "group": "ownership"
+  },
+  "ownership.text.e8dcc4a410": {
+    "text": "تأیید انتقال مالکیت",
+    "kind": "text",
+    "group": "ownership"
+  },
+  "ownership.text.f2dabef730": {
+    "text": "کانفیگ:",
+    "kind": "text",
+    "group": "ownership"
+  },
+  "ownership.text.bd51d015b1": {
+    "text": "کاربر مقصد:",
+    "kind": "text",
+    "group": "ownership"
+  },
+  "ownership.text.6dc7c6f94a": {
+    "text": "آیدی عددی:",
+    "kind": "text",
+    "group": "ownership"
+  },
+  "ownership.text.80b70e1cac": {
+    "text": "پس از تأیید، این کانفیگ در حساب کاربر مقصد قرار می‌گیرد و از کانفیگ‌های شما خارج می‌شود. مشخصات اتصال، حجم و تاریخ انقضا حفظ می‌شوند.",
+    "kind": "text",
+    "group": "ownership"
+  },
+  "ownership.button.9e5c32b588": {
+    "text": "در حال انتقال…",
+    "kind": "button",
+    "group": "ownership"
+  },
+  "ownership.button.d7a2988e5d": {
+    "text": "تأیید نهایی انتقال مالکیت",
+    "kind": "button",
+    "group": "ownership"
+  },
+  "ownership.button.0230d9b0d3": {
+    "text": "اصلاح آیدی کاربر",
+    "kind": "button",
+    "group": "ownership"
+  },
+  "ownership.text.8834aafd3e": {
+    "text": "آیدی عددی کاربر مقصد",
+    "kind": "text",
+    "group": "ownership"
+  },
+  "ownership.text.64ec091685": {
+    "text": "کاربر مقصد باید قبلاً ربات را استارت کرده باشد.",
+    "kind": "text",
+    "group": "ownership"
+  },
+  "ownership.button.cb16adca9a": {
+    "text": "در حال بررسی…",
+    "kind": "button",
+    "group": "ownership"
+  },
+  "ownership.button.99d871bfc6": {
+    "text": "بررسی کاربر مقصد",
+    "kind": "button",
+    "group": "ownership"
+  },
+  "reseller.text.back": {
+    "text": "بازگشت",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.reseller_request": {
+    "text": "درخواست نمایندگی",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.0964f75bb5": {
+    "text": "شناسه درخواست:",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.5d7a154ec5": {
+    "text": "مبلغ پرداخت:",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.306eba5069": {
+    "text": "تومان",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.79d04d97f3": {
+    "text": "انتخاب عکس رسید",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.button.775273e443": {
+    "text": "در حال ارسال…",
+    "kind": "button",
+    "group": "reseller"
+  },
+  "reseller.button.5e78a22574": {
+    "text": "ارسال رسید برای تأیید مدیر",
+    "kind": "button",
+    "group": "reseller"
+  },
+  "reseller.button.48133f69ad": {
+    "text": "لغو فاکتور",
+    "kind": "button",
+    "group": "reseller"
+  },
+  "reseller.text.a3e8d9e184": {
+    "text": "رسید ثبت شد؛ منتظر تأیید مدیر",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.c647634c9e": {
+    "text": "در حال ساخت پنل",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.49251ef0de": {
+    "text": "درخواست نیازمند بررسی مدیر است",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.2f63b324ec": {
+    "text": "نمایندگی فعال شد",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.button.4125a5dbec": {
+    "text": "ورود به بخش نمایندگی",
+    "kind": "button",
+    "group": "reseller"
+  },
+  "reseller.text.fc427c1e80": {
+    "text": "فاکتور نمایندگی",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.35065880f2": {
+    "text": "تعرفه:",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.d745d5b8e0": {
+    "text": "حجمی",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.15dacf05cc": {
+    "text": "پرداخت به‌ازای مصرف",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.3415881880": {
+    "text": "هزینه پنل:",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.a8839176bc": {
+    "text": "گیگ",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.1f2099f905": {
+    "text": "اعتبار بسته:",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.c48a4b443d": {
+    "text": "روز",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.b7b3c0f305": {
+    "text": "هر گیگ:",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.08b3e28599": {
+    "text": "ترافیک اولیه:",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.de645ab11b": {
+    "text": "شارژ اولیه کیف پول:",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.e6c51a5ef1": {
+    "text": "مبلغ نهایی:",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.24e8fd4683": {
+    "text": "دسترسی پس از تأیید رسید فعال می‌شود. هر نماینده فقط یک مدل تعرفه دارد.",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.button.03e4d57d5a": {
+    "text": "در حال ثبت…",
+    "kind": "button",
+    "group": "reseller"
+  },
+  "reseller.button.c3b8a25f9a": {
+    "text": "ادامه و پرداخت",
+    "kind": "button",
+    "group": "reseller"
+  },
+  "reseller.button.be2864e0eb": {
+    "text": "بازگشت به انتخاب",
+    "kind": "button",
+    "group": "reseller"
+  },
+  "reseller.text.884760ff41": {
+    "text": "در حال دریافت گزینه‌ها…",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.ec57f97784": {
+    "text": "نوع نمایندگی را انتخاب کنید.",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.c939b28cc3": {
+    "text": "در حال حاضر گزینه فعالی برای درخواست ندارید.",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.a947e9cc9a": {
+    "text": "مشخصات ورود پنل",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.558f2e3254": {
+    "text": "نام کاربری پنل",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.a3c801e57b": {
+    "text": "۴ تا ۳۲ نویسه؛ شروع با حرف انگلیسی، سپس حرف، عدد یا زیرخط.",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.92629ff613": {
+    "text": "رمز پنل",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.1662107e09": {
+    "text": "حداقل ۱۲ نویسه شامل دو حرف کوچک، دو حرف بزرگ، دو عدد و نماد؛ بدون فاصله.",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.button.e50b46cd62": {
+    "text": "انتخاب تعرفه",
+    "kind": "button",
+    "group": "reseller"
+  },
+  "reseller.text.0e989f462c": {
+    "text": "مدل محاسبه هزینه",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.e50b46cd62": {
+    "text": "انتخاب تعرفه",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.f3bfe93fc0": {
+    "text": "سرور نمایندگی",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.0e2d474454": {
+    "text": "انتخاب سرور",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.b6e8395389": {
+    "text": "بسته حجم",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.056073f20f": {
+    "text": "انتخاب بسته",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.dfac5a650e": {
+    "text": "حداقل ترافیک اولیه {value1} گیگ؛ هر گیگ {value2} تومان.",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.6060277f88": {
+    "text": "حداقل شارژ اولیه کیف پول نمایندگی {value1} تومان.",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.button.3d31e47555": {
+    "text": "در حال محاسبه…",
+    "kind": "button",
+    "group": "reseller"
+  },
+  "reseller.button.611992e2b3": {
+    "text": "مشاهده فاکتور",
+    "kind": "button",
+    "group": "reseller"
+  },
+  "actions.text.back": {
+    "text": "بازگشت",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.5c52616718": {
+    "text": "عملیات با موفقیت انجام شد",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.53c49ec80a": {
+    "text": "عملیات نیازمند بررسی است",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.716e124d07": {
+    "text": "در حال انجام عملیات؛ لطفاً منتظر بمانید…",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.789ddc2f38": {
+    "text": "این درخواست ثبت شده است؛ دکمه را دوباره نزنید.",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.button.33cb61ca36": {
+    "text": "مشاهده نتیجه",
+    "kind": "button",
+    "group": "actions"
+  },
+  "actions.button.03c7513d90": {
+    "text": "بررسی و ادامه عملیات",
+    "kind": "button",
+    "group": "actions"
+  },
+  "actions.button.84cb484081": {
+    "text": "برگشت و ارتباط با پشتیبانی",
+    "kind": "button",
+    "group": "actions"
+  },
+  "actions.text.f2dabef730": {
+    "text": "کانفیگ:",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.f019da3ec8": {
+    "text": "سرور",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.95a7c0b035": {
+    "text": "سرور مجازی برای ساخت پیدا نشد؛ تنظیمات نمایندگی را با مدیر بررسی کنید.",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.8dd76cd53c": {
+    "text": "نام کانفیگ",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.09332798d7": {
+    "text": "حجم افزوده (گیگ)",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.e8cd7667e6": {
+    "text": "حجم کانفیگ (گیگ)",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.077acb1e4d": {
+    "text": "روز افزوده",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.472aaff9de": {
+    "text": "مدت اعتبار (روز)",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.6766bd7c12": {
+    "text": "محدودیت دستگاه (۰ یعنی نامحدود)",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.36697d3eec": {
+    "text": "حجم واردشده به سهمیه فعلی اضافه می‌شود و مدت جدید از امروز محاسبه می‌شود. مصرف قبلی پاک نمی‌شود. در سیستم حجمی، حجم افزوده از اعتبار پنل کسر می‌شود.",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.e6242b8d78": {
+    "text": "با تأیید، کانفیگ از پنل حذف می‌شود و حجم مصرف‌نشده طبق حسابداری نمایندگی تسویه می‌شود.",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.8cee386881": {
+    "text": "با تأیید، این کانفیگ از پنل و فهرست شما حذف می‌شود و اتصال آن قطع خواهد شد.",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.d88dbcab73": {
+    "text": "لینک یا رمز قبلی باطل می‌شود. پس از تأیید، اطلاعات جدید همین‌جا در دسترس است.",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.25b50ba6af": {
+    "text": "تمام دستگاه‌های ثبت‌شده پاک می‌شوند و دستگاه بعدی هنگام اتصال دوباره ثبت خواهد شد.",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.button.1a0200c1ce": {
+    "text": "تأیید و",
+    "kind": "button",
+    "group": "actions"
+  },
+  "actions.text.2e1b536a53": {
+    "text": "خرید حجم نمایندگی",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.ea3291e63c": {
+    "text": "شارژ کیف پول",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.d4a4aa9e38": {
+    "text": "افزایش اعتبار کیف پول پنل نمایندگی",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.6ba359372c": {
+    "text": "شارژ کیف پول نمایندگی",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.306eba5069": {
+    "text": "تومان",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.b561a38c73": {
+    "text": "در انتظار ارسال رسید",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.df25593c51": {
+    "text": "منتظر تأیید مدیر",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.dbb5d10fd7": {
+    "text": "خرید تکمیل شد",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.83ac20913e": {
+    "text": "رسید رد شد",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.25cb4bdd45": {
+    "text": "دلیل رد رسید:",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.79d04d97f3": {
+    "text": "انتخاب عکس رسید",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.button.817c48b942": {
+    "text": "ارسال رسید برای بررسی",
+    "kind": "button",
+    "group": "actions"
+  },
+  "actions.text.edcdedd059": {
+    "text": "نتیجه همین‌جا نمایش داده می‌شود. برای پیگیری یا ارسال مجدد، به بخش پیگیری سفارش‌ها در خانه بروید.",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.button.37ba1f7455": {
+    "text": "پیگیری در خانه",
+    "kind": "button",
+    "group": "actions"
+  },
+  "actions.button.fd83292118": {
+    "text": "مشاهده موجودی جدید",
+    "kind": "button",
+    "group": "actions"
+  },
+  "actions.text.e6c51a5ef1": {
+    "text": "مبلغ نهایی:",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.4f7d611ca7": {
+    "text": "کیف پول شخصی:",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.button.f22a5b1569": {
+    "text": "پرداخت از کیف پول شخصی",
+    "kind": "button",
+    "group": "actions"
+  },
+  "actions.button.f7aea907e3": {
+    "text": "کارت به کارت و ارسال رسید",
+    "kind": "button",
+    "group": "actions"
+  },
+  "actions.text.726b162fda": {
+    "text": "روش پرداخت فعالی ثبت نشده است.",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.button.ac60ae7a68": {
+    "text": "ویرایش",
+    "kind": "button",
+    "group": "actions"
+  },
+  "actions.text.f3bfe93fc0": {
+    "text": "سرور نمایندگی",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.b6e8395389": {
+    "text": "بسته حجم",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.92eb221dbe": {
+    "text": "حجم (GB)",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.c48a4b443d": {
+    "text": "روز",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.64b010fb5b": {
+    "text": "کد تخفیف (اختیاری)",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.621534fe9d": {
+    "text": "افزایش اعتبار پنل نمایندگی",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.c486e27680": {
+    "text": "مبلغ شارژ را انتخاب کنید یا مبلغ دلخواه بنویسید.",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.240611948d": {
+    "text": "مبلغ‌های پیشنهادی شارژ",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.948759e2f5": {
+    "text": "تأیید رسید و اعمال اعتبار توسط مدیر",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.8aa61be419": {
+    "text": "مبلغ شارژ (تومان)",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.button.b069d41cf0": {
+    "text": "بررسی و ادامه پرداخت",
+    "kind": "button",
+    "group": "actions"
+  },
+  "actions.text.144e4ae028": {
+    "text": "تمدید اشتراک",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.1f87d9e769": {
+    "text": "تعرفه‌های مربوط به پنل",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.307d325d73": {
+    "text": "دسته تعرفه",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.button.58c54168f8": {
+    "text": "نامحدود",
+    "kind": "button",
+    "group": "actions"
+  },
+  "actions.text.ceb2f20fbf": {
+    "text": "تعرفه فعالی برای تمدید این پنل وجود ندارد.",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.ce0acf058c": {
+    "text": "پیگیری سفارش‌های من",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.dae746848c": {
+    "text": "وضعیت آخرین سفارش:",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.e64e0a621d": {
+    "text": "سفارش باز یا منتظر تأییدی ندارید.",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.d030ebca87": {
+    "text": "در حال دریافت سفارش‌ها…",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.5f68cc59d8": {
+    "text": "سفارش شما",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.102759a40c": {
+    "text": "دلیلی ثبت نشده است؛ با پشتیبانی تماس بگیرید.",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.button.f938f6f130": {
+    "text": "ارسال مجدد رسید به مدیر",
+    "kind": "button",
+    "group": "actions"
+  },
+  "actions.text.637a474b97": {
+    "text": "درخواست ارسال شد؛ ارسال بعدی پس از ۵ دقیقه.",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.button.9666a7b0c4": {
+    "text": "جزئیات سفارش",
+    "kind": "button",
+    "group": "actions"
+  },
+  "payment.text.ea745c88c5": {
+    "text": "کپی انجام نشد؛ شماره کارت را انتخاب و کپی کنید.",
+    "kind": "text",
+    "group": "payment"
+  },
+  "payment.text.a6d8db079a": {
+    "text": "شماره کارت",
+    "kind": "text",
+    "group": "payment"
+  },
+  "payment.text.8f9fb08ac3": {
+    "text": "کپی کامل شماره کارت",
+    "kind": "text",
+    "group": "payment"
+  },
+  "payment.button.09b9d4ce77": {
+    "text": "شماره کارت کپی شد",
+    "kind": "button",
+    "group": "payment"
+  },
+  "payment.button.ecb5f66900": {
+    "text": "کپی شماره کارت",
+    "kind": "button",
+    "group": "payment"
+  },
+  "payment.text.5fdeb43664": {
+    "text": "شماره کارت کپی شد.",
+    "kind": "text",
+    "group": "payment"
+  },
+  "steps.text.b283bd7456": {
+    "text": "مراحل خرید",
+    "kind": "text",
+    "group": "steps"
+  },
+  "help.text.90221869d2": {
+    "text": "ویدیوی این آموزش در دسترس نیست.",
+    "kind": "text",
+    "group": "help"
+  },
+  "help.text.a1bb1cbdfc": {
+    "text": "بستن آموزش",
+    "kind": "text",
+    "group": "help"
+  },
+  "help.text.8e08a7d497": {
+    "text": "برای مشاهده آموزش بزنید",
+    "kind": "text",
+    "group": "help"
+  },
+  "help.text.cebb52253f": {
+    "text": "ویدیوی آموزش {value1}",
+    "kind": "text",
+    "group": "help"
+  },
+  "help.text.aff67f3159": {
+    "text": "پخش ویدیو انجام نشد یا لینک آن منقضی شده است. ویدیو را دوباره بارگذاری کنید.",
+    "kind": "text",
+    "group": "help"
+  },
+  "help.text.13bceef628": {
+    "text": "در حال دریافت ویدیو…",
+    "kind": "text",
+    "group": "help"
+  },
+  "help.button.13bceef628": {
+    "text": "در حال دریافت ویدیو…",
+    "kind": "button",
+    "group": "help"
+  },
+  "help.button.ea3f149de0": {
+    "text": "بارگذاری دوباره ویدیو",
+    "kind": "button",
+    "group": "help"
+  },
+  "help.button.91fe5f12db": {
+    "text": "دانلود برنامه",
+    "kind": "button",
+    "group": "help"
+  },
+  "help.button.back": {
+    "text": "بازگشت",
+    "kind": "button",
+    "group": "help"
+  },
+  "help.text.911de8f0e1": {
+    "text": "قوانین استفاده",
+    "kind": "text",
+    "group": "help"
+  },
+  "help.text.0d4a1426b3": {
+    "text": "آموزش اتصال",
+    "kind": "text",
+    "group": "help"
+  },
+  "help.text.d92f15c1fa": {
+    "text": "برنامه و سیستم‌عامل خود را انتخاب کنید و روی کارت آموزش بزنید.",
+    "kind": "text",
+    "group": "help"
+  },
+  "help.text.441def3dc4": {
+    "text": "در حال دریافت…",
+    "kind": "text",
+    "group": "help"
+  },
+  "help.text.0e6959137a": {
+    "text": "هنوز قانونی ثبت نشده است.",
+    "kind": "text",
+    "group": "help"
+  },
+  "help.text.4832e64bd2": {
+    "text": "هنوز آموزشی ثبت نشده است.",
+    "kind": "text",
+    "group": "help"
+  },
+  "panels.text.back": {
+    "text": "بازگشت",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.4cf75726c1": {
+    "text": "ساخت کانفیگ پنل نمایندگی",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.2cc3f8dd0f": {
+    "text": "کانفیگ آماده است",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.b10c80954e": {
+    "text": "ساخت انجام نشد",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.4d968ef69d": {
+    "text": "ادامه ساخت کانفیگ",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.f5558d8530": {
+    "text": "اطلاعات اشتراک در ربات نیز ارسال می‌شود.",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.ff4694b1c1": {
+    "text": "لینک اشتراک",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.button.2e4f31bfe6": {
+    "text": "لینک کپی شد.",
+    "kind": "button",
+    "group": "panels"
+  },
+  "panels.button.0029ed35a8": {
+    "text": "لینک را انتخاب و کپی کنید.",
+    "kind": "button",
+    "group": "panels"
+  },
+  "panels.button.90f0f7e9ab": {
+    "text": "کپی لینک اشتراک",
+    "kind": "button",
+    "group": "panels"
+  },
+  "panels.text.7c6be35a18": {
+    "text": "شناسه پیگیری: #",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.button.cb16adca9a": {
+    "text": "در حال بررسی…",
+    "kind": "button",
+    "group": "panels"
+  },
+  "panels.button.55f3e500c8": {
+    "text": "بررسی و ادامه ساخت",
+    "kind": "button",
+    "group": "panels"
+  },
+  "panels.button.de39d67241": {
+    "text": "ویرایش مشخصات و تلاش مجدد",
+    "kind": "button",
+    "group": "panels"
+  },
+  "panels.button.648b520909": {
+    "text": "بازگشت به پنل‌ها",
+    "kind": "button",
+    "group": "panels"
+  },
+  "panels.text.a454cfa714": {
+    "text": "کانفیگ جدید",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.38b7d99283": {
+    "text": "حجم کانفیگ از اعتبار حجمی پنل کسر می‌شود.",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.5153a47105": {
+    "text": "در سیستم PAYG هزینه بر اساس مصرف واقعی محاسبه می‌شود.",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.3624fe7833": {
+    "text": "ابتدا اعتبار پنل را افزایش دهید یا محدودیت دسترسی را با مدیر بررسی کنید.",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.8dd76cd53c": {
+    "text": "نام کانفیگ",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.4ea21c8752": {
+    "text": "حجم (گیگابایت)",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.25ea06227a": {
+    "text": "مدت (روز)",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.5bece80a72": {
+    "text": "تعداد دستگاه",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.d6153366aa": {
+    "text": "صفر = بدون محدودیت دستگاه",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.8fa5316299": {
+    "text": "گروه‌های اتصال",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.6b2477c56e": {
+    "text": "می‌توانید چند گروه را هم‌زمان انتخاب کنید.",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.21c05ddfe9": {
+    "text": "جستجوی گروه",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.c2ba2b2953": {
+    "text": "نام گروه…",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.9aeccd708e": {
+    "text": "از",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.92cd56fc2e": {
+    "text": "گروه انتخاب شده",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.button.b14ad27418": {
+    "text": "انتخاب همه",
+    "kind": "button",
+    "group": "panels"
+  },
+  "panels.button.e7d69a7f3f": {
+    "text": "لغو انتخاب‌ها",
+    "kind": "button",
+    "group": "panels"
+  },
+  "panels.text.e242fbdd13": {
+    "text": "گروهی با این نام پیدا نشد.",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.c2c2f2e4d4": {
+    "text": "ساخت کانفیگ با مشخصات بالا را تأیید می‌کنم.",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.b1ffb93d34": {
+    "text": "نام، حجم، مدت و گروه‌های انتخاب‌شده را بررسی کرده‌ام.",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.button.661bac03a9": {
+    "text": "در حال ساخت…",
+    "kind": "button",
+    "group": "panels"
+  },
+  "panels.button.852f2623ad": {
+    "text": "تأیید و ساخت کانفیگ",
+    "kind": "button",
+    "group": "panels"
+  },
+  "panels.text.a5e8d3956d": {
+    "text": "ساخت مستقیم در حساب همین پنل نمایندگی",
+    "kind": "text",
+    "group": "panels"
+  },
+  "panels.text.8416ce23fc": {
+    "text": "در حال دریافت دسترسی‌های پنل…",
+    "kind": "text",
+    "group": "panels"
+  },
+  "wallet.text.58bb61faf3": {
+    "text": "کارت اعتبار حجمی",
+    "kind": "text",
+    "group": "wallet"
+  },
+  "wallet.text.88a58e4354": {
+    "text": "کیف پول پنل نمایندگی",
+    "kind": "text",
+    "group": "wallet"
+  },
+  "wallet.text.3ca39923de": {
+    "text": "حجم قابل ساخت",
+    "kind": "text",
+    "group": "wallet"
+  },
+  "wallet.text.293640f9d7": {
+    "text": "موجودی قابل استفاده",
+    "kind": "text",
+    "group": "wallet"
+  },
+  "wallet.text.77bf229a4c": {
+    "text": "گیگابایت",
+    "kind": "text",
+    "group": "wallet"
+  },
+  "wallet.text.306eba5069": {
+    "text": "تومان",
+    "kind": "text",
+    "group": "wallet"
+  },
+  "wallet.text.0fea302666": {
+    "text": "دارندهٔ کارت",
+    "kind": "text",
+    "group": "wallet"
+  },
+  "wallet.text.9dedd43916": {
+    "text": "شناسهٔ پنل",
+    "kind": "text",
+    "group": "wallet"
+  },
+  "wallet.text.6453d41f14": {
+    "text": "متوقف به‌علت اتمام اعتبار",
+    "kind": "text",
+    "group": "wallet"
+  },
+  "wallet.text.089d37edd8": {
+    "text": "اعتبار حجمی",
+    "kind": "text",
+    "group": "wallet"
+  },
+  "wallet.text.12234f1944": {
+    "text": "پرداخت بر اساس مصرف",
+    "kind": "text",
+    "group": "wallet"
+  },
+  "wallet.text.d4a4aa9e38": {
+    "text": "افزایش اعتبار کیف پول پنل نمایندگی",
+    "kind": "text",
+    "group": "wallet"
+  },
+  "wallet.button.d4a4aa9e38": {
+    "text": "افزایش اعتبار کیف پول پنل نمایندگی",
+    "kind": "button",
+    "group": "wallet"
+  },
+  "wallet.button.0a1fd4819d": {
+    "text": "افزایش حجم با تعرفه اختصاصی شما",
+    "kind": "button",
+    "group": "wallet"
+  },
+  "wallet.button.6b129ef012": {
+    "text": "پرداخت امن با ارسال رسید",
+    "kind": "button",
+    "group": "wallet"
+  },
+  "wallet.text.190c61eb14": {
+    "text": "بعد از تأیید شارژ، فعال‌سازی خودکار پیگیری می‌شود.",
+    "kind": "text",
+    "group": "wallet"
+  },
+  "wallet.text.e4f39edfa3": {
+    "text": "اعتبار این کارت برای خدمات پنل نمایندگی است.",
+    "kind": "text",
+    "group": "wallet"
+  },
+  "profiles.text.58c5e37df8": {
+    "text": "فایل‌های اتصال NX",
+    "kind": "text",
+    "group": "profiles"
+  },
+  "profiles.button.441def3dc4": {
+    "text": "در حال دریافت…",
+    "kind": "button",
+    "group": "profiles"
+  },
+  "profiles.button.46205fe1df": {
+    "text": "دریافت OpenVPN / WireGuard / OpenConnect",
+    "kind": "button",
+    "group": "profiles"
+  },
+  "profiles.text.37752495ce": {
+    "text": "فایلی برای این سرویس موجود نیست؛ از لینک اشتراک استفاده کنید.",
+    "kind": "text",
+    "group": "profiles"
+  },
+  "home.button.tab_home": {
+    "text": "خانه",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.tab_buy": {
+    "text": "خرید",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.tab_services": {
+    "text": "کانفیگ‌ها",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.tab_wallet": {
+    "text": "کیف پول",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.tab_reseller": {
+    "text": "نمایندگی",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.tab_panels": {
+    "text": "پنل‌ها",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.connection_username": {
+    "text": "نام کاربری",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.connection_password": {
+    "text": "رمز عبور",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.connection_server": {
+    "text": "سرور",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.add_volume": {
+    "text": "افزایش حجم",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.add_days": {
+    "text": "افزایش روز",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.renew": {
+    "text": "تمدید سرویس",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.revoke": {
+    "text": "باطل کردن لینک",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.button.hwid_reset": {
+    "text": "ریست HWID",
+    "kind": "button",
+    "group": "home"
+  },
+  "home.text.greeting": {
+    "text": "سلام، {name}",
+    "kind": "text",
+    "group": "home"
+  },
+  "steps.text.category": {
+    "text": "دسته‌بندی",
+    "kind": "text",
+    "group": "steps"
+  },
+  "steps.text.plan": {
+    "text": "انتخاب پلن",
+    "kind": "text",
+    "group": "steps"
+  },
+  "steps.text.name": {
+    "text": "نام کانفیگ",
+    "kind": "text",
+    "group": "steps"
+  },
+  "steps.text.payment": {
+    "text": "پرداخت",
+    "kind": "text",
+    "group": "steps"
+  },
+  "steps.text.review": {
+    "text": "بررسی",
+    "kind": "text",
+    "group": "steps"
+  },
+  "steps.text.delivery": {
+    "text": "دریافت",
+    "kind": "text",
+    "group": "steps"
+  },
+  "checkout.text.labels_waiting_bridge": {
+    "text": "منتظر پرداخت درویش بریج",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.labels_waiting_receipt": {
+    "text": "ارسال رسید پرداخت",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.labels_miniapp_queued": {
+    "text": "در صف ساخت کانفیگ",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.labels_processing": {
+    "text": "در حال ساخت کانفیگ",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.labels_paid": {
+    "text": "خرید تکمیل شد",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.labels_rejected": {
+    "text": "رسید رد شد",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.labels_cancelled": {
+    "text": "سفارش لغو شد",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.labels_failed": {
+    "text": "ساخت نیازمند بررسی پشتیبانی است",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.title_category": {
+    "text": "دسته‌بندی",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.title_plan": {
+    "text": "انتخاب پلن",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.title_name": {
+    "text": "نام کانفیگ",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.title_payment": {
+    "text": "پرداخت",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.title_review": {
+    "text": "بررسی سفارش",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.title_delivery": {
+    "text": "دریافت کانفیگ",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.await_admin": {
+    "text": "منتظر تأیید مدیر",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.await_payment": {
+    "text": "در انتظار پرداخت",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.approved": {
+    "text": "تأییدشده",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "checkout.text.reviewing": {
+    "text": "در حال بررسی",
+    "kind": "text",
+    "group": "checkout"
+  },
+  "reseller.text.labels_volume": {
+    "text": "خرید سرویس حجمی",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.labels_panel": {
+    "text": "خرید وب پنل نمایندگی",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "reseller.text.labels_payg": {
+    "text": "خرید سرویس پرداخت به‌ازای مصرف",
+    "kind": "text",
+    "group": "reseller"
+  },
+  "actions.text.titles_create": {
+    "text": "ساخت کانفیگ نمایندگی",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.titles_add_volume": {
+    "text": "افزایش حجم",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.titles_add_days": {
+    "text": "افزایش روز",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.titles_renew": {
+    "text": "تمدید کانفیگ",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.titles_delete": {
+    "text": "حذف کانفیگ",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.titles_revoke": {
+    "text": "باطل کردن لینک قبلی",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.titles_hwid": {
+    "text": "ریست HWID",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.receipt_resent": {
+    "text": "رسید برای مدیر مجدداً ارسال شد.",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.await_admin": {
+    "text": "منتظر تأیید مدیر",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.await_receipt": {
+    "text": "در انتظار ارسال رسید",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.building": {
+    "text": "در حال ساخت",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.queued": {
+    "text": "در صف ساخت",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.complete": {
+    "text": "تکمیل‌شده",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.support_review": {
+    "text": "نیازمند بررسی پشتیبانی",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.rejected": {
+    "text": "رسید رد شد",
+    "kind": "text",
+    "group": "actions"
+  },
+  "actions.text.reviewing": {
+    "text": "در حال بررسی",
+    "kind": "text",
+    "group": "actions"
+  },
+  "help.text.video_error": {
+    "text": "دریافت ویدیو انجام نشد. دوباره تلاش کنید.",
+    "kind": "text",
+    "group": "help"
+  },
+  "trial.text.default_service_name": {
+    "text": "اکانت تست",
+    "kind": "text",
+    "group": "trial"
+  },
+  "home.text.usage_unlimited": {
+    "text": "ترافیک نامحدود · {used} مصرف",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.usage_limited": {
+    "text": "{used} از {total}",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.days_remaining": {
+    "text": "{days} روز باقی‌مانده",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.days_until_end": {
+    "text": "{days} روز تا پایان",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.partner_wallet": {
+    "text": "{balance} تومان موجودی",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.partner_capacity": {
+    "text": "{available} حجم قابل ساخت",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.active_allocation": {
+    "text": "{volume} تخصیص فعال",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.text.sync_time": {
+    "text": "آخرین دریافت: {time}",
+    "kind": "text",
+    "group": "home"
+  },
+  "home.button.tariff_count": {
+    "text": "{count} تعرفه",
+    "kind": "button",
+    "group": "home"
+  }
+}

@@ -71,6 +71,7 @@ const EN_FA: Record<string, string> = {
   'Panel sales button saved.': 'وضعیت دکمه فروش پنل ذخیره شد.',
   'Tutorials saved.': 'آموزش‌ها ذخیره شدند.',
   'Settings saved.': 'تنظیمات ذخیره شد.',
+  'Customize Telegram bot messages and Mini App texts, buttons and settings.': 'متن‌ها و دکمه‌های ربات تلگرام و تنظیمات مینی‌اپ را سفارشی کنید.',
   'Could not save or load these settings. Check the fields and try again.': 'ذخیره یا بارگذاری تنظیمات انجام نشد. فیلدها را بررسی و دوباره تلاش کنید.',
   'Main': 'اصلی',
   'Dashboard': 'داشبورد',

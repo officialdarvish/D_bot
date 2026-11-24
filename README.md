@@ -201,3 +201,5 @@ Build 14 applies the panel's shared dark form styling to Custom template/section
 ### Build 26 — Setup step numbers
 
 Setup step numbers and completion checkmarks stay centered horizontally and vertically in fixed 25px badges in both languages, including steps with wrapped titles.
+
+Build 28 adds **Custom → Mini App**. Search and edit customer-facing texts and buttons by screen, preview edits, and restore the default for each entry. **Settings and links** contains Mini App controls, support and shortcuts. Rules text and tutorial media use the shared editors. D BOT branding is locked.

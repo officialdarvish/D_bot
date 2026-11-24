@@ -18,6 +18,7 @@ from app.database.defaults import get_setting_value
 from app.bot.keyboards.common import get_user_button
 from app.services.miniapp_auth import validate_init_data
 from app.services.miniapp_settings import read_config
+from app.services.miniapp_copy import read_overrides
 from app.services.miniapp_catalog import public_plans
 from app.services.live_pricing import plan_price_label
 from app.services.telegram_connection import get_connection_config, prepare_runtime_connection, build_telegram_session
@@ -167,11 +168,13 @@ async def snapshot(user=Depends(customer)):
     services, orders = [], []
     async with SessionLocal() as session:
         config = await read_config(session)
+        text_overrides = await read_overrides(session)
         existing_reseller=await session.scalar(select(ResellerAccount.id).where(ResellerAccount.user_id==user.id))
         existing_panel=await session.scalar(select(PasarGuardPanelOrder.id).where(PasarGuardPanelOrder.user_id==user.id,PasarGuardPanelOrder.status.in_(['approved','delivery_pending'])).limit(1))
         if not config['reseller_enabled']:buttons['reseller_request']=buttons['panel_sales']=False
-        buttons['tutorials']=buttons['tutorials'] and config['features']['tutorials']
-        buttons['test_account']=buttons['test_account'] and config['features']['trials']
+        buttons['tutorials']=buttons['tutorials'] and config['show_tutorials'] and config['features']['tutorials']
+        buttons['test_account']=buttons['test_account'] and config['show_trial'] and config['features']['trials']
+        buttons['rules'] = buttons['rules'] and config['show_rules']
         buttons['reseller_request']=buttons['reseller_request'] and config['reseller_requests'] and not existing_reseller and not existing_panel
         for flag, option in [('buy','show_buy'),('my_services','show_services'),('account','show_wallet'),('wallet_topup','show_wallet')]:
             buttons[flag] = buttons[flag] and config[option]
@@ -190,7 +193,7 @@ async def snapshot(user=Depends(customer)):
             from app.api.miniapp_checkout import submitted_order_clause
             rows = (await session.execute(select(Order).where(Order.user_id == user.id,submitted_order_clause()).order_by(Order.id.desc()).limit(20))).scalars().all()
             orders = [dict(id=o.id, amount=int(o.amount_irt or 0), status=o.status, created_at=o.created_at.isoformat()+'Z') for o in rows]
-    return dict(config=config, reseller=reseller, panels=panels, user=dict(can_transfer_ownership=user.telegram_id in settings.admin_ids,name=user.full_name or 'دوست عزیز', telegram_id=user.telegram_id, username=user.username,
+    return dict(config=config, text_overrides=text_overrides, reseller=reseller, panels=panels, user=dict(can_transfer_ownership=user.telegram_id in settings.admin_ids,name=user.full_name or 'دوست عزیز', telegram_id=user.telegram_id, username=user.username,
                          balance=int(user.wallet_balance or 0) if buttons['account'] else None), services=services, orders=orders, buttons=buttons,
                 button_labels={name: value[0] for name, value in button_values.items()}, synced_at=datetime.utcnow().isoformat()+'Z')
 

@@ -5719,3 +5719,18 @@ html.setup-embedded body:before,html.setup-embedded body:after{display:none}
 .setup-embedded .content>.panel,.setup-embedded .content>.table-card{box-shadow:none}
 .setup-embedded .modal-card{max-width:calc(100% - 24px)}
 @media(max-width:640px){.setup-embedded .content{padding:14px}.setup-embedded .page-title h1{font-size:18px}.setup-embedded .page-title{flex-wrap:wrap}.setup-embedded .form-field :is(input,select,textarea){font-size:16px}}
+
+/* Mini App editors inside the existing Custom workspace. */
+.cj-miniapp-tabs { display:flex; flex-wrap:wrap; gap:8px; }
+.cj-miniapp-filters { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,.75fr) minmax(0,1.4fr); gap:12px; align-items:end; }
+.cj-miniapp-results, .cj-miniapp-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.cj-miniapp-results { margin-block:14px; }
+.cj-miniapp-filters + .cj-miniapp-tabs { margin-block-start:14px; }
+.cj-miniapp-settings { display:grid; gap:14px; }
+.cj-miniapp-settings .card-actions { margin-block-start:16px; }
+.cj-miniapp-brand-note { display:flex; align-items:center; gap:7px; margin-block:12px; }
+.cj-miniapp-shortcut { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,2fr) auto; gap:10px; align-items:end; margin-block-end:10px; }
+@media(max-width:650px) {
+  .cj-miniapp-filters, .cj-miniapp-results, .cj-miniapp-fields, .cj-miniapp-shortcut { grid-template-columns:minmax(0,1fr); }
+  .cj-miniapp-shortcut > .btn { justify-self:end; }
+}

@@ -9,6 +9,7 @@ const frontend=path.resolve(__dirname,'..');
 const resolve=Module._resolveFilename;
 Module._resolveFilename=function(name,parent,...args){return resolve.call(this,name.startsWith('@/')?path.join(frontend,name.slice(2)):name,parent,...args)};
 for(const extension of ['.ts','.tsx'])require.extensions[extension]=(module,file)=>module._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true,target:ts.ScriptTarget.ES2020}}).outputText,file);
+require.extensions['.css']=(module)=>{module.exports={}};
 function environment(){
  const dom=new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>',{url:'https://bot.example.com/admin',pretendToBeVisual:true});
  for(const key of ['window','document','HTMLElement','HTMLInputElement','Element','Document','Text','Node','NodeFilter','MutationObserver','FormData','File','localStorage'])global[key]=dom.window[key];
@@ -366,4 +367,49 @@ for(const language of ['en','fa'])test(`Custom protects unsaved test templates w
  await act(async()=>document.querySelector('.cj-flow-buttons button').click());assert.equal(document.querySelector('[role=dialog]'),null);
  await act(async()=>menu('buy').click());assert.equal(prompts,1);assert.ok(document.querySelector('.delivery-templates'));assert.ok(document.querySelector('.cj-flow h2').textContent.includes(language==='fa'?'اکانت تست':'Test account'));
  discard=true;await act(async()=>menu('buy').click());assert.equal(prompts,2);assert.equal(document.querySelector('.delivery-templates'),null);assert.ok(document.querySelector('.cj-flow h2').textContent.includes(language==='fa'?'خرید':'Purchase'));
+});
+
+test('Custom Mini App edits persist, preview literally and reset to the default', async () => {
+ const {CustomSection}=require('../components/custom-section.tsx');
+ const {miniAppText}=require('../lib/miniapp-copy.ts');
+ const greeting='home.text.greeting';
+ const overrides={};
+ let posts=0;
+ global.fetch=async(url,options={})=>{
+  if(String(url).endsWith('/miniapp/texts')){
+   if(options.method==='POST'){
+    assert.equal(options.headers['X-CSRF-Token'],'csrf');
+    const changes=JSON.parse(options.body.get('texts_json'));
+    assert.deepEqual(Object.keys(changes),[greeting]);
+    if(changes[greeting])overrides[greeting]=changes[greeting];
+    else delete overrides[greeting];
+    posts++;
+    return response({ok:true,changes});
+   }
+   return response({ok:true,overrides:{...overrides}});
+  }
+  if(String(url).endsWith('/admin/api/v2/miniapp'))return response({ok:true,config:{enabled:true,title:'Old Brand',accent:'#ff0000',welcome:'سلام',support_username:'',links:[]}});
+  return response({ok:true,items:[],total:0,modified:0});
+ };
+ await render(React.createElement(CustomSection,{reloadKey:0,show:()=>{},setAuthRequired:()=>{}}));
+ await click('Mini App');
+ await input(document.querySelector('input[type="search"]'),'{name}');
+ await act(async()=>document.querySelector('.cj-miniapp-results button').click());
+ const editor=document.querySelector('.cj-editor textarea');
+ async function change(value){await act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set.call(editor,value);editor.dispatchEvent(new window.Event('input',{bubbles:true}))})}
+ await change('درود');
+ assert.equal(button('Save text').disabled,true);
+ await change('درود <b>{name}</b>');
+ assert.equal(document.querySelector('.cj-live-preview b'),null);
+ await click('Save text');
+ assert.equal(posts,1);
+ assert.equal(miniAppText(overrides,greeting,{name:'کاربر'}),'درود <b>کاربر</b>');
+ await act(async()=>document.querySelector('.cj-miniapp-results button').click());
+ await click('Restore default');
+ assert.equal(posts,2);
+ assert.equal(miniAppText(overrides,greeting,{name:'کاربر'}),'سلام، کاربر');
+ await click('Settings and links');
+ assert.equal(document.querySelector('input[type="color"]'),null);
+ assert.ok(text().includes('D BOT'));
+ assert.ok(!document.body.innerHTML.includes('Old Brand'));
 });

@@ -63,6 +63,7 @@ RUN pip install --upgrade pip \
 
 COPY VERSION update.json ./
 COPY app ./app
+COPY frontend/lib/miniapp-copy-catalog.json ./frontend/lib/miniapp-copy-catalog.json
 COPY scripts ./scripts
 # Stop incomplete source deployments before an image with broken bot buttons is released.
 RUN python scripts/check_runtime_files.py

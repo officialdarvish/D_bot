@@ -70,7 +70,8 @@ import { errorMessage } from '@/lib/error-message';
 import { fetchJson, getAction, submitForm } from '@/lib/api';
 import { publicWebPath } from '@/lib/web-path';
 import { ResellerBillingHistory } from '@/components/reseller-billing';
-import { MiniAppSettings, AccessRuleCards } from '@/components/miniapp-settings';
+import { AccessRuleCards } from '@/components/miniapp-settings';
+import { MiniAppCustomization } from '@/components/miniapp-customization';
 import { CustomSection } from '@/components/custom-section';
 import { LanguageSwitch } from '@/lib/ui-language';
 import { useSettingsLanguage } from '@/lib/settings-language';
@@ -245,7 +246,7 @@ const sectionTitles: Record<SectionKey, { title: string; subtitle: string }> = {
   categories: { title: 'Categories', subtitle: 'Group servers and plans for a clean purchase flow.' },
   connection: { title: 'Connection', subtitle: 'Route Telegram traffic through direct, proxy, MikroTik SOCKS, or V2/Xray connections.' },
   backup: { title: 'Backup & Restore', subtitle: 'Configure website and bot backups, test Telegram delivery, and restore local backup files safely.' },
-  custom: { title: 'Custom', subtitle: 'View, search, edit and reset every detected Telegram bot message, prompt, caption and button label.' },
+  custom: { title: 'Custom', subtitle: 'Customize Telegram bot messages and Mini App texts, buttons and settings.' },
   miniapp: { title: 'MINI APP', subtitle: '' },
   settings: { title: 'Settings', subtitle: 'Website access, installation tools and reset controls.' }
 };
@@ -583,7 +584,7 @@ function SectionRenderer(props: { section: SectionKey; query: string; reloadKey:
     case 'discounts': return <DiscountsSection {...props} />;
     case 'resellers': return <ResellersSection {...props} />;
     case 'custom': return <CustomSection reloadKey={props.reloadKey} setAuthRequired={props.setAuthRequired} show={props.show} />;
-    case 'miniapp': return <MiniAppSettings {...props} />;
+    case 'miniapp': return <MiniAppCustomization {...props} initialTab="settings" />;
     case 'settings': return <SettingsSection {...props} />;
     case 'backup': return <BackupSection {...props} />;
     case 'service-types': return <ServiceTypesSection {...props} />;

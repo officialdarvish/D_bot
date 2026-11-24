@@ -11,6 +11,7 @@ DEFAULTS = {
     'enabled': True, 'title': BRAND_NAME, 'welcome': 'اشتراک‌های تو، همیشه در دسترس',
     'menu_text': BRAND_NAME, 'accent': MINIAPP_ACCENT, 'animations': True, 'fullscreen': False,
     'show_buy': True, 'show_wallet': True, 'show_services': True, 'show_support': True,
+    'show_trial': True, 'show_tutorials': True, 'show_rules': True,
     'reseller_enabled': True, 'reseller_requests': True, 'links': [],
 }
 BOOL_KEYS = {k for k,v in DEFAULTS.items() if isinstance(v,bool)}
@@ -51,24 +52,32 @@ def clean_config(values):
     return result
 
 
-async def read_config(session=None):
-    owns = session is None
-    if owns: session=SessionLocal()
+async def read_preferences(session):
+    """Read saved preferences before applying global feature availability."""
+    row = await session.get(Setting, 'miniapp_config')
     try:
-        row=await session.get(Setting,'miniapp_config')
-        try: config=clean_config(json.loads(row.value)) if row else dict(DEFAULTS)
-        except (ValueError,TypeError): config=dict(DEFAULTS)
-        support=await session.get(Setting,'support_username')
-        try: name=support_username(support.value if support else '')
-        except ValueError: name=''
-        from app.services.features import capabilities
-        features=await capabilities(session)
-        config['features']=features
-        config['reseller_enabled']=config['reseller_enabled'] and features['resellers']
-        config['reseller_requests']=config['reseller_requests'] and features['resellers']
-        config['show_wallet']=config['show_wallet'] and features['wallet']
-        config['support_username']=name
-        config['support_url']='https://t.me/'+name if name else ''
-        return config
-    finally:
-        if owns: await session.close()
+        config = clean_config(json.loads(row.value)) if row else dict(DEFAULTS)
+    except (ValueError, TypeError):
+        config = dict(DEFAULTS)
+    support = await session.get(Setting, 'support_username')
+    try:
+        name = support_username(support.value if support else '')
+    except ValueError:
+        name = ''
+    config['support_username'] = name
+    config['support_url'] = 'https://t.me/' + name if name else ''
+    return config
+
+
+async def read_config(session=None):
+    if session is None:
+        async with SessionLocal() as owned:
+            return await read_config(owned)
+    config = await read_preferences(session)
+    from app.services.features import capabilities
+    features = await capabilities(session)
+    config['features'] = features
+    config['reseller_enabled'] = config['reseller_enabled'] and features['resellers']
+    config['reseller_requests'] = config['reseller_requests'] and features['resellers']
+    config['show_wallet'] = config['show_wallet'] and features['wallet']
+    return config

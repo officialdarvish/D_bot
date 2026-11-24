@@ -1,10 +1,11 @@
 'use client';
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {Bot,Save,RotateCcw,Plus,Trash2,Pencil,X,MessageSquareText,ChevronDown,Braces,Eye,Search,Palette} from 'lucide-react';
+import {Bot,Save,RotateCcw,Plus,Trash2,Pencil,X,MessageSquareText,ChevronDown,Braces,Eye,Search,Palette,Smartphone} from 'lucide-react';
 import {fetchJson,submitForm} from '@/lib/api';
 import {useSettingsLanguage} from '@/lib/settings-language';
 import {TutorialSettings} from '@/components/tutorial-settings';
 import {DeliveryTemplates} from '@/components/delivery-templates';
+import {MiniAppCustomization} from '@/components/miniapp-customization';
 import {AdminDialog} from '@/components/admin-dialog';
 import {BotTemplatePreview} from '@/components/bot-template-preview';
 import {customJourney,journeys,type CustomItem} from '@/lib/custom-journeys';
@@ -48,6 +49,7 @@ export function CustomSection({reloadKey,setAuthRequired,show}:{reloadKey:number
  const [profiles,setProfiles]=useState<Profile[]>([]),[profileId,setProfileId]=useState(''),[name,setName]=useState(''),[creating,setCreating]=useState(false),[visible,setVisible]=useState(30);
  const editor=useRef<HTMLTextAreaElement>(null);
  const [nestedDirty,setNestedDirty]=useState(false);
+ const [surface,setSurface]=useState<'bot'|'miniapp'>('bot');
  useEffect(()=>{if(!nestedDirty)return;const warn=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue=''};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn)},[nestedDirty]);
  const label=(id:string)=>{const item=journeys.find(x=>x.id===id);return item?(fa?item.fa:item.en):id};
  function fail(e:unknown){if(e instanceof Error&&e.message==='AUTH_REQUIRED')setAuthRequired(true);const known:Record<string,string>={'Remove unused delivery templates before applying this profile':s('Remove unused delivery templates before applying this profile.','برای اعمال این قالب، ابتدا قالب‌های تحویل سرویس بلااستفاده را حذف کنید.'),'You can save up to 8 templates':s('You can save up to 8 templates.','حداکثر ۸ قالب می‌توانید ذخیره کنید.')};const message=known[e instanceof Error?e.message:'']||failure(e);setError(message);show(message,false)}
@@ -77,8 +79,22 @@ export function CustomSection({reloadKey,setAuthRequired,show}:{reloadKey:number
   setBusy(true);try{await submitForm('/admin/api/v2/custom-profiles'+(action==='create'?'':'/'+action),action==='create'?{name}:{profile_id:profileId});await load();setNestedDirty(false);if(action==='create'){setName('');setCreating(false)}if(action==='delete')setProfileId('');setRevision(v=>v+1);show(action==='apply'?s('Template applied to the bot.','قالب در ربات اعمال شد.'):action==='delete'?s('Saved template deleted.','قالب ذخیره‌شده حذف شد.'):s('Template saved.','قالب ثبت شد.'),true)}catch(e){fail(e)}finally{setBusy(false)}
  }
  function insert(before:string,after=''){if(!selected)return;const start=editor.current?.selectionStart??draft.length,end=editor.current?.selectionEnd??start;setDraft(draft.slice(0,start)+before+draft.slice(start,end)+after+draft.slice(end));requestAnimationFrame(()=>{editor.current?.focus();editor.current?.setSelectionRange(start+before.length,end+before.length)})}
- if(!data)return <section className="panel" data-no-i18n="true"><p role={error?'alert':'status'}>{error||s('Loading bot templates…','در حال دریافت قالب‌های ربات…')}</p>{error&&<button className="btn" onClick={()=>void load().catch(fail)}>{s('Retry','تلاش دوباره')}</button>}</section>;
+ function chooseSurface(next: typeof surface){
+  if(next===surface)return;
+  if(busy||(nestedDirty&&!window.confirm(s('Discard unsaved changes in this section?','تغییرات ذخیره‌نشدهٔ این بخش کنار گذاشته شوند؟'))))return;
+  setNestedDirty(false);setSurface(next);
+ }
+ const surfaceMenu=<nav className="cj-miniapp-tabs" aria-label={s('Customize','سفارشی‌سازی')}>
+  <button type="button" className={`btn ${surface==='bot'?'primary':''}`} aria-pressed={surface==='bot'} onClick={()=>chooseSurface('bot')}><Bot size={17}/>{s('Telegram bot','ربات تلگرام')}</button>
+  <button type="button" className={`btn ${surface==='miniapp'?'primary':''}`} aria-pressed={surface==='miniapp'} onClick={()=>chooseSurface('miniapp')}><Smartphone size={17}/>{s('Mini App','مینی‌اپ')}</button>
+ </nav>;
+ if(surface==='miniapp')return <div className="custom-journeys" dir={fa?'rtl':'ltr'} data-no-i18n="true">{surfaceMenu}
+  <MiniAppCustomization reloadKey={reloadKey} show={show} setAuthRequired={setAuthRequired} onDirtyChange={setNestedDirty}
+   openSharedSection={section=>{setFlow(section);setQuery('');setVisible(30);setNestedDirty(false);setSurface('bot')}}/>
+ </div>;
+ if(!data)return <div className="custom-journeys" dir={fa?'rtl':'ltr'}>{surfaceMenu}<section className="panel" data-no-i18n="true"><p role={error?'alert':'status'}>{error||s('Loading bot templates…','در حال دریافت قالب‌های ربات…')}</p>{error&&<button className="btn" onClick={()=>void load().catch(fail)}>{s('Retry','تلاش دوباره')}</button>}</section></div>;
  return <div className="custom-journeys" dir={fa?'rtl':'ltr'} data-no-i18n="true">
+  {surfaceMenu}
   <section className="panel cj-heading">
    <span className="cj-bot-icon"><Bot size={25}/></span>
    <div><h2>{s('Design your bot','رباتت را طراحی کن')}</h2><p>{s('Choose a menu button, edit its messages, then save your own style.','دکمه منو را انتخاب کن، پیام‌هایش را تغییر بده و قالب خودت را بساز.')}</p></div>

@@ -1,36 +1,111 @@
 'use client';
-import {useSettingsLanguage} from '@/lib/settings-language';
-import {MiniAppCheck} from './miniapp-check';
-import { useState } from 'react';
-import { Bot, Check, ExternalLink, Plus, Save, ShieldCheck, Users, X } from 'lucide-react';
-import { fetchJson, submitForm } from '@/lib/api';
-import { useEffect } from 'react';
 
-type Config = { enabled:boolean; welcome:string; support_username:string; animations:boolean; fullscreen:boolean; show_buy:boolean; show_wallet:boolean; show_services:boolean; show_support:boolean; reseller_enabled:boolean; reseller_requests:boolean; links:{label:string;url:string}[] };
-const switches: {key:keyof Config;label:string}[] = [
-  {key:'enabled',label:'Enable Mini App / فعال بودن مینی‌اپ'},
-  {key:'animations',label:'Animated background / انیمیشن پس‌زمینه'},
-  {key:'fullscreen',label:'Fullscreen on supported Telegram clients / تمام‌صفحه'},
-  {key:'show_buy',label:'Buy subscriptions / خرید اشتراک'},
-  {key:'show_wallet',label:'Wallet / کیف پول'},
-  {key:'show_services',label:'My configs / کانفیگ‌های من'},
-  {key:'show_support',label:'Direct support chat / ارتباط مستقیم پشتیبانی'},
-  {key:'reseller_enabled',label:'Reseller workspace / محیط نمایندگی'},
-  {key:'reseller_requests',label:'Allow reseller requests / درخواست نمایندگی در ربات'},
-];
-export function MiniAppSettings({reloadKey,setAuthRequired,show}:any){
- const {s,language,failure}=useSettingsLanguage();
- const label=(text:string)=>{const parts=text.split(' / ');return parts.length>1?s(parts.slice(0,-1).join(' / '),parts.at(-1)!):text};
-  const [draft,setDraft]=useState<Config|null>(null); const [error,setError]=useState(''); const [busy,setBusy]=useState(false);
-  useEffect(()=>{let live=true;fetchJson<{config:Config}>('/admin/api/v2/miniapp').then(r=>{if(live)setDraft(r.config)}).catch(e=>{if(e.message==='AUTH_REQUIRED')setAuthRequired(true);if(live)setError(e.message)});return()=>{live=false}},[reloadKey,setAuthRequired]);
-  async function save(){setBusy(true);try{const r:any=await submitForm('/admin/miniapp/save',{config_json:JSON.stringify(draft)});show(r?.message||s('Mini App saved','تنظیمات مینی‌اپ ذخیره شد'),!r?.menu_sync_pending);}catch(e){const msg=(e as Error).message;if(msg==='AUTH_REQUIRED')setAuthRequired(true);show(failure(e),false)}finally{setBusy(false)}}
-  if(!draft)return <div className="card">{error||'Loading Mini App settings…'}</div>;
-  return <div className="miniapp-admin" dir={language==='fa'?'rtl':'ltr'} data-no-i18n="true"><section className="card"><div className="panel-head"><h2><Bot size={22}/> {s("Mini App","مینی‌اپ")}</h2><span className={'badge '+(draft.enabled?'green':'red')}>{draft.enabled?s('Enabled','فعال'):s('Disabled','غیرفعال')}</span></div>
-    <div className="miniapp-form-grid">{([{key:'support_username',label:'Support username / یوزرنیم مدیر پشتیبانی'},{key:'welcome',label:'Home subtitle / متن زیر عنوان'}] as const).map(f=><label key={f.key}>{label(f.label)}<input value={draft[f.key]} maxLength={f.key==='welcome'?180:60} placeholder={f.key==='support_username'?'@your_support':undefined} onChange={e=>setDraft({...draft,[f.key]:e.target.value})}/></label>)}</div>
-    <p className="muted">{s("The Mini App and Telegram launcher use the D BOT brand.","مینی‌اپ و دکمهٔ کنار چت با برند D BOT نمایش داده می‌شوند.")}</p>
-    <div className="miniapp-switches">{switches.map(s=><MiniAppCheck key={s.key} checked={Boolean(draft[s.key])} onChange={checked=>setDraft({...draft,[s.key]:checked})}>{label(s.label)}</MiniAppCheck>)}</div>
-  </section><section className="card"><div className="panel-head"><h3>{s("Shortcuts","لینک‌های دلخواه")}</h3><button className="btn" disabled={draft.links.length>=6} onClick={()=>setDraft({...draft,links:[...draft.links,{label:'',url:''}]})}><Plus size={16}/>{s('Add link','افزودن لینک')}</button></div>{draft.links.map((l,i)=><div className="miniapp-shortcut-row" key={i}><input aria-label={s('Link title ','عنوان لینک ')+(i+1)} placeholder={s("Link title","عنوان لینک")} value={l.label} onChange={e=>setDraft({...draft,links:draft.links.map((v,n)=>n===i?{...v,label:e.target.value}:v)})}/><input aria-label={s('Link URL ','نشانی لینک ')+(i+1)} placeholder="https://..." value={l.url} onChange={e=>setDraft({...draft,links:draft.links.map((v,n)=>n===i?{...v,url:e.target.value}:v)})}/><button className="btn danger" aria-label={s("Remove shortcut","حذف لینک میان‌بر")} onClick={()=>setDraft({...draft,links:draft.links.filter((_,n)=>n!==i)})}><X size={16}/></button></div>)}</section><div className="card-actions"><button className="btn primary" disabled={busy} onClick={save}><Save size={16}/>{busy?s('Saving…','در حال ذخیره…'):s('Save Mini App','ذخیره مینی‌اپ')}</button></div>
-  <style jsx>{`.miniapp-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.miniapp-admin label{display:grid;gap:8px;color:#bac9dc;font-size:13px}.miniapp-admin input:not([type=checkbox]){width:100%;padding:11px;border:1px solid #314056;border-radius:10px;background:#101c30;color:white}.miniapp-switches{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:24px}.miniapp-switches label{display:flex;align-items:center;gap:10px;border:1px solid #26364c;border-radius:12px;padding:13px}.miniapp-shortcut-row{display:grid;grid-template-columns:1fr 2fr auto;gap:10px;margin-top:12px}.miniapp-admin .card{margin-bottom:20px;padding:22px}.miniapp-admin h2{display:flex;align-items:center;gap:9px}@media(max-width:650px){.miniapp-form-grid,.miniapp-switches,.miniapp-shortcut-row{grid-template-columns:1fr}}`}</style></div>
+import { useEffect, useState } from 'react';
+import { Bot, LockKeyhole, Plus, Save, ShieldCheck, Users, X } from 'lucide-react';
+import { fetchJson, submitForm } from '@/lib/api';
+import { useSettingsLanguage } from '@/lib/settings-language';
+import { MiniAppCheck } from './miniapp-check';
+
+const switches = [
+  ['enabled', 'Enable Mini App', 'فعال بودن مینی‌اپ'],
+  ['animations', 'Animate the background', 'انیمیشن پس‌زمینه'],
+  ['fullscreen', 'Fullscreen on supported Telegram clients', 'تمام‌صفحه در نسخه‌های پشتیبانی‌شدهٔ تلگرام'],
+  ['show_buy', 'Purchase subscriptions', 'خرید اشتراک'],
+  ['show_wallet', 'Wallet', 'کیف پول'],
+  ['show_services', 'My configs', 'کانفیگ‌های من'],
+  ['show_support', 'Direct support chat', 'ارتباط مستقیم پشتیبانی'],
+  ['show_trial', 'Show the trial account button', 'نمایش دکمهٔ اکانت تست'],
+  ['show_tutorials', 'Show the tutorials button', 'نمایش دکمهٔ آموزش‌ها'],
+  ['show_rules', 'Show the rules button', 'نمایش دکمهٔ قوانین'],
+  ['reseller_enabled', 'Reseller workspace', 'محیط نمایندگی'],
+  ['reseller_requests', 'Allow reseller requests in the bot and Mini App', 'دریافت درخواست نمایندگی در ربات و مینی‌اپ'],
+] as const;
+type Flag = typeof switches[number][0];
+type Config = Record<Flag, boolean> & {
+  welcome: string;
+  support_username: string;
+  links: { label: string; url: string }[];
+};
+export type MiniAppSettingsProps = {
+  reloadKey: number;
+  setAuthRequired: (value: boolean) => void;
+  show: (message: string, good?: boolean) => void;
+  onDirtyChange?: (dirty: boolean) => void;
+};
+
+function editableConfig(config: Config): Config {
+  const flags = Object.fromEntries(switches.map(([key]) => [key, config[key]])) as Record<Flag, boolean>;
+  return { ...flags, welcome: config.welcome, support_username: config.support_username, links: config.links };
+}
+
+export function MiniAppSettings({ reloadKey, setAuthRequired, show, onDirtyChange }: MiniAppSettingsProps) {
+  const { s, language, failure } = useSettingsLanguage();
+  const [draft, setDraft] = useState<Config | null>(null);
+  const [saved, setSaved] = useState('');
+  const [error, setError] = useState<Error | null>(null);
+  const [retry, setRetry] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const dirty = !!draft && JSON.stringify(draft) !== saved;
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setError(null);
+    fetchJson<{ config: Config }>('/admin/api/v2/miniapp', controller.signal).then(result => {
+      if (controller.signal.aborted) return;
+      const value = editableConfig(result.config);
+      setDraft(value);
+      setSaved(JSON.stringify(value));
+    }).catch((cause: Error) => {
+      if (controller.signal.aborted) return;
+      if (cause.message === 'AUTH_REQUIRED') setAuthRequired(true);
+      setError(cause);
+    });
+    return () => controller.abort();
+  }, [reloadKey, retry, setAuthRequired]);
+
+  async function save() {
+    if (!draft || !dirty || busy) return;
+    setBusy(true);
+    const submitted = JSON.stringify(draft);
+    try {
+      const result = await submitForm('/admin/miniapp/save', { config_json: submitted });
+      setSaved(submitted);
+      show(result.menu_sync_pending
+        ? s('Settings saved. Telegram will retry updating the launcher.', 'تنظیمات ذخیره شد. به‌روزرسانی دکمهٔ تلگرام دوباره تلاش می‌شود.')
+        : s('Mini App settings saved.', 'تنظیمات مینی‌اپ ذخیره شد.'), true);
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === 'AUTH_REQUIRED') setAuthRequired(true);
+      show(failure(cause), false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!draft) return <section className="panel" data-no-i18n="true">
+    <p role={error ? 'alert' : 'status'}>{error ? failure(error) : s('Loading Mini App settings…', 'در حال دریافت تنظیمات مینی‌اپ…')}</p>
+    {error && <button type="button" className="btn" onClick={() => setRetry(value => value + 1)}>{s('Retry', 'تلاش دوباره')}</button>}
+  </section>;
+
+  return <form className="cj-miniapp-settings" data-no-i18n="true" dir={language === 'fa' ? 'rtl' : 'ltr'} onSubmit={event => { event.preventDefault(); void save(); }}>
+    <section className="panel">
+      <header className="cj-section-head"><div><h2><Bot size={20}/> {s('Mini App settings', 'تنظیمات مینی‌اپ')}</h2></div><span className={'badge ' + (draft.enabled ? 'green' : 'red')}>{draft.enabled ? s('Enabled', 'فعال') : s('Disabled', 'غیرفعال')}</span></header>
+      <div className="cj-miniapp-fields">
+        <label className="form-field"><span>{s('Home subtitle', 'متن زیر عنوان خانه')}</span><input value={draft.welcome} maxLength={180} dir="auto" disabled={busy} onChange={event => setDraft({ ...draft, welcome: event.target.value })}/></label>
+        <label className="form-field"><span>{s('Telegram support username', 'نام کاربری پشتیبانی تلگرام')}</span><input value={draft.support_username} maxLength={60} dir="ltr" placeholder="@support" disabled={busy} onChange={event => setDraft({ ...draft, support_username: event.target.value })}/></label>
+      </div>
+      <p className="cj-miniapp-brand-note muted"><LockKeyhole size={14}/>{s('The Mini App and Telegram launcher use the D BOT brand.', 'مینی‌اپ و دکمهٔ کنار چت با برند D BOT نمایش داده می‌شوند.')}</p>
+      <div className="cj-miniapp-fields">{switches.map(([key, en, fa]) => <MiniAppCheck key={key} checked={draft[key]} disabled={busy} onChange={checked => setDraft({ ...draft, [key]: checked })}>{s(en, fa)}</MiniAppCheck>)}</div>
+    </section>
+    <section className="panel">
+      <header className="cj-section-head"><div><h3>{s('Shortcuts', 'لینک‌های میان‌بر')}</h3></div><button type="button" className="btn" disabled={busy || draft.links.length >= 6} onClick={() => setDraft({ ...draft, links: [...draft.links, { label: '', url: '' }] })}><Plus size={16}/>{s('Add link', 'افزودن لینک')}</button></header>
+      {draft.links.map((link, index) => <div className="cj-miniapp-shortcut" key={index}>
+        <label className="form-field"><span>{s('Link title', 'عنوان لینک')} {index + 1}</span><input required maxLength={50} dir="auto" value={link.label} disabled={busy} onChange={event => setDraft({ ...draft, links: draft.links.map((row, i) => i === index ? { ...row, label: event.target.value } : row) })}/></label>
+        <label className="form-field"><span>{s('HTTPS URL', 'نشانی HTTPS')} {index + 1}</span><input type="url" required maxLength={1000} dir="ltr" placeholder="https://" value={link.url} disabled={busy} onChange={event => setDraft({ ...draft, links: draft.links.map((row, i) => i === index ? { ...row, url: event.target.value } : row) })}/></label>
+        <button type="button" className="btn danger" aria-label={s('Remove shortcut', 'حذف لینک میان‌بر')} disabled={busy} onClick={() => setDraft({ ...draft, links: draft.links.filter((_, i) => i !== index) })}><X size={16}/></button>
+      </div>)}
+      <div className="card-actions"><button type="submit" className="btn primary" disabled={!dirty || busy}><Save size={16}/>{busy ? s('Saving…', 'در حال ذخیره…') : s('Save Mini App settings', 'ذخیرهٔ تنظیمات مینی‌اپ')}</button></div>
+    </section>
+  </form>;
 }
 
 export function AccessRuleCards({map,show,setAuthRequired}:any){
