@@ -3,12 +3,13 @@ import json
 import re
 from urllib.parse import urlsplit
 from sqlalchemy import select
+from app.core.branding import BRAND_NAME, MINIAPP_ACCENT
 from app.database.models import Setting
 from app.database.session import SessionLocal
 
 DEFAULTS = {
-    'enabled': True, 'title': 'D Bot', 'welcome': 'اشتراک‌های تو، همیشه در دسترس',
-    'menu_text': 'D Bot', 'accent': '#12b9f5', 'animations': True, 'fullscreen': False,
+    'enabled': True, 'title': BRAND_NAME, 'welcome': 'اشتراک‌های تو، همیشه در دسترس',
+    'menu_text': BRAND_NAME, 'accent': MINIAPP_ACCENT, 'animations': True, 'fullscreen': False,
     'show_buy': True, 'show_wallet': True, 'show_services': True, 'show_support': True,
     'reseller_enabled': True, 'reseller_requests': True, 'links': [],
 }
@@ -34,12 +35,8 @@ def clean_config(values):
     for key in BOOL_KEYS:
         value = values.get(key, DEFAULTS[key])
         result[key] = value is True or str(value).lower() in ('1','true','on')
-    for key,limit in [('title',60),('welcome',180),('menu_text',32)]:
-        result[key] = str(values.get(key,DEFAULTS[key])).strip()[:limit] or DEFAULTS[key]
-    color = str(values.get('accent',DEFAULTS['accent']))
-    if not re.fullmatch(r'#[a-fA-F0-9]{6}',color):
-        raise ValueError('Choose a valid accent color.')
-    result['accent'] = color
+    # Legacy saved configurations and clients can still send the old branding fields.
+    result['welcome'] = str(values.get('welcome', DEFAULTS['welcome'])).strip()[:180] or DEFAULTS['welcome']
     links = values.get('links',[])
     if not isinstance(links,list) or len(links)>6:
         raise ValueError('Add up to six shortcuts.')

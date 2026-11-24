@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, File
 from starlette.background import BackgroundTask
 from sqlalchemy import select, func, update, delete, String, text, case
 
+from app.core.branding import BRAND_NAME
 from app.core.config import settings
 from app.core.security import encrypt_text, decrypt_text, verify_password
 from app.database.session import SessionLocal
@@ -2287,7 +2288,7 @@ def _setup_wizard_html(request: Request, values: dict[str, str], error: str = ''
 <form method="post" action="{action}"><div class="steps">
 <section class="step"><h2>1) Required Channel Membership</h2><div class="yesno"><label><input type="radio" name="force_join_enabled" value="1" {channel_checked_yes} onchange="syncConditional()"> Yes, enable it</label><label><input type="radio" name="force_join_enabled" value="0" {channel_checked_no} onchange="syncConditional()"> No</label></div><div id="channelFields" class="conditional{channel_hidden}" style="margin-top:14px"><label>Channel address<input name="channel_url" dir="ltr" value="{e(values.get('channel_url',''))}" placeholder="@channel, -100..., or https://t.me/channel"></label><div class="note">When enabled, the bot must be an administrator of this channel so it can verify user membership.</div></div></section>
 <section class="step"><h2>2) Usage Rules</h2><div class="yesno"><label><input type="radio" name="rules_enabled" value="1" {rules_checked_yes} onchange="syncConditional()"> Yes, show rules</label><label><input type="radio" name="rules_enabled" value="0" {rules_checked_no} onchange="syncConditional()"> No</label></div><div id="rulesFields" class="conditional{rules_hidden}" style="margin-top:14px"><label>Rules text<textarea name="rules_text" dir="auto">{e(values.get('rules_text', RULES_TEXT_DEFAULT))}</textarea></label></div></section>
-<section class="step"><h2>3) Bot and Home Page Information</h2><div class="grid"><label>Bot name<input name="bot_name" value="{e(values.get('bot_name','D BOT'))}" required></label><label>Admin / support Telegram username<input required placeholder="@your_support" name="support_username" dir="ltr" value="{e(values.get('support_username',''))}"></label><label class="full">Description<textarea name="admin_description" dir="auto">{e(values.get('admin_description','VPN management bot'))}</textarea></label><label class="full">Home page text<textarea name="welcome_text" dir="auto" required>{e(values.get('welcome_text', WELCOME_TEXT_DEFAULT))}</textarea></label></div></section>
+<section class="step"><h2>3) Bot and Home Page Information</h2><div class="grid"><label>Admin / support Telegram username<input required placeholder="@your_support" name="support_username" dir="ltr" value="{e(values.get('support_username',''))}"></label><label class="full">Description<textarea name="admin_description" dir="auto">{e(values.get('admin_description','VPN management bot'))}</textarea></label><label class="full">Home page text<textarea name="welcome_text" dir="auto" required>{e(values.get('welcome_text', WELCOME_TEXT_DEFAULT))}</textarea></label></div></section>
 <section class="step"><h2>4) Web Path</h2><div class="grid"><label class="full">Secure login path<input name="web_path" dir="ltr" value="{e(values.get('web_path','dbot'))}" required placeholder="Example: dbot-a1b2c3d4"><small class="muted">The login URL will be /WEB-PATH/login.</small></label></div></section>
 </div><div class="actions"><button class="btn primary" type="submit">Save and complete setup</button></div></form></section></main>
 <script>function syncConditional(){{const f=document.querySelector('input[name="force_join_enabled"]:checked')?.value==='1';const r=document.querySelector('input[name="rules_enabled"]:checked')?.value==='1';document.getElementById('channelFields').classList.toggle('hidden',!f);document.getElementById('rulesFields').classList.toggle('hidden',!r);}}syncConditional();</script></body></html>'''
@@ -2301,7 +2302,6 @@ async def _setup_values() -> dict[str, str]:
         'rules_enabled': m.get('rules_enabled', '0'),
         'rules_text': m.get('rules_text', RULES_TEXT_DEFAULT),
         'welcome_text': m.get('welcome_text', WELCOME_TEXT_DEFAULT),
-        'bot_name': m.get('bot_name', 'D BOT'),
         'support_username': m.get('support_username', ''),
         'admin_description': m.get('admin_description', 'VPN management bot'),
         'web_path': await read_web_path(),
@@ -2343,7 +2343,7 @@ async def setup_progress(request: Request, _: str = Depends(_auth_user)):
     form=await request.form()
     try:step=max(0,min(20,int(form.get('step','0'))))
     except ValueError:raise HTTPException(400,'Invalid step')
-    keys={'force_join_enabled','channel_url','rules_enabled','rules_text','welcome_text','bot_name','support_username','admin_description'}
+    keys={'force_join_enabled','channel_url','rules_enabled','rules_text','welcome_text','support_username','admin_description'}
     updates={key:str(form[key]).strip() for key in keys if key in form}
     if any(len(value)>16000 for value in updates.values()):raise HTTPException(400,'Value too long')
     for name in ('resellers','openvpn','trials','wallet','tutorials','xray'):
@@ -2373,7 +2373,6 @@ async def setup_wizard_save(
     rules_enabled: str = Form('0'),
     rules_text: str = Form(''),
     welcome_text: str = Form(''),
-    bot_name: str = Form('D BOT'),
     support_username: str = Form(''),
     admin_description: str = Form(''),
     web_path: str = Form(''),
@@ -2391,7 +2390,6 @@ async def setup_wizard_save(
         'rules_enabled': '1' if rules_enabled == '1' else '0',
         'rules_text': rules_text.strip(),
         'welcome_text': welcome_text.strip(),
-        'bot_name': bot_name.strip() or 'D BOT',
         'support_username': support_username.strip(),
         'admin_description': admin_description.strip(),
         'web_path': web_path.strip(),
@@ -2399,7 +2397,7 @@ async def setup_wizard_save(
     if await db_setting('setup_progress_v1',''):
         for key in feature_values:feature_values[key]=await db_setting(key,feature_values[key])
         current=await _setup_values()
-        for key in ('force_join_enabled','channel_url','rules_enabled','rules_text','welcome_text','bot_name','support_username','admin_description'):values[key]=current[key]
+        for key in ('force_join_enabled','channel_url','rules_enabled','rules_text','welcome_text','support_username','admin_description'):values[key]=current[key]
     try:
         clean_path = normalize_web_path(values['web_path'])
         from app.services.miniapp_settings import support_username as clean_support
@@ -2425,7 +2423,6 @@ async def setup_wizard_save(
             'rules_enabled': values['rules_enabled'],
             'rules_text': values['rules_text'],
             'welcome_text': values['welcome_text'],
-            'bot_name': values['bot_name'],
             'support_username': values['support_username'],
             'admin_description': values['admin_description'],
             'initial_setup_done': '1',
@@ -5872,23 +5869,21 @@ async def settings_page(request: Request, _: str = Depends(_auth_user)):
     web_user = await db_setting('web_admin_username', settings.WEB_ADMIN_USERNAME or '')
     token_timeout = await db_setting('web_token_timeout_minutes', str(SESSION_MINUTES))
     force_channel = await db_setting('channel_url', '')
-    form='<form method="post" action="/admin/settings/save" class="formgrid">'+field('bot_name','Bot name','text',await db_setting('bot_name','D BOT'))+field('support','Support username','text',await db_setting('support_username','@support'))+'<div class="full"><label>Description</label><textarea name="description">'+e(await db_setting('admin_description','VPN management bot'))+'</textarea></div><div class="full"><button class="btn primary">Save</button></div></form>'
+    form='<form method="post" action="/admin/settings/save" class="formgrid">'+field('support','Support username','text',await db_setting('support_username','@support'))+'<div class="full"><label>Description</label><textarea name="description">'+e(await db_setting('admin_description','VPN management bot'))+'</textarea></div><div class="full"><button class="btn primary">Save</button></div></form>'
     website_form='<form method="post" action="/admin/settings/website" class="formgrid">'+field('domain','Domain','text',web_domain)+field('username','Username','text',web_user)+field('password','New password','password','')+field('token_timeout','Token timeout minutes','number',token_timeout)+'<div class="full"><button class="btn primary">Save website settings</button></div></form>'
     channel_form='<form method="post" action="/admin/settings/channel" class="formgrid">'+field('channel_url','Forced join channel','text',force_channel)+'<div class="full"><button class="btn primary">Save channel</button></div></form>'
     body=(modal('settingsEdit','General Settings','General Settings',form)+modal('websiteEdit','Website Settings','Website Settings',website_form)+modal('channelEdit','Forced Join Channel','Forced Join Channel',channel_form)+
-          '<div class="gridcards"><div class="card"><h3>⚙️ General Settings</h3><p class="muted">Bot name, texts and support</p><button class="btn primary" onclick="openModal(\'settingsEdit\')">Edit Settings</button></div>' +
+          '<div class="gridcards"><div class="card"><h3>⚙️ General Settings</h3><p class="muted">Texts and support</p><button class="btn primary" onclick="openModal(\'settingsEdit\')">Edit Settings</button></div>' +
           f'<div class="card"><h3>🌐 Website</h3><p class="muted">Domain, username, password and token timeout</p><p>{e(web_domain or "Not set")}</p><span class="badge status">Session: {e(token_timeout)}m</span><br><br><button class="btn primary" onclick="openModal(\'websiteEdit\')">Edit Website</button></div>' +
           f'<div class="card"><h3>📢 Forced Join Channel</h3><p class="muted">Users must join this channel before using the bot.</p><p>{e(force_channel or "Not set")}</p><button class="btn primary" onclick="openModal(\'channelEdit\')">Edit Channel</button></div></div>')
     return layout('Settings','Settings',body,'/admin/settings')
 @router.post('/admin/settings/save')
-async def settings_save(request: Request, bot_name:str=Form(...), support:str=Form(...), description:str=Form(''), _: str = Depends(_auth_user)):
-    bot_name = bot_name.strip() or 'D BOT'
+async def settings_save(request: Request, support:str=Form(...), description:str=Form(''), _: str = Depends(_auth_user)):
     support = support.strip()
     description = description.strip()
     async with SessionLocal() as s:
         # AsyncSession.merge is awaitable. Older versions called it without await,
         # so General Settings appeared to save but never changed in the database.
-        await s.merge(Setting(key='bot_name', value=bot_name))
         await s.merge(Setting(key='support_username', value=support))
         await s.merge(Setting(key='admin_description', value=description))
         legacy_welcome = '''Welcome to D BOT 🚀
@@ -7304,7 +7299,7 @@ async def api_v2_settings(_: str = Depends(_auth_user)):
     }
     safe = []
     for it in items:
-        if it.key in removed_message_keys or it.key == 'qr_card_background_png':
+        if it.key in removed_message_keys or it.key in {'qr_card_background_png', 'bot_name'}:
             continue
         val = it.value
         if any(k in it.key.lower() for k in ['password', 'token', 'secret']):
@@ -7314,6 +7309,7 @@ async def api_v2_settings(_: str = Depends(_auth_user)):
     # Live/synthetic values for Website & SSL. These come from the shared DB
     # credential service so Edit Setup always shows the actually usable username.
     safe.extend([
+        {'key': 'bot_name', 'value': BRAND_NAME},
         {'key': 'web_admin_username', 'value': credentials.username},
         {'key': 'web_password_configured', 'value': '1' if (credentials.password_available or raw_map.get('web_admin_password')) else '0'},
         {'key': 'web_password_status', 'value': 'Configured' if (credentials.password_available or raw_map.get('web_admin_password')) else 'Not configured'},

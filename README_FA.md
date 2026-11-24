@@ -3,6 +3,8 @@
 <p align="center"><b>فروشگاه VPN شما؛ مشتریان شما؛ یک پلتفرم یکپارچه.</b></p>
 <p align="center"><a href="README.md">🇬🇧 English</a> · <a href="README_FA.md">🇮🇷 فارسی</a></p>
 
+**برند و حقوق اثر.** سورس D BOT طبق [مجوز پروژه](LICENSE) منتشر می‌شود. نام، لوگو و نام صاحب اثر باید حفظ شود. ری‌برندینگ و عرضه با نام دیگر فقط با اجازهٔ کتبی قبلی مالک مجاز است. [دستورالعمل عامل‌های کدنویسی](AGENTS.md) و [اطلاعیهٔ حقوق طراحی](DESIGN_COPYRIGHT.md) را ببینید.
+
 <p align="center">
   <img src="https://img.shields.io/badge/version-1.4.0-7c3aed?style=flat-square" alt="Version 1.4.0" />
   <img src="https://img.shields.io/badge/Mini_App-Telegram-26A5E4?style=flat-square&logo=telegram&logoColor=white" alt="Telegram Mini App" />

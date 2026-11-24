@@ -28,7 +28,7 @@ def test_setup_title_navigation_and_sensitive_fields(monkeypatch):
     assert 'Initial D BOT Setup' not in page
     for name in ('setupBack','setupNext','setupFinish','setupProgress','setupLanguage','setupStepTitle'):
         assert page.count(f'id="{name}"')==1
-    assert 'A &lt; B' in page
+    assert 'A &lt; B' not in page and 'name="bot_name"' not in page
     assert '/private/setup/save?csrf=' in page
     assert 'data-server="password"' in page and 'name="password"' not in page
     assert 'data-setup-restore="aes_password"' in page

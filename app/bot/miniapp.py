@@ -2,6 +2,7 @@
 from urllib.parse import urlsplit
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from sqlalchemy import select
+from app.core.branding import BRAND_NAME
 from app.database.session import SessionLocal
 from app.database.models import ClientService, User
 from app.bot.keyboards.common import get_user_button, back_button
@@ -27,14 +28,8 @@ _menu_cache = {}
 async def sync_menu_button(bot):
     from aiogram.types import MenuButtonWebApp, MenuButtonCommands
     url = await miniapp_url()
-    # Use Telegram's current bot display name, including after a BotFather rename.
-    # Stored legacy menu_text values must not override the bot's identity.
-    name = ''
-    if url:
-        identity = await bot.get_me()
-        name = str(identity.first_name or identity.username or 'مینی‌اپ').strip()
-    menu = MenuButtonWebApp(text=name, web_app=WebAppInfo(url=url)) if url else MenuButtonCommands()
-    signature = (url, name)
+    menu = MenuButtonWebApp(text=BRAND_NAME, web_app=WebAppInfo(url=url)) if url else MenuButtonCommands()
+    signature = (url, BRAND_NAME if url else '')
     key = getattr(bot, 'id', id(bot))
     if _menu_cache.get(key) == signature:
         return

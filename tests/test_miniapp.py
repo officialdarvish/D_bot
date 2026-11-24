@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from app.database.base import Base
-from app.database.models import User, Plan, Server, ServerCategory, ClientService, Order
+from app.database.models import User, Plan, Server, ServerCategory, ClientService, Order, Setting
 from app.api import miniapp
 from app.services.miniapp_auth import validate_init_data
 
@@ -165,13 +165,15 @@ def test_native_menu_requires_https(monkeypatch):
     asyncio.run(bridge.sync_menu_button(bot))
     menu=bot.set_chat_menu_button.await_args.kwargs['menu_button']
     assert menu.type=='web_app' and menu.web_app.url=='https://shop.example.com/miniapp'
-    assert menu.text=='فروشگاه تست'
+    assert menu.text=='D BOT'
     count=bot.set_chat_menu_button.await_count
     asyncio.run(bridge.sync_menu_button(bot))
     assert bot.set_chat_menu_button.await_count==count
     bot.get_me.return_value.first_name='نام جدید فروشگاه'
     asyncio.run(bridge.sync_menu_button(bot))
-    assert bot.set_chat_menu_button.await_args.kwargs['menu_button'].text=='نام جدید فروشگاه'
+    assert bot.set_chat_menu_button.await_count == count
+    bot.get_me.assert_not_awaited()
+    assert bot.set_chat_menu_button.await_args.kwargs['menu_button'].text == 'D BOT'
 
 
 def test_config_validation():
@@ -180,9 +182,28 @@ def test_config_validation():
     assert support_username('https://t.me/dbot_support')=='dbot_support'
     for value in ('','https://evil.example/a','abc','name/path','<script>'):
         with pytest.raises(ValueError): support_username(value,required=True)
-    for changes in ({'accent':'red;display:none'},{'links':[{'label':'x','url':'javascript:alert(1)'}]}, {'links':[{'label':'x','url':'https://user:pass@example.com'}]}):
+    for changes in ({'links':[{'label':'x','url':'javascript:alert(1)'}]}, {'links':[{'label':'x','url':'https://user:pass@example.com'}]}):
         with pytest.raises(ValueError): clean_config(changes)
     assert clean_config({'show_buy':False})['show_buy'] is False
+
+
+def test_public_miniapp_ignores_legacy_branding_without_losing_settings(client):
+    api, sessions = client
+
+    async def save_legacy_settings():
+        async with sessions() as session:
+            config = {'title': 'Old brand', 'menu_text': 'Old menu', 'accent': 'bad color',
+                      'show_buy': False, 'welcome': 'متن دلخواه'}
+            session.add(Setting(key='miniapp_config', value=json.dumps(config)))
+            await session.commit()
+
+    asyncio.run(save_legacy_settings())
+    response = api.get('/api/miniapp/session', headers={'X-Telegram-Init-Data': signed()})
+    assert response.status_code == 200, response.text
+    config = response.json()['config']
+    assert config['title'] == config['menu_text'] == 'D BOT'
+    assert config['accent'] == '#12b9f5'
+    assert config['welcome'] == 'متن دلخواه' and config['show_buy'] is False
 
 
 def test_catalog_contains_only_configured_categories(client,monkeypatch):
@@ -272,10 +293,13 @@ def test_admin_miniapp_settings_and_separate_rule_cards(client,monkeypatch):
     monkeypatch.setattr(bridge,'sync_menu_button',AsyncMock())
     bad=c.post('/admin/miniapp/save',data={'config_json':json.dumps({'support_username':'bad/path'})})
     assert bad.status_code==400
-    r=c.post('/admin/miniapp/save',data={'config_json':json.dumps({'support_username':'dbot_support','title':'My D Bot','reseller_requests':False,'links':[{'label':'آموزش','url':'https://example.com/help'}]})})
+    r=c.post('/admin/miniapp/save',data={'config_json':json.dumps({'support_username':'dbot_support','title':'Another brand','menu_text':'Another launcher','accent':'#123456','welcome':'متن خوشامد جدید','reseller_requests':False,'links':[{'label':'آموزش','url':'https://example.com/help'}]})})
     assert r.status_code==200,r.text
     draft=c.get('/admin/api/v2/miniapp').json()['config']
-    assert draft['title']=='My D Bot' and draft['support_username']=='dbot_support' and draft['reseller_requests'] is False
+    assert draft['title'] == draft['menu_text'] == 'D BOT'
+    assert draft['accent'] == '#12b9f5'
+    assert draft['welcome'] == 'متن خوشامد جدید' and draft['links'][0]['label'] == 'آموزش'
+    assert draft['support_username'] == 'dbot_support' and draft['reseller_requests'] is False
     assert c.post('/admin/settings/rules',data={'enabled':'1','rules_text':'قوانین تازه'}).status_code==200
     monkeypatch.setattr(miniapp_admin,'_telegram_validate_destination',AsyncMock(return_value={'ok':True}))
     assert c.post('/admin/settings/force-join',data={'enabled':'1','channel_url':'@required_channel'}).status_code==200

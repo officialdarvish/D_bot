@@ -3,6 +3,8 @@
 <p align="center"><b>Your VPN shop. Your customers. One connected platform.</b></p>
 <p align="center"><a href="README.md">🇬🇧 English</a> · <a href="README_FA.md">🇮🇷 فارسی</a></p>
 
+**Branding and attribution.** D BOT is distributed under the [custom source license](LICENSE). Preserve its name, logos, and attribution. Rebranding and white-labeling require prior written permission from the project owner. See the [repository instructions for coding agents](AGENTS.md) and the [design copyright notice](DESIGN_COPYRIGHT.md).
+
 <p align="center">
   <img src="https://img.shields.io/badge/version-1.4.0-7c3aed?style=flat-square" alt="Version 1.4.0" />
   <img src="https://img.shields.io/badge/Mini_App-Telegram-26A5E4?style=flat-square&logo=telegram&logoColor=white" alt="Telegram Mini App" />

@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 26,
+  "build": 27,
   "channel": "main",
   "notes": {
-    "fa": "وسط‌چین افقی و عمودی شماره‌های تمام مراحل ستاپ با اندازه ثابت، مستقل از ارتفاع خط و زبان رابط",
-    "en": "Center all setup step numbers horizontally and vertically with fixed badge dimensions independent of inherited line height and UI language"
+    "fa": "قفل نام و رنگ برند D BOT در مینی‌اپ و مسیرهای تنظیمات، تثبیت نام دکمهٔ ورود تلگرام و ثبت صریح منع ری‌برندینگ در مجوز و دستورالعمل عامل‌های کدنویسی",
+    "en": "Lock D BOT branding in Mini App and settings, pin the Telegram launcher name, and document the rebranding restriction in the license and coding-agent instructions"
   }
 }

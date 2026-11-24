@@ -119,7 +119,7 @@ test('step navigation stays synchronized through every stage in both languages',
     frame.dispatchEvent(new dom.window.Event('load'));
     assert.equal(frame.parentElement.getAttribute('aria-busy'),'false');
    }
-   d.querySelector('[name=bot_name]').value='D BOT';
+   assert.equal(d.querySelector('[name=bot_name]'),null);
    d.querySelector('[name=support_username]').value='@support';
    d.querySelector('[name=welcome_text]').value='Welcome';
    d.querySelector('[name=web_path]').value='private';

@@ -63,11 +63,11 @@ def test_home_message_roundtrip_and_unrelated_settings_preserved(settings_api):
     assert mapping['rules_text'] == 'Existing rules'
     assert mapping['rules_enabled'] == mapping['force_join_enabled'] == '1'
     assert mapping['channel_url'] == '@existing'
-    assert asyncio.run(defaults.get_setting_value('welcome_text')) == text.replace('{bot_name}', 'My Bot')
+    assert asyncio.run(defaults.get_setting_value('welcome_text')) == text.replace('{bot_name}', 'D BOT')
     for bad in ['   ', 'a' * 4097, '😀' * 2049]:
         assert c.post('/admin/settings/home-message', data={'welcome_text': bad}, headers=HEADERS).status_code == 400
     assert c.get('/admin/api/v2/settings').json()['ok']
-    assert asyncio.run(defaults.get_setting_value('welcome_text')) == text.replace('{bot_name}', 'My Bot')
+    assert asyncio.run(defaults.get_setting_value('welcome_text')) == text.replace('{bot_name}', 'D BOT')
 
 
 def test_panel_button_toggle_cached_menu_and_old_callback(settings_api, monkeypatch):

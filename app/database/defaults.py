@@ -2,6 +2,7 @@ from html import escape
 import asyncio
 import time
 from sqlalchemy import select
+from app.core.branding import BRAND_NAME
 from app.database.models import Setting
 from app.database.session import SessionLocal
 from app.database.settings_write import upsert_settings
@@ -98,11 +99,13 @@ async def seed_default_settings() -> None:
 
 
 async def get_setting_value(key: str, default: str = '') -> str:
+    if key == 'bot_name':
+        return BRAND_NAME
     values = await _settings_snapshot()
     value = values.get(key, default)
     if key in {'welcome_text', 'rules_text'}:
         replacements = {
-            '{bot_name}': escape(values.get('bot_name') or 'D BOT', quote=False),
+            '{bot_name}': BRAND_NAME,
             '{support_username}': escape(values.get('support_username') or '@support', quote=False),
             '{description}': escape(values.get('admin_description') or 'VPN management bot', quote=False),
         }
