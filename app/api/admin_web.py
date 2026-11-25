@@ -5156,7 +5156,7 @@ async def _telegram_send_backup(
     }
 
 
-SETUP_RESTORE_ACCESS_KEYS = {'web_admin_username','web_admin_password',WEB_ADMIN_PASSWORD_SECRET_KEY,'web_credentials_updated_at','web_credentials_updated_by','web_path','web_domain','web_login_url','web_token_timeout_minutes','web_ssl_status','web_ssl_message'}
+SETUP_RESTORE_ACCESS_KEYS = {'web_admin_username','web_admin_password',WEB_ADMIN_PASSWORD_SECRET_KEY,'web_credentials_updated_at','web_credentials_updated_by','web_path','web_domain','web_scheme','web_public_port','web_login_url','web_token_timeout_minutes','web_ssl_status','web_ssl_message'}
 
 
 async def _restore_backup_payload(
@@ -5233,79 +5233,6 @@ async def _restore_backup_payload(
     return restored
 
 
-
-async def _restart_site_and_bot_via_docker(reason: str = '') -> tuple[bool, str]:
-    """Best-effort restart for the Compose api/bot services from inside the panel.
-
-    This uses the Docker Engine socket when it is mounted into the API container.
-    It avoids requiring docker CLI inside the image. If the socket is not mounted,
-    the panel still stores a restart request status so admins can restart manually.
-    """
-    if not settings.DBOT_ALLOW_DOCKER_RESTART:
-        return False, 'Docker restart from web panel is disabled. Run docker compose restart api bot manually.'
-    sock = '/var/run/docker.sock'
-    if not os.path.exists(sock):
-        return False, 'Docker socket is not mounted. Run docker compose restart api bot manually.'
-    try:
-        import httpx
-        transport = httpx.AsyncHTTPTransport(uds=sock)
-        async with httpx.AsyncClient(transport=transport, base_url='http://docker', timeout=12) as client:
-            current_name = os.uname().nodename
-            cur = (await client.get(f'/containers/{current_name}/json')).json()
-            labels = ((cur.get('Config') or {}).get('Labels') or {})
-            project = labels.get('com.docker.compose.project')
-            if not project:
-                return False, 'Could not detect Docker Compose project label from current container.'
-            restarted: list[str] = []
-            for service in ('bot', 'api'):
-                filters = json.dumps({'label': [f'com.docker.compose.project={project}', f'com.docker.compose.service={service}']})
-                items = (await client.get('/containers/json', params={'all': 'true', 'filters': filters})).json()
-                for item in items:
-                    cid = item.get('Id')
-                    if not cid:
-                        continue
-                    await client.post(f'/containers/{cid}/restart', params={'t': 2})
-                    restarted.append(service)
-            if not restarted:
-                return False, f'No api/bot containers found for project {project}.'
-            return True, 'Restarted services: ' + ', '.join(restarted)
-    except Exception:
-        logger.exception('Docker restart failed')
-        return False, 'Restart failed. Run docker compose restart api bot manually.'
-
-
-def _schedule_site_and_bot_restart(reason: str = '') -> None:
-    async def runner():
-        await asyncio.sleep(1.5)
-        ok_restart, msg = await _restart_site_and_bot_via_docker(reason)
-        try:
-            await _save_settings_map({
-                'web_restart_status': 'ok' if ok_restart else 'manual_required',
-                'web_restart_message': msg,
-                'web_restart_requested_at': datetime.utcnow().isoformat(),
-            })
-        except Exception:
-            pass
-    try:
-        asyncio.create_task(runner())
-    except Exception:
-        pass
-
-async def _apply_ssl_for_domain(domain: str) -> tuple[bool, str]:
-    domain = domain.strip().replace('https://','').replace('http://','').strip('/')
-    if not domain:
-        return False, 'Domain is empty'
-    if not re.match(r'^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$', domain):
-        return False, 'Invalid domain'
-    try:
-        proc = subprocess.run(['bash', 'scripts/setup_web_ssl.sh', domain], capture_output=True, text=True, timeout=180)
-        if proc.returncode != 0:
-            logger.warning('SSL apply failed for %s: stdout=%s stderr=%s', domain, (proc.stdout or '')[-2000:], (proc.stderr or '')[-2000:])
-            return False, 'SSL command failed. Check server logs.'
-        return True, 'SSL applied successfully'
-    except Exception:
-        logger.exception('SSL apply crashed for %s', domain)
-        return False, 'SSL command failed. Check server logs.'
 
 @router.get('/admin-legacy/backup', response_class=HTMLResponse)
 async def backup(request: Request, _: str = Depends(_auth_user)):
@@ -6017,14 +5944,18 @@ async def website_settings_save(
     token_timeout: int = Form(30),
     _: str = Depends(_auth_user),
 ):
-    domain = domain.strip().replace('https://', '').replace('http://', '').strip('/')
+    from urllib.parse import urlsplit
+    from app.core.web_domain import normalize_domain
+    from app.services import web_domain_jobs
+
+    queued = None
     username = username.strip()
     password = password.strip()
     try:
+        domain = normalize_domain(domain) if domain.strip() else ''
         clean_path = normalize_web_path(web_path or await read_web_path())
         async with SessionLocal() as s:
-            current_domain_row = await s.get(Setting, 'web_domain')
-            current_domain = str(current_domain_row.value or '').strip() if current_domain_row else ''
+            current_domain = urlsplit((await read_web_access(s)).login_url).hostname or ''
             current_path = await read_web_path(s)
             creds = await read_web_credentials(s)
             username_changed = bool(username and username != creds.username)
@@ -6032,8 +5963,10 @@ async def website_settings_save(
             path_changed = clean_path != current_path
             domain_changed = bool(domain and domain != current_domain)
 
-            if domain:
-                await s.merge(Setting(key='web_domain', value=domain))
+            if domain_changed and not web_domain_jobs.host_supports_domains():
+                raise ValueError('VPS SSL worker is unavailable. Run sudo dbot update on the VPS / اجراکننده SSL در دسترس نیست؛ روی VPS دستور sudo dbot update را اجرا کنید')
+            if domain_changed and (username_changed or password_changed or path_changed):
+                raise ValueError('Save the domain separately from login credentials and web path / دامنه را جدا از اطلاعات ورود و مسیر وب ذخیره کنید')
             if username_changed or password_changed:
                 await save_web_credentials(
                     username=username if username_changed else None,
@@ -6050,11 +5983,10 @@ async def website_settings_save(
         return fail(request, str(exc))
 
     if domain_changed:
-        ssl_ok, ssl_msg = await _apply_ssl_for_domain(domain)
-        await _save_settings_map({'web_ssl_status': 'active' if ssl_ok else 'error', 'web_ssl_message': ssl_msg})
-        if not ssl_ok:
-            return fail(request, 'SSL request failed: ' + ssl_msg)
-        _schedule_site_and_bot_restart('website_settings_ssl_success')
+        try:
+            queued = web_domain_jobs.enqueue(domain)
+        except ValueError as exc:
+            return fail(request, str(exc))
 
     if username_changed or password_changed:
         _sessions.clear()
@@ -6081,22 +6013,38 @@ async def website_settings_save(
             'redirect': f'/{clean_path}/admin/settings',
             'path_changed': True,
         })
+    if queued:
+        return ok(request, '/admin/settings', 'Domain and SSL request sent to the VPS / درخواست دامنه و گواهی به VPS ارسال شد')
     return ok(request, '/admin/settings', 'Website settings saved successfully')
 
 
+@router.get('/admin/api/v2/settings/ssl')
+async def website_ssl_status(_: str = Depends(_auth_user)):
+    from urllib.parse import urlsplit
+    from app.services import web_domain_jobs
+
+    job = web_domain_jobs.status()
+    response = {key: job[key] for key in ('id', 'domain', 'state', 'reason') if key in job}
+    if response.get('state') == 'completed':
+        login_url = (await read_web_access()).login_url
+        if urlsplit(login_url).hostname == response.get('domain'):
+            response['login_url'] = login_url
+        else:
+            response = {'state': 'idle'}
+    return {'ok': True, 'job': response, 'host_ready': web_domain_jobs.host_supports_domains()}
+
+
 @router.post('/admin/settings/ssl/apply')
-@router.get('/admin/settings/ssl/apply')
-async def website_ssl_apply(request: Request, _: str = Depends(_auth_user)):
-    m = await _settings_map()
-    domain = (m.get('web_domain') or '').strip()
-    ssl_ok, ssl_msg = await _apply_ssl_for_domain(domain)
-    await _save_settings_map({'web_ssl_status': 'active' if ssl_ok else 'error', 'web_ssl_message': ssl_msg})
-    if not ssl_ok:
-        return fail(request, 'SSL apply failed: ' + ssl_msg)
-    _schedule_site_and_bot_restart('manual_ssl_apply_success')
-    return ok(request, '/admin/settings', 'SSL applied successfully. Site and bot restart requested.')
+async def website_ssl_apply(request: Request, domain: str = Form(''), _: str = Depends(_auth_user)):
+    from urllib.parse import urlsplit
+    from app.services import web_domain_jobs
 
-
+    target = domain.strip() or urlsplit((await read_web_access()).login_url).hostname or ''
+    try:
+        web_domain_jobs.enqueue(target)
+    except ValueError as exc:
+        return fail(request, str(exc))
+    return ok(request, '/admin/settings', 'Domain and SSL request sent to the VPS / درخواست دامنه و گواهی به VPS ارسال شد')
 
 
 @router.post('/admin/settings/factory-reset')
@@ -6119,7 +6067,7 @@ async def factory_reset_settings(
         'web_admin_username', 'web_admin_password', WEB_ADMIN_PASSWORD_SECRET_KEY,
         'web_credentials_updated_at', 'web_credentials_updated_by',
         'web_path', 'web_domain', 'web_token_timeout_minutes',
-        'web_ssl_status', 'web_ssl_message',
+        'web_ssl_status', 'web_ssl_message', 'web_scheme', 'web_public_port',
     }
     try:
         async with SessionLocal() as session:
@@ -7285,6 +7233,8 @@ async def api_v2_connection_save(
 
 @router.get('/admin/api/v2/settings')
 async def api_v2_settings(_: str = Depends(_auth_user)):
+    from urllib.parse import urlsplit
+
     async with SessionLocal() as s:
         items = (await s.execute(select(Setting).order_by(Setting.key))).scalars().all()
         credentials = await read_web_credentials(s)
@@ -7299,7 +7249,7 @@ async def api_v2_settings(_: str = Depends(_auth_user)):
     }
     safe = []
     for it in items:
-        if it.key in removed_message_keys or it.key in {'qr_card_background_png', 'bot_name'}:
+        if it.key in removed_message_keys or it.key in {'qr_card_background_png', 'bot_name', 'web_domain'}:
             continue
         val = it.value
         if any(k in it.key.lower() for k in ['password', 'token', 'secret']):
@@ -7315,6 +7265,7 @@ async def api_v2_settings(_: str = Depends(_auth_user)):
         {'key': 'web_password_status', 'value': 'Configured' if (credentials.password_available or raw_map.get('web_admin_password')) else 'Not configured'},
         {'key': 'web_path', 'value': access.web_path},
         {'key': 'web_login_url', 'value': access.login_url},
+        {'key': 'web_domain', 'value': (urlsplit(access.login_url).hostname or '') if 'SERVER_IP' not in access.login_url else ''},
         {'key': 'web_credentials_updated_at', 'value': credentials.updated_at},
     ])
     for name, (default_text, default_enabled) in BUTTON_DEFAULTS.items():

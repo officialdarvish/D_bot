@@ -74,3 +74,32 @@ def test_actually_missing_includes_remain_an_error(harness):
     result=harness[0]('none')
     assert result.returncode!=0
     assert 'does not load' in result.stderr
+
+
+def test_domain_switch_keeps_old_vhost_during_acme_and_after_https_cutover(harness):
+    run, _, _ = harness
+    result = run('sites', r'''
+      MODE=switch; DOMAIN=new.example.com; NGINX_HTTP_PORT=8080; NGINX_HTTPS_PORT=8443
+      printf 'server {\n    server_name old.example.com;\n}\n' > "$SITE_AVAILABLE"
+      certificate_is_usable() { return 1; }
+      check_dns() { :; }
+      local_acme_test() { grep -F 'server_name new.example.com;' "$SITE_AVAILABLE" >/dev/null; }
+      issue_certificate_webroot() {
+        grep -F 'server_name old.example.com;' "$SITE_AVAILABLE" >/dev/null || return 1
+        grep -F 'listen 80;' "$SITE_AVAILABLE" >/dev/null || return 1
+      }
+      reload_nginx() { :; }
+      systemctl() { :; }
+      curl() { printf '{"status":"ok"}'; }
+      write_proxy_config() {
+        [ "$EXTRA_ACME_LISTEN" = 'listen 80;' ]
+        [ "$HTTPS_PORT_SUFFIX" = ':8443' ]
+        printf 'server {\n    server_name new.example.com;\n}\n' > "$SITE_AVAILABLE"
+        append_previous_site
+      }
+      switch_domain
+      cat "$SITE_AVAILABLE"
+    ''')
+    assert result.returncode == 0, result.stderr
+    assert 'server_name old.example.com;' in result.stdout
+    assert 'server_name new.example.com;' in result.stdout

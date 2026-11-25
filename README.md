@@ -186,3 +186,5 @@ Setup step numbers and completion checkmarks stay centered horizontally and vert
 Build 28 adds **Custom → Mini App**. Search and edit customer-facing texts and buttons by screen, preview edits, and restore the default for each entry. **Settings and links** contains Mini App controls, support and shortcuts. Rules text and tutorial media use the shared editors. D BOT branding is locked.
 
 Build 29 adds **Custom → Mini App → Settings and links → Telegram Mini App button label**. Use up to 32 characters for the button next to the message box in Telegram. Leave the field blank for **D BOT**. The brand inside the Mini App stays fixed.
+
+Build 30 moves live domain and HTTPS changes to **Settings → Domain and HTTPS** or **dbot → Website & SSL → Change domain and apply HTTPS**. Point the new domain to your VPS and allow TCP port 80 for certificate validation. The VPS checks HTTPS and the D BOT endpoint before recording the new domain and keeps the previous D BOT address available. If the web worker is unavailable after upgrading, run `sudo dbot update` on the VPS.

@@ -31,9 +31,10 @@ def write_json(path,data):
     finally:Path(name).unlink(missing_ok=True)
 def heartbeat():
     while True:
-        fd=os.open(QUEUE/'ready',os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW,0o644)
-        try:os.utime(fd,None)
-        finally:os.close(fd)
+        for marker in ('ready', 'domain-ready'):
+            fd=os.open(QUEUE/marker,os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW,0o644)
+            try:os.utime(fd,None)
+            finally:os.close(fd)
         time.sleep(10)
 def append_job_log(payload):
     if JOB_LOG is None:return
@@ -203,6 +204,47 @@ def process_update():
     return refresh
 
 
+
+def domain_failure(output):
+    detail = output.lower()
+    if 'rollback failed' in detail:
+        return 'rollback'
+    if 'another d bot domain change' in detail:
+        return 'busy'
+    if 'does not currently resolve' in detail or 'nxdomain' in detail or 'dns problem' in detail:
+        return 'dns'
+    if 'cannot serve the acme challenge' in detail or 'address already in use' in detail:
+        return 'port'
+    if 'certificate request failed' in detail:
+        return 'certificate'
+    if 'api is not healthy' in detail or 'did not pass' in detail:
+        return 'health'
+    return 'host'
+
+
+def process_domain():
+    request = QUEUE / 'domain-request.json'
+    job = {}
+    try:
+        value = read_json(request)
+        if (not isinstance(value, dict) or set(value) != {'id', 'domain'}
+                or not re.fullmatch(r'[0-9a-f]{32}', str(value.get('id', '')))
+                or not isinstance(value['domain'], str) or len(value['domain']) > 253
+                or not re.fullmatch(r'[a-z0-9][a-z0-9.-]+', value['domain'])):
+            raise ValueError('Invalid domain request')
+        job = value
+        write_json(QUEUE / 'domain-status.json', {**job, 'state': 'running'})
+        result = run([sys.executable, str(APP / 'scripts/apply-web-domain.py'), job['domain']],
+                     capture_output=True, text=True, timeout=900)
+        print(result.stdout, flush=True)
+        write_json(QUEUE / 'domain-status.json', {**job, 'state': 'completed'})
+    except Exception as exc:
+        output = '\n'.join(str(item or '') for item in (getattr(exc, 'stdout', ''), getattr(exc, 'stderr', ''), str(exc)))
+        print(output, file=sys.stderr, flush=True)
+        write_json(QUEUE / 'domain-status.json', {**job, 'state': 'failed', 'reason': domain_failure(output)})
+    finally:
+        request.unlink(missing_ok=True)
+
 def main():
     configure(sys.argv[1])
     lock=os.fdopen(os.open(QUEUE/'worker.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600),'r+')
@@ -214,6 +256,8 @@ def main():
             fcntl.flock(operation,fcntl.LOCK_EX)
             if (QUEUE/'request.json').exists() or (QUEUE/'request.json').is_symlink():
                 refresh=process_update()
+            elif (QUEUE/'domain-request.json').exists() or (QUEUE/'domain-request.json').is_symlink():
+                process_domain()
             else:
                 try:apply_runtime()
                 except Exception:

@@ -19,7 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.services.web_credentials import read_web_credentials, save_web_credentials
-from app.services.web_access import read_web_path, save_web_path
+from app.services.web_access import read_web_access, read_web_path, save_web_domain, save_web_path
 
 
 def generate_password(length: int = 24) -> str:
@@ -50,7 +50,21 @@ async def main() -> int:
     set_path = sub.add_parser('set-path')
     set_path.add_argument('web_path')
 
+    sub.add_parser('web-url')
+    set_domain = sub.add_parser('set-domain')
+    set_domain.add_argument('domain')
+    set_domain.add_argument('scheme')
+    set_domain.add_argument('port', type=int)
+
     args = parser.parse_args()
+    if args.command == 'web-url':
+        print((await read_web_access()).login_url)
+        return 0
+    if args.command == 'set-domain':
+        await save_web_domain(args.domain, args.scheme, args.port)
+        print(json.dumps({'ok': True}))
+        return 0
+
     if args.command == 'show':
         snap = await read_web_credentials()
         payload = {

@@ -426,3 +426,25 @@ test('Custom Mini App edits persist, preview literally and reset to the default'
  assert.equal(savedLauncher,'🛍 فروشگاه اشتراک');
  assert.equal(labelField.value,savedLauncher);
 });
+
+test('Website HTTPS action queues the hostname and links to the verified new panel', async () => {
+ const {WebsiteDomain}=require('../components/website-domain.tsx');
+ let request,applied='';
+ const login='https://new.example.com/private/login';
+ global.fetch=async(url,options={})=>{
+  if(String(url).endsWith('/admin/settings/ssl/apply')){
+   assert.equal(options.method,'POST');
+   assert.equal(options.headers['X-CSRF-Token'],'csrf');
+   request=options.body.get('domain');
+   return response({ok:true});
+  }
+  assert.ok(String(url).endsWith('/admin/api/v2/settings/ssl'));
+  return response({ok:true,host_ready:true,job:request?{id:'ssl',domain:request,state:'completed',login_url:login}:{state:'idle'}});
+ };
+ await render(React.createElement(WebsiteDomain,{domain:'old.example.com',setAuthRequired:()=>{},onApplied:value=>{applied=value}}));
+ const domain=document.querySelector('input');assert.equal(domain.value,'old.example.com');
+ await input(domain,'new.example.com');
+ await click('Request certificate and apply domain');
+ assert.equal(request,'new.example.com');assert.equal(applied,login);
+ assert.equal(document.querySelector('a').href,login);
+});

@@ -71,6 +71,21 @@ async def save_web_path(value: str, session: AsyncSession | None = None, commit:
             await session.close()
 
 
+async def save_web_domain(domain: str, scheme: str, port: int) -> None:
+    from app.core.web_domain import normalize_domain
+    from app.database.settings_write import upsert_settings
+
+    domain = normalize_domain(domain)
+    if scheme not in {'http', 'https'} or not 1 <= port <= 65535:
+        raise ValueError('Invalid website scheme or port')
+    async with _new_session() as session:
+        await upsert_settings(session, {
+            'web_domain': domain, 'web_scheme': scheme, 'web_public_port': str(port),
+            'web_ssl_status': 'active' if scheme == 'https' else 'disabled', 'web_ssl_message': '',
+        })
+        await session.commit()
+
+
 @dataclass(slots=True)
 class WebAccessSnapshot:
     web_path: str
@@ -90,7 +105,14 @@ async def read_web_access(session: AsyncSession | None = None) -> WebAccessSnaps
         prefix = '/' + path
         domain_row = await session.get(Setting, 'web_domain')
         db_domain = str(domain_row.value or '').strip() if domain_row else ''
+        scheme_row = await session.get(Setting, 'web_scheme') if db_domain else None
+        active_scheme = scheme_row.value if scheme_row and scheme_row.value in {'http', 'https'} else None
         env_domain = str(getattr(settings, 'DOMAIN_NAME', '') or '').strip()
+        if db_domain and not active_scheme:
+            # Older builds stored the requested domain before Certbot ran.
+            ssl_status = await session.get(Setting, 'web_ssl_status')
+            if ssl_status and ssl_status.value == 'error':
+                db_domain = ''
         public_base = str(getattr(settings, 'PUBLIC_BASE_URL', '') or '').strip().rstrip('/')
         domain = db_domain or env_domain
         https_enabled = bool(getattr(settings, 'ENABLE_HTTPS', True))
@@ -98,8 +120,12 @@ async def read_web_access(session: AsyncSession | None = None) -> WebAccessSnaps
         https_port = int(getattr(settings, 'NGINX_HTTPS_PORT', 443) or 443)
         api_port = int(getattr(settings, 'API_PORT', 8000) or 8000)
         if db_domain or (domain and not public_base):
-            scheme = 'https' if https_enabled else 'http'
-            port = https_port if https_enabled else http_port
+            scheme = active_scheme or ('https' if https_enabled else 'http')
+            port = https_port if scheme == 'https' else http_port
+            if active_scheme:
+                port_row = await session.get(Setting, 'web_public_port')
+                if port_row and str(port_row.value).isdigit() and 1 <= int(port_row.value) <= 65535:
+                    port = int(port_row.value)
             suffix = '' if (scheme == 'https' and port == 443) or (scheme == 'http' and port == 80) else f':{port}'
             base = f'{scheme}://{domain}{suffix}'
         elif public_base:

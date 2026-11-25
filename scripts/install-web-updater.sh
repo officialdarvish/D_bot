@@ -43,7 +43,7 @@ systemctl daemon-reload
 systemctl enable --now dbot-maintenance.timer
 systemctl enable dbot-web-update.service
 if [ "${1:-}" != '--defer-restart' ]; then
-  rm -f "$app_dir/.web-update/ready"
+  rm -f "$app_dir/.web-update/ready" "$app_dir/.web-update/domain-ready"
   systemctl restart dbot-web-update.service
   for attempt in $(seq 1 15); do
     if systemctl is-active --quiet dbot-web-update.service && [ -f "$app_dir/.web-update/ready" ]; then

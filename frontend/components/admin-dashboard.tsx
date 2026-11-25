@@ -71,6 +71,7 @@ import { fetchJson, getAction, submitForm } from '@/lib/api';
 import { publicWebPath } from '@/lib/web-path';
 import { ResellerBillingHistory } from '@/components/reseller-billing';
 import { AccessRuleCards } from '@/components/miniapp-settings';
+import { WebsiteDomain } from '@/components/website-domain';
 import { MiniAppCustomization } from '@/components/miniapp-customization';
 import { CustomSection } from '@/components/custom-section';
 import { LanguageSwitch } from '@/lib/ui-language';
@@ -1493,13 +1494,15 @@ function ConnectionSection({ reloadKey, setAuthRequired, show }: any) {
 
 function SettingsSection({ reloadKey, setAuthRequired, openModal, show }: any) {
   const {s, language, failure} = useSettingsLanguage();
+  const [appliedLogin, setAppliedLogin] = useState('');
   const { data, loading, error } = useApi<ApiList<SettingItem>>('/admin/api/v2/settings', reloadKey, setAuthRequired);
   if (loading) return <SkeletonGrid />;
   if (error || !data) return <EmptyState message={s('Settings could not be loaded.', 'تنظیمات بارگذاری نشد.')} />;
   const map = Object.fromEntries(data.items.map((s) => [s.key, s.value]));
-  const domain = String(map.web_domain || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
-  const baseUrl = domain ? `https://${domain}` : s('Not configured','تنظیم نشده');
-  const loginUrl = map.web_login_url || (domain ? `${baseUrl}/${map.web_path || 'dbot'}/login` : '-');
+  const activeUrl = appliedLogin || map.web_login_url;
+  const domain = appliedLogin ? new URL(appliedLogin).hostname : String(map.web_domain || '');
+  const baseUrl = domain ? (activeUrl?.match(/^https?:\/\/[^/]+/)?.[0] || `https://${domain}`) : s('Not configured','تنظیم نشده');
+  const loginUrl = activeUrl || (domain ? `${baseUrl}/${map.web_path || 'dbot'}/login` : '-');
 
   return <div className="section-grid settings-grid" data-no-i18n="true" dir={language === 'fa' ? 'rtl' : 'ltr'}>
     <ModuleSettings/>
@@ -1521,6 +1524,7 @@ function SettingsSection({ reloadKey, setAuthRequired, openModal, show }: any) {
       ]}
       actions={<button className="btn primary" onClick={() => openModal(settingsWebsiteForm(map,language))}><KeyRound size={16} />{s('Edit website settings','ویرایش تنظیمات وب‌سایت')}</button>}
     />
+    <WebsiteDomain domain={domain} setAuthRequired={setAuthRequired} onApplied={setAppliedLogin} />
     <AccessRuleCards map={map} show={show} setAuthRequired={setAuthRequired} />
     <TutorialSettings show={show} setAuthRequired={setAuthRequired} />
 
@@ -2360,14 +2364,12 @@ function settingsWebsiteForm(map: Record<string, string>, language: 'en' | 'fa' 
   return {
     title: s('Website & SSL — Edit Setup','وب‌سایت و SSL — ویرایش راه‌اندازی'), action: '/admin/settings/website',
     defaults: {
-      domain: map.web_domain || '',
       web_path: map.web_path || 'dbot',
       username: map.web_admin_username || 'admin',
       password: '',
       token_timeout: map.web_token_timeout_minutes || '30',
     },
     fields: [
-      { name: 'domain', label: s('Domain','دامنه') },
       { name: 'web_path', label: s('Web Path','مسیر وب'), required: true, placeholder: 'dbot-a1b2c3d4' },
       { name: 'username', label: s('Current Web Admin Username','نام کاربری فعلی مدیریت وب'), required: true },
       { name: 'password', label: s('New password — leave empty to keep current','رمز عبور جدید؛ برای حفظ رمز فعلی خالی بگذارید'), type: 'password' },

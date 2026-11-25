@@ -469,68 +469,19 @@ restart_after_change(){
   fi
 }
 
+apply_website_domain(){
+  local domain="$1" scheme="${2:-https}"
+  local args=("$domain")
+  if [ "$scheme" = http ]; then args+=(--http); fi
+  python3 "$APP_DIR/scripts/apply-web-domain.py" "${args[@]}" || return 1
+  printf '%s\n' "Panel login: $(panel_url)"
+}
+
 configure_nginx_ssl(){
   load_env
-  local domain="${DOMAIN_NAME:-}" port="${API_PORT:-8000}" http_port="${NGINX_HTTP_PORT:-80}" https_port="${NGINX_HTTPS_PORT:-443}"
-  local ssl_script="$APP_DIR/scripts/setup_web_ssl.sh"
-
-  if [ -z "$domain" ] || [ "$domain" = "not-set" ]; then
-    echo -e "${C_RED}DOMAIN_NAME is empty. Set domain first.${C_NC}"
-    return 1
-  fi
-  if ! valid_port "$http_port" || ! valid_port "$https_port" || ! valid_port "$port"; then
-    echo -e "${C_RED}Invalid port value in .env.${C_NC}"
-    return 1
-  fi
-
-  if [ "${ENABLE_HTTPS:-true}" = "true" ]; then
-    [ -f "$ssl_script" ] || { echo -e "${C_RED}Missing $ssl_script${C_NC}"; return 1; }
-    chmod 755 "$ssl_script"
-
-    if [ ! -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]; then
-      echo -e "${C_YELLOW}No certificate exists for ${domain}; starting the safe HTTPS bootstrap flow first.${C_NC}"
-      DOMAIN_NAME="$domain" LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL:-}" \
-      NGINX_HTTP_PORT="$http_port" NGINX_HTTPS_PORT="$https_port" \
-        bash "$ssl_script" "$domain" bootstrap || return 1
-    fi
-
-    if ! curl -fsS --max-time 5 "http://127.0.0.1:${port}/health" >/dev/null 2>&1; then
-      echo -e "${C_RED}The D Bot API is not healthy on 127.0.0.1:${port}.${C_NC}"
-      echo -e "${C_YELLOW}Nginx was not switched to the API, so users will not see a 502 page.${C_NC}"
-      echo "Fix/restart the API, then run this option again."
-      return 1
-    fi
-
-    DOMAIN_NAME="$domain" LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL:-}" API_PORT="$port" \
-    NGINX_HTTP_PORT="$http_port" NGINX_HTTPS_PORT="$https_port" \
-      bash "$ssl_script" "$domain" proxy
-    return $?
-  fi
-
-  if ! command -v nginx >/dev/null 2>&1; then
-    echo -e "${C_YELLOW}nginx is not installed.${C_NC}"
-    return 1
-  fi
-  cat > /etc/nginx/sites-available/d-bot.conf <<EOFNGINX
-server {
-    listen ${http_port};
-    server_name ${domain};
-    client_max_body_size 100m;
-    location / {
-        proxy_pass http://127.0.0.1:${port};
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_read_timeout 120s;
-    }
-}
-EOFNGINX
-  ln -sf /etc/nginx/sites-available/d-bot.conf /etc/nginx/sites-enabled/d-bot.conf
-  nginx -t && systemctl reload nginx
+  local domain="${DOMAIN_NAME:-}" scheme=https
+  if [ "${ENABLE_HTTPS:-true}" != true ]; then scheme=http; fi
+  apply_website_domain "$domain" "$scheme"
 }
 
 edit_telegram(){
@@ -569,7 +520,7 @@ edit_website(){
   header
   load_env
   echo -e "${C_YELLOW}Website & SSL Settings${C_NC}"
-  echo "1) Change domain"
+  echo "1) Change domain and apply HTTPS"
   echo "2) Toggle HTTPS"
   echo "3) Change Let's Encrypt email"
   echo "4) Change internal API port"
@@ -586,8 +537,15 @@ edit_website(){
         valid_domain "$v" && break
         echo "Invalid domain."
       done
-      set_env_value DOMAIN_NAME "$v" ;;
-    2) v="$(ask_yes_no 'Enable HTTPS?' 'y')"; set_env_value ENABLE_HTTPS "$v" ;;
+      if ! apply_website_domain "$v" https; then
+        echo -e "${C_RED}Domain change failed. Review the VPS error above.${C_NC}"
+      fi
+      pause; return ;;
+    2)
+      v="$(ask_yes_no 'Enable HTTPS?' 'y')"
+      if [ "$v" = true ]; then apply_website_domain "${DOMAIN_NAME:-}" https || true
+      else apply_website_domain "${DOMAIN_NAME:-}" http || true; fi
+      pause; return ;;
     3) read -r -p "Let's Encrypt email, empty to clear: " v || true; set_env_value LETSENCRYPT_EMAIL "$v" ;;
     4)
       while true; do
@@ -623,7 +581,7 @@ edit_website(){
         echo -e "${C_RED}Could not update live Web Path in database.${C_NC}"; pause; return
       fi
       ;;
-    8) configure_nginx_ssl; pause; return ;;
+    8) configure_nginx_ssl || true; pause; return ;;
     0) return ;;
   esac
   configure_nginx_ssl || true
@@ -1156,7 +1114,7 @@ control_menu(){
       7|backup) header; backup_app; pause ;;
       8|info) show_setup_info; pause ;;
       9|edit) edit_setup_menu ;;
-      10|nginx|ssl) header; configure_nginx_ssl; pause ;;
+      10|nginx|ssl) header; configure_nginx_ssl || true; pause ;;
       11|secrets|credentials) credentials_center ;;
       12|uninstall|purge) header; uninstall_app "--purge"; exit 0 ;;
       13|backups|delete-backup|delete-backups) backup_manager ;;
