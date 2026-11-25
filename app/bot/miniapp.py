@@ -10,10 +10,7 @@ from app.services.web_access import read_web_access
 from app.services.miniapp_catalog import public_plans
 
 
-async def miniapp_url():
-    from app.services.miniapp_settings import read_config
-    if not (await read_config())['enabled']:
-        return None
+async def _miniapp_url():
     access = await read_web_access()
     base = access.login_url.removesuffix(access.login_path)
     parsed = urlsplit(base)
@@ -25,13 +22,17 @@ async def miniapp_url():
 _menu_cache = {}
 
 
-async def sync_menu_button(bot):
+async def sync_menu_button(bot, *, force=False):
     from aiogram.types import MenuButtonWebApp, MenuButtonCommands
-    url = await miniapp_url()
-    menu = MenuButtonWebApp(text=BRAND_NAME, web_app=WebAppInfo(url=url)) if url else MenuButtonCommands()
-    signature = (url, BRAND_NAME if url else '')
+    from app.services.miniapp_settings import read_config
+
+    config = await read_config()
+    url = await _miniapp_url() if config['enabled'] else None
+    label = (config['launcher_label'] or BRAND_NAME) if url else ''
+    menu = MenuButtonWebApp(text=label, web_app=WebAppInfo(url=url)) if url else MenuButtonCommands()
+    signature = (url, label)
     key = getattr(bot, 'id', id(bot))
-    if _menu_cache.get(key) == signature:
+    if not force and _menu_cache.get(key) == signature:
         return
     await bot.set_chat_menu_button(menu_button=menu)
     _menu_cache[key] = signature

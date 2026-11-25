@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Bot, LockKeyhole, Plus, Save, ShieldCheck, Users, X } from 'lucide-react';
 import { fetchJson, submitForm } from '@/lib/api';
 import { useSettingsLanguage } from '@/lib/settings-language';
@@ -22,6 +22,7 @@ const switches = [
 ] as const;
 type Flag = typeof switches[number][0];
 type Config = Record<Flag, boolean> & {
+  launcher_label: string;
   welcome: string;
   support_username: string;
   links: { label: string; url: string }[];
@@ -35,7 +36,7 @@ export type MiniAppSettingsProps = {
 
 function editableConfig(config: Config): Config {
   const flags = Object.fromEntries(switches.map(([key]) => [key, config[key]])) as Record<Flag, boolean>;
-  return { ...flags, welcome: config.welcome, support_username: config.support_username, links: config.links };
+  return { ...flags, launcher_label: config.launcher_label ?? '', welcome: config.welcome, support_username: config.support_username, links: config.links };
 }
 
 export function MiniAppSettings({ reloadKey, setAuthRequired, show, onDirtyChange }: MiniAppSettingsProps) {
@@ -45,6 +46,8 @@ export function MiniAppSettings({ reloadKey, setAuthRequired, show, onDirtyChang
   const [error, setError] = useState<Error | null>(null);
   const [retry, setRetry] = useState(0);
   const [busy, setBusy] = useState(false);
+  const labelHint = useId();
+  const labelTooLong = Array.from(draft?.launcher_label.trim() ?? '').length > 32;
   const dirty = !!draft && JSON.stringify(draft) !== saved;
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => {
@@ -64,11 +67,13 @@ export function MiniAppSettings({ reloadKey, setAuthRequired, show, onDirtyChang
   }, [reloadKey, retry, setAuthRequired]);
 
   async function save() {
-    if (!draft || !dirty || busy) return;
+    if (!draft || !dirty || busy || labelTooLong) return;
     setBusy(true);
-    const submitted = JSON.stringify(draft);
+    const normalized = { ...draft, launcher_label: draft.launcher_label.trim() };
+    const submitted = JSON.stringify(normalized);
     try {
       const result = await submitForm('/admin/miniapp/save', { config_json: submitted });
+      setDraft(normalized);
       setSaved(submitted);
       show(result.menu_sync_pending
         ? s('Settings saved. Telegram will retry updating the launcher.', 'تنظیمات ذخیره شد. به‌روزرسانی دکمهٔ تلگرام دوباره تلاش می‌شود.')
@@ -90,10 +95,14 @@ export function MiniAppSettings({ reloadKey, setAuthRequired, show, onDirtyChang
     <section className="panel">
       <header className="cj-section-head"><div><h2><Bot size={20}/> {s('Mini App settings', 'تنظیمات مینی‌اپ')}</h2></div><span className={'badge ' + (draft.enabled ? 'green' : 'red')}>{draft.enabled ? s('Enabled', 'فعال') : s('Disabled', 'غیرفعال')}</span></header>
       <div className="cj-miniapp-fields">
+        <label className="form-field"><span>{s('Telegram Mini App button label', 'نام دکمهٔ مینی‌اپ در تلگرام')}</span>
+          <input value={draft.launcher_label} dir="auto" placeholder="D BOT" disabled={busy} aria-describedby={labelHint} aria-invalid={labelTooLong} onChange={event => setDraft({ ...draft, launcher_label: event.target.value })}/>
+          <small id={labelHint} className={labelTooLong ? 'settings-error' : 'muted'}>{s('Up to 32 characters. Leave blank to use D BOT.', 'حداکثر ۳۲ نویسه. اگر خالی بگذاری، D BOT نمایش داده می‌شود.')}</small>
+        </label>
         <label className="form-field"><span>{s('Home subtitle', 'متن زیر عنوان خانه')}</span><input value={draft.welcome} maxLength={180} dir="auto" disabled={busy} onChange={event => setDraft({ ...draft, welcome: event.target.value })}/></label>
         <label className="form-field"><span>{s('Telegram support username', 'نام کاربری پشتیبانی تلگرام')}</span><input value={draft.support_username} maxLength={60} dir="ltr" placeholder="@support" disabled={busy} onChange={event => setDraft({ ...draft, support_username: event.target.value })}/></label>
       </div>
-      <p className="cj-miniapp-brand-note muted"><LockKeyhole size={14}/>{s('The Mini App and Telegram launcher use the D BOT brand.', 'مینی‌اپ و دکمهٔ کنار چت با برند D BOT نمایش داده می‌شوند.')}</p>
+      <p className="cj-miniapp-brand-note muted"><LockKeyhole size={14}/>{s('The Mini App name and logo use the D BOT brand.', 'نام و لوگوی داخل مینی‌اپ با برند D BOT ثابت‌اند.')}</p>
       <div className="cj-miniapp-fields">{switches.map(([key, en, fa]) => <MiniAppCheck key={key} checked={draft[key]} disabled={busy} onChange={checked => setDraft({ ...draft, [key]: checked })}>{s(en, fa)}</MiniAppCheck>)}</div>
     </section>
     <section className="panel">
@@ -103,7 +112,7 @@ export function MiniAppSettings({ reloadKey, setAuthRequired, show, onDirtyChang
         <label className="form-field"><span>{s('HTTPS URL', 'نشانی HTTPS')} {index + 1}</span><input type="url" required maxLength={1000} dir="ltr" placeholder="https://" value={link.url} disabled={busy} onChange={event => setDraft({ ...draft, links: draft.links.map((row, i) => i === index ? { ...row, url: event.target.value } : row) })}/></label>
         <button type="button" className="btn danger" aria-label={s('Remove shortcut', 'حذف لینک میان‌بر')} disabled={busy} onClick={() => setDraft({ ...draft, links: draft.links.filter((_, i) => i !== index) })}><X size={16}/></button>
       </div>)}
-      <div className="card-actions"><button type="submit" className="btn primary" disabled={!dirty || busy}><Save size={16}/>{busy ? s('Saving…', 'در حال ذخیره…') : s('Save Mini App settings', 'ذخیرهٔ تنظیمات مینی‌اپ')}</button></div>
+      <div className="card-actions"><button type="submit" className="btn primary" disabled={!dirty || busy || labelTooLong}><Save size={16}/>{busy ? s('Saving…', 'در حال ذخیره…') : s('Save Mini App settings', 'ذخیرهٔ تنظیمات مینی‌اپ')}</button></div>
     </section>
   </form>;
 }

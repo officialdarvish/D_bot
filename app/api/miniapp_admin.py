@@ -8,7 +8,7 @@ from app.database.models import Setting, User
 from app.bot.keyboards.common import invalidate_button_settings_cache
 from app.database.settings_write import upsert_settings
 from app.services.miniapp_copy import PREFIX, clean_overrides, read_overrides
-from app.services.miniapp_settings import read_preferences, clean_config, support_username
+from app.services.miniapp_settings import read_preferences, clean_config, clean_launcher_label, support_username
 
 router=APIRouter()
 
@@ -28,10 +28,14 @@ async def save_miniapp(config_json:str=Form(...),_:str=Depends(_auth_user)):
     try:
         data=json.loads(config_json)
         if not isinstance(data,dict): raise ValueError('Invalid settings.')
+        if 'launcher_label' in data:
+            data['launcher_label'] = clean_launcher_label(data['launcher_label'])
         config=clean_config(data)
         name=support_username(data.get('support_username',''))
     except (ValueError,TypeError) as exc: raise HTTPException(400,str(exc))
     async with SessionLocal() as s:
+        if 'launcher_label' not in data:
+            config['launcher_label'] = (await read_preferences(s))['launcher_label']
         await upsert_settings(s, {
             'miniapp_config': json.dumps(config, ensure_ascii=False),
             'support_username': name,
@@ -44,7 +48,7 @@ async def save_miniapp(config_json:str=Form(...),_:str=Depends(_auth_user)):
         from app.api.miniapp import telegram_bot
         from app.bot.miniapp import sync_menu_button
         async with telegram_bot() as bot:
-            await sync_menu_button(bot)
+            await sync_menu_button(bot, force=True)
     except Exception:
         import logging
         logging.getLogger(__name__).exception('Mini App menu sync will retry in bot')

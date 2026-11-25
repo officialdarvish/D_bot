@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 28,
+  "build": 29,
   "channel": "main",
   "notes": {
-    "fa": "افزودن سفارشی‌سازی مینی‌اپ به Custom، ویرایش و بازگردانی متن‌ها و دکمه‌ها، تنظیم نمایش بخش‌ها و لینک‌های میان‌بر با حفظ برند D BOT",
-    "en": "Add Mini App customization to Custom with editable texts and buttons, defaults, visibility settings, and shortcuts under the fixed D BOT brand"
+    "fa": "امکان تغییر متن دکمهٔ بازکردن مینی‌اپ در تلگرام از بخش Custom با حفظ برند D BOT",
+    "en": "Customize the Telegram Mini App launcher label from Custom while preserving D BOT branding"
   }
 }

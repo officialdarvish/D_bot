@@ -374,6 +374,7 @@ test('Custom Mini App edits persist, preview literally and reset to the default'
  const {miniAppText}=require('../lib/miniapp-copy.ts');
  const greeting='home.text.greeting';
  const overrides={};
+ let savedLauncher;
  let posts=0;
  global.fetch=async(url,options={})=>{
   if(String(url).endsWith('/miniapp/texts')){
@@ -387,6 +388,10 @@ test('Custom Mini App edits persist, preview literally and reset to the default'
     return response({ok:true,changes});
    }
    return response({ok:true,overrides:{...overrides}});
+  }
+  if(String(url).endsWith('/admin/miniapp/save')){
+   savedLauncher=JSON.parse(options.body.get('config_json')).launcher_label;
+   return response({ok:true});
   }
   if(String(url).endsWith('/admin/api/v2/miniapp'))return response({ok:true,config:{enabled:true,title:'Old Brand',accent:'#ff0000',welcome:'سلام',support_username:'',links:[]}});
   return response({ok:true,items:[],total:0,modified:0});
@@ -412,4 +417,12 @@ test('Custom Mini App edits persist, preview literally and reset to the default'
  assert.equal(document.querySelector('input[type="color"]'),null);
  assert.ok(text().includes('D BOT'));
  assert.ok(!document.body.innerHTML.includes('Old Brand'));
+ const labelField=document.querySelector('input[placeholder="D BOT"]');
+ assert.ok(labelField.closest('label').textContent.includes('Telegram Mini App button label'));
+ await input(labelField,'x'.repeat(33));
+ assert.ok(button('Save Mini App settings').disabled);
+ await input(labelField,'  🛍 فروشگاه اشتراک  ');
+ await click('Save Mini App settings');
+ assert.equal(savedLauncher,'🛍 فروشگاه اشتراک');
+ assert.equal(labelField.value,savedLauncher);
 });

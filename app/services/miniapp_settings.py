@@ -2,14 +2,16 @@
 import json
 import re
 from urllib.parse import urlsplit
-from sqlalchemy import select
 from app.core.branding import BRAND_NAME, MINIAPP_ACCENT
 from app.database.models import Setting
 from app.database.session import SessionLocal
 
+LAUNCHER_LABEL_MAX = 32
+LAUNCHER_LABEL_ERROR = 'Enter a single-line Telegram button label of up to 32 characters.'
+
 DEFAULTS = {
     'enabled': True, 'title': BRAND_NAME, 'welcome': 'اشتراک‌های تو، همیشه در دسترس',
-    'menu_text': BRAND_NAME, 'accent': MINIAPP_ACCENT, 'animations': True, 'fullscreen': False,
+    'menu_text': BRAND_NAME, 'launcher_label': '', 'accent': MINIAPP_ACCENT, 'animations': True, 'fullscreen': False,
     'show_buy': True, 'show_wallet': True, 'show_services': True, 'show_support': True,
     'show_trial': True, 'show_tutorials': True, 'show_rules': True,
     'reseller_enabled': True, 'reseller_requests': True, 'links': [],
@@ -29,6 +31,15 @@ def support_username(value: str, *, required=False):
     return value
 
 
+def clean_launcher_label(value):
+    if not isinstance(value, str):
+        raise ValueError(LAUNCHER_LABEL_ERROR)
+    label = value.strip()
+    if len(label) > LAUNCHER_LABEL_MAX or re.search(r'[\x00-\x1f\x7f-\x9f\u2028\u2029]', label):
+        raise ValueError(LAUNCHER_LABEL_ERROR)
+    return label
+
+
 def clean_config(values):
     if not isinstance(values, dict):
         raise ValueError('Invalid Mini App configuration.')
@@ -36,7 +47,11 @@ def clean_config(values):
     for key in BOOL_KEYS:
         value = values.get(key, DEFAULTS[key])
         result[key] = value is True or str(value).lower() in ('1','true','on')
-    # Legacy saved configurations and clients can still send the old branding fields.
+    # Old title and menu_text values are ignored. Only the launcher label is editable.
+    try:
+        result['launcher_label'] = clean_launcher_label(values.get('launcher_label', ''))
+    except ValueError:
+        pass  # Keep other stored preferences if an imported label is invalid.
     result['welcome'] = str(values.get('welcome', DEFAULTS['welcome'])).strip()[:180] or DEFAULTS['welcome']
     links = values.get('links',[])
     if not isinstance(links,list) or len(links)>6:

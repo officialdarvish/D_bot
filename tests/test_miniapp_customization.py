@@ -1,11 +1,14 @@
 import json
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api import miniapp_admin
+from app.api import miniapp, miniapp_admin
 from app.bot import miniapp as launcher
+from app.services import miniapp_settings
 from test_miniapp import client, signed
 
 
@@ -59,3 +62,43 @@ def test_miniapp_visibility_settings_round_trip_without_rebranding(client, monke
     assert payload['config']['title'] == 'D BOT'
     assert all(not payload['buttons'][button] for button in ('rules', 'test_account', 'tutorials'))
     assert admin.get('/admin/api/v2/miniapp').json()['config']['show_trial'] is False
+
+
+def test_launcher_label_updates_telegram_and_can_restore_default(client, monkeypatch):
+    customer_api, sessions = client
+    monkeypatch.setattr(miniapp_admin, 'SessionLocal', sessions)
+    monkeypatch.setattr(miniapp_settings, 'SessionLocal', sessions)
+    monkeypatch.setattr(launcher, '_menu_cache', {})
+    access = SimpleNamespace(login_url='https://shop.example.com/dbot/login', login_path='/dbot/login')
+    monkeypatch.setattr(launcher, 'read_web_access', AsyncMock(return_value=access))
+    bot = SimpleNamespace(id=555, set_chat_menu_button=AsyncMock(return_value=True))
+
+    @asynccontextmanager
+    async def fake_bot():
+        yield bot
+
+    monkeypatch.setattr(miniapp, 'telegram_bot', fake_bot)
+    web = FastAPI()
+    web.include_router(miniapp_admin.router)
+    web.dependency_overrides[miniapp_admin._auth_user] = lambda: 'owner'
+    admin = TestClient(web)
+
+    def save(**settings):
+        return admin.post('/admin/miniapp/save', data={'config_json': json.dumps(settings)})
+
+    def menu():
+        return bot.set_chat_menu_button.await_args.kwargs['menu_button']
+
+    label = '🛍 فروشگاه اشتراک'
+    assert save(launcher_label='  ' + label + '  ', title='Other brand', accent='#ff0000').status_code == 200
+    assert menu().text == label and menu().web_app.url == 'https://shop.example.com/miniapp'
+    snapshot = customer_api.get('/api/miniapp/session', headers={'X-Telegram-Init-Data': signed()}).json()
+    assert snapshot['config']['title'] == 'D BOT' and snapshot['config']['accent'] == '#12b9f5'
+    assert admin.get('/admin/api/v2/miniapp').json()['config']['launcher_label'] == label
+    assert save(welcome='متن جدید').status_code == 200 and menu().text == label
+    assert save(launcher_label='x' * 33).status_code == 400
+    assert save(launcher_label='line\nline').status_code == 400
+    assert admin.get('/admin/api/v2/miniapp').json()['config']['launcher_label'] == label
+    assert save(launcher_label='New label', enabled=False).status_code == 200 and menu().type == 'commands'
+    assert save().status_code == 200 and menu().text == 'New label'
+    assert save(launcher_label='   ').status_code == 200 and menu().text == 'D BOT'
