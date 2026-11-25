@@ -16,9 +16,7 @@
 
 <p align="center">
   <a href="#features">قابلیت‌ها</a> ·
-  <a href="#install">نصب سریع</a> ·
-  <a href="https://youtu.be/g2625m5gqBc">تماشای معرفی</a> ·
-  <a href="https://www.youtube.com/@officialdarvish">YouTube</a>
+  <a href="#install">نصب سریع</a>
 </p>
 
 **از اولین خرید تا تمدید بعدی، فروش و مدیریت سرویس‌ها را یک‌جا انجام دهید.** D BOT ربات فروش تلگرام، مینی‌اپ مشتریان و سیستم نمایندگی را به یک وب‌پنل مدیریتی متصل می‌کند.
@@ -157,26 +155,9 @@ Python / Aiogram / FastAPI و Next.js، با **PostgreSQL 16** برای داده
 
 نصب‌های استانداردی که قبلاً تنظیمات شمارنده نداشته‌اند، با آپدیت و راه‌اندازی مجدد خودکار متصل می‌شوند. آدرس خالی قدیمی از دامنه مرکزی استفاده می‌کند. **مقدار صریح `DBOT_COUNTER_ENABLED=false` حفظ می‌شود**؛ حتی اگر از نسخه قدیمی باقی مانده باشد، برای مشارکت باید با انتخاب صاحب نصب به `true` تغییر کند. آدرس HTTPS سفارشی هم حفظ می‌شود. دکمه خاموش‌کردن در وب‌پنل وجود ندارد. برای انصراف روی VPS، مقدار `DBOT_COUNTER_ENABLED=false` را در `.env` تنظیم و کانتینرهای API و bot را دوباره ایجاد کنید. اختلال شمارنده عملکرد ربات را متوقف نمی‌کند و نصب قطع‌شده پس از ۱۵ دقیقه از آمار فعال خارج می‌شود. [راهنمای شمارنده و محدودیت‌ها](integrations/installation_counter/README.md).
 
-## Official Links
+## مدیر پروژه
 
-| مرجع | لینک |
-| --- | --- |
-| گیت‌هاب | [officialdarvish/D_bot](https://github.com/officialdarvish/D_bot) |
-| کانال تلگرام | [@officialdarvishchannel](https://t.me/officialdarvishchannel) |
-| ربات تلگرام | [@officialdarvish_bot](https://t.me/officialdarvish_bot) |
-| کانال یوتیوب | [@officialdarvish](https://www.youtube.com/@officialdarvish) |
-| معرفی و آموزش نصب | [تماشای آموزش](https://youtu.be/gzTt6hj752A?si=NP7Mwnb17jMunGaH) |
-| معرفی D BOT نسخه ۱.۲.۰ | [تماشای ویدیو](https://youtu.be/g2625m5gqBc) |
-| حمایت مالی | [NOWPayments](https://nowpayments.io/donation/officialdarvish) |
-
-## Support the Project
-
-با ستاره‌دادن به مخزن، معرفی D BOT، دنبال‌کردن یوتیوب یا [حمایت مالی](https://nowpayments.io/donation/officialdarvish) به توسعه پروژه کمک کنید.
-
-<p align="center"><a href="https://nowpayments.io/donation/officialdarvish"><img src="https://img.shields.io/badge/Support_D_BOT-NOWPayments-7c3aed?style=for-the-badge" alt="Support D BOT on NOWPayments" /></a></p>
-
-Built with ❤️ by [Darvish](https://github.com/officialdarvish)
-
+[@officialdarvish](https://github.com/officialdarvish)
 
 ## نسخه 1.4.0 — راه‌اندازی و اتصال‌ها
 

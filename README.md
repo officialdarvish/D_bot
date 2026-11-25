@@ -16,9 +16,7 @@
 
 <p align="center">
   <a href="#features">Explore features</a> ·
-  <a href="#install">Quick install</a> ·
-  <a href="https://youtu.be/g2625m5gqBc">Watch D BOT</a> ·
-  <a href="https://www.youtube.com/@officialdarvish">YouTube</a>
+  <a href="#install">Quick install</a>
 </p>
 
 **From the first purchase to the next renewal, keep your VPN business in one connected workspace.** D BOT brings your Telegram shop, customer Mini App and reseller operations together with a dedicated web admin panel.
@@ -157,26 +155,9 @@ In **Discount Codes**, select multiple allowed categories and plans when adding 
 
 Standard installations with no previous counter settings connect automatically on their next update/restart. A blank legacy URL uses the central default. **An explicit `DBOT_COUNTER_ENABLED=false` is preserved**, including old installations with that value; it must be changed to `true` if their owner wants to participate. Custom HTTPS endpoints remain supported. There is no web-panel toggle. To opt out on your VPS, set `DBOT_COUNTER_ENABLED=false` in `.env` and recreate API/bot containers. Failures do not interrupt bot operation; disconnected installations expire after 15 minutes. [Counter deployment, settings and limitations](integrations/installation_counter/README.md).
 
-## Official Links
+## Project Maintainer
 
-| Resource | Link |
-| --- | --- |
-| GitHub | [officialdarvish/D_bot](https://github.com/officialdarvish/D_bot) |
-| Telegram channel | [@officialdarvishchannel](https://t.me/officialdarvishchannel) |
-| Telegram bot | [@officialdarvish_bot](https://t.me/officialdarvish_bot) |
-| YouTube channel | [@officialdarvish](https://www.youtube.com/@officialdarvish) |
-| Introduction & installation | [Watch the tutorial](https://youtu.be/gzTt6hj752A?si=NP7Mwnb17jMunGaH) |
-| D BOT v1.2.0 overview | [Watch the video](https://youtu.be/g2625m5gqBc) |
-| Donations | [NOWPayments](https://nowpayments.io/donation/officialdarvish) |
-
-## Support the Project
-
-Star the repository, share D BOT, subscribe on YouTube, or [support development with a donation](https://nowpayments.io/donation/officialdarvish).
-
-<p align="center"><a href="https://nowpayments.io/donation/officialdarvish"><img src="https://img.shields.io/badge/Support_D_BOT-NOWPayments-7c3aed?style=for-the-badge" alt="Support D BOT on NOWPayments" /></a></p>
-
-Built with ❤️ by [Darvish](https://github.com/officialdarvish)
-
+[@officialdarvish](https://github.com/officialdarvish)
 
 ## Version 1.4.0 — setup and integrations
 
