@@ -143,12 +143,6 @@ ask_nonempty(){
   echo "$value"
 }
 
-ask_secret_nonempty(){
-  local prompt="$1" value=""
-  while [ -z "$value" ]; do read -r -s -p "$prompt" value; echo >&2; done
-  echo "$value"
-}
-
 ask_default(){
   local prompt="$1" default="$2" value=""
   read -r -p "$prompt [$default]: " value || true
@@ -614,11 +608,22 @@ edit_runtime(){
   restart_after_change
 }
 
+sync_db_auth(){
+  cd_app
+  require_env
+  python3 "$APP_DIR/scripts/dbot-db-auth.py" "$1" $COMPOSE || return 1
+  if ! wait_for_api_health; then
+    echo "Database login succeeded, but the API did not become healthy. Run sudo dbot logs."
+    return 1
+  fi
+  echo "D Bot API is healthy."
+}
+
 edit_database(){
   header
   load_env
   echo -e "${C_RED}Advanced database settings${C_NC}"
-  echo "Changing database values after data exists can break the app unless you migrate the database or recreate volumes."
+  echo "Changing the database name, username or host on an existing installation requires migration."
   echo "A backup is recommended before changing these values."
   if ! confirm_action "Continue anyway?"; then return; fi
   echo "1) Change database name"
@@ -630,12 +635,18 @@ edit_database(){
   case "$c" in
     1) v="$(ask_default 'PostgreSQL database name' "${POSTGRES_DB:-d_bot}")"; set_env_value POSTGRES_DB "$v" ;;
     2) v="$(ask_default 'PostgreSQL username' "${POSTGRES_USER:-dbot}")"; set_env_value POSTGRES_USER "$v" ;;
-    3) v="$(ask_secret_nonempty 'PostgreSQL password: ')"; set_env_value POSTGRES_PASSWORD "$v" ;;
+    3)
+      source "$APP_DIR/scripts/dbot-db-password.sh"
+      v="$(read_db_password)" || return 0
+      if ! printf '%s\n' "$v" | sync_db_auth change; then
+        echo "Database password change did not complete. Review the message above."
+      fi
+      return 0 ;;
     4)
       h="$(ask_default 'PostgreSQL host' "${POSTGRES_HOST:-db}")"
       p="$(ask_default 'PostgreSQL port' "${POSTGRES_PORT:-5432}")"
       set_env_value POSTGRES_HOST "$h"; set_env_value POSTGRES_PORT "$p" ;;
-    0) return ;;
+    0|*) return ;;
   esac
   # Keep DATABASE_URL aligned with the new values.
   load_env
@@ -1003,8 +1014,9 @@ verify_service_types_api(){
 }
 
 wait_for_api_health(){
-  load_env
-  local port="${API_PORT:-8000}" i
+  local port i
+  port="$(get_env_value API_PORT)"
+  port="${port:-8000}"
   for i in $(seq 1 40); do
     if curl -fsS --max-time 4 "http://127.0.0.1:${port}/health" >/dev/null 2>&1; then
       return 0
@@ -1041,6 +1053,9 @@ update_app(){
   echo "Waiting for the API to become healthy..."
   if ! wait_for_api_health; then
     echo -e "${C_RED}Update failed: API did not become healthy.${C_NC}"
+    if $COMPOSE logs --tail=120 api 2>&1 | grep -q 'InvalidPasswordError'; then
+      echo "PostgreSQL rejected the credentials. Run sudo dbot repair-db-auth."
+    fi
     return 1
   fi
 
@@ -1136,6 +1151,7 @@ case "${1}" in
   start) cd_app && $COMPOSE up -d ;;
   stop) cd_app && $COMPOSE down ;;
   restart) cd_app && $COMPOSE restart ;;
+  repair-db-auth) sync_db_auth repair ;;
   logs) cd_app && $COMPOSE logs -f --tail=200 ;;
   update) update_app ;;
   backup) backup_app ;;

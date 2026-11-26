@@ -188,3 +188,10 @@ Build 28 adds **Custom → Mini App**. Search and edit customer-facing texts and
 Build 29 adds **Custom → Mini App → Settings and links → Telegram Mini App button label**. Use up to 32 characters for the button next to the message box in Telegram. Leave the field blank for **D BOT**. The brand inside the Mini App stays fixed.
 
 Build 30 moves live domain and HTTPS changes to **Settings → Domain and HTTPS** or **dbot → Website & SSL → Change domain and apply HTTPS**. Point the new domain to your VPS and allow TCP port 80 for certificate validation. The VPS checks HTTPS and the D BOT endpoint before recording the new domain and keeps the previous D BOT address available. If the web worker is unavailable after upgrading, run `sudo dbot update` on the VPS.
+
+
+### PostgreSQL password recovery
+
+If API startup reports `InvalidPasswordError`, install the latest source with `sudo dbot update`, then run `sudo dbot repair-db-auth`. The repair uses the current Compose password for bundled PostgreSQL, verifies access to the existing database, and recreates the API and bot containers. If this happened during initial setup, open `sudo dbot` and select **Apply Nginx/SSL** once the API is healthy.
+
+New PostgreSQL passwords in the installer and the VPS menu use 12–128 English letters, digits, underscores or hyphens. The installer can generate one automatically.

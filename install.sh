@@ -305,7 +305,9 @@ setup_wizard(){
   setup_step 3 "Database"
   POSTGRES_DB="$(ask_default 'PostgreSQL database name' 'd_bot')"
   POSTGRES_USER="$(ask_default 'PostgreSQL username' 'dbot')"
-  POSTGRES_PASSWORD="$(ask_secret_default 'PostgreSQL password' "$(generate_password)")"
+  # The installer runs from the downloaded script as well as from the ZIP.
+  source "$APP_DIR/scripts/dbot-db-password.sh"
+  POSTGRES_PASSWORD="$(read_db_password "$(generate_password)")"
 
   setup_step 4 "Runtime Settings"
   while true; do
@@ -617,6 +619,9 @@ wait_for_api(){
     sleep 2
   done
 
+  if $COMPOSE logs --tail=120 api 2>&1 | grep -q 'InvalidPasswordError'; then
+    fail "PostgreSQL rejected the API credentials. Run: sudo dbot repair-db-auth, then dbot → Apply Nginx/SSL."
+  fi
   warn "The API did not become healthy. Nginx will keep showing the safe installation page instead of a 502 error."
   cd "$APP_DIR"
   $COMPOSE ps || true
@@ -676,6 +681,9 @@ main(){
   fi
 
   need_root
+  if [ -s "${APP_DIR}/.env" ]; then
+    fail "D Bot is already configured. To preserve the existing credentials, use sudo dbot update. For a database password error, run sudo dbot repair-db-auth after updating."
+  fi
   banner
   domain_first_wizard
   install_base_packages

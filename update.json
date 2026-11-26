@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "version": "1.4.0",
-  "build": 30,
+  "build": 31,
   "channel": "main",
   "notes": {
-    "en": "Apply website domain changes and new TLS certificates through the same VPS workflow for the web panel and dbot menu. Verify the new site before saving the active domain.",
-    "fa": "رفع صدور گواهی و اعمال دامنهٔ جدید از وب‌پنل و منوی dbot با اجرای عملیات روی VPS و تأیید آدرس جدید قبل از ثبت دامنه"
+    "en": "Validate PostgreSQL passwords during setup and recover mismatched credentials without resetting the database.",
+    "fa": "اعتبارسنجی رمز PostgreSQL در نصب و بازیابی اتصال با حفظ دیتابیس موجود"
   }
 }
